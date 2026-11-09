@@ -3,9 +3,9 @@
 # (a link into .deps/), never from $HOME/.csilgen.
 #
 #   tools/csilgen.sh ensure     install the pinned CLI and generators under .deps/
-#   tools/csilgen.sh generate   regenerate crates/vscstar-types and ui/src/generated
+#   tools/csilgen.sh generate   regenerate crates/vcsstar-types and ui/src/generated
 #   tools/csilgen.sh check      fail when generated output differs from the tree
-#   tools/csilgen.sh validate   validate csil/vscstar.csil only
+#   tools/csilgen.sh validate   validate csil/vcsstar.csil only
 set -euo pipefail
 
 CSILGEN_PIN="0.2.11"
@@ -21,8 +21,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEPS="$ROOT/.deps"
 BIN="$DEPS/bin/csilgen"
 GEN_DIR="$DEPS/csilgen-generators/$CSILGEN_PIN"
-SPEC="$ROOT/csil/vscstar.csil"
-RUST_OUT="$ROOT/crates/vscstar-types"
+SPEC="$ROOT/csil/vcsstar.csil"
+RUST_OUT="$ROOT/crates/vcsstar-types"
 TS_OUT="$ROOT/ui/src/generated"
 
 sha_check() { echo "$2  $1" | sha256sum -c - >/dev/null; }
@@ -78,13 +78,13 @@ generate_into() {
     local rust_out="$1" ts_out="$2"
     rm -rf "$rust_out" "$ts_out"
     mkdir -p "$rust_out" "$ts_out"
-    run_csilgen generate --quiet --input vscstar.csil --target rust --output "$rust_out"
-    run_csilgen generate --quiet --input vscstar.csil --target typescript --output "$ts_out"
+    run_csilgen generate --quiet --input vcsstar.csil --target rust --output "$rust_out"
+    run_csilgen generate --quiet --input vcsstar.csil --target typescript --output "$ts_out"
     # The Rust generator writes a crate manifest without lints; the workspace
     # supplies them. Keep the manifest as generated.
 }
 
-validate() { ensure; run_csilgen validate --input vscstar.csil; }
+validate() { ensure; run_csilgen validate --input vcsstar.csil; }
 
 generate() { ensure; validate; generate_into "$RUST_OUT" "$TS_OUT"; echo "generated into $RUST_OUT and $TS_OUT"; }
 

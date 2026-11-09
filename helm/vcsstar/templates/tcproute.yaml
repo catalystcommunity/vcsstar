@@ -1,0 +1,25 @@
+{{- if and .Values.ssh.enabled .Values.ssh.tcpRoute.enabled }}
+# L4 route for git over SSH through the shared Gateway. The Foundry gateway
+# controller adds the listener and the Envoy Service port for this route.
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: {{ include "vcsstar.fullname" . }}-ssh
+  labels:
+    {{- include "vcsstar.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.gateway.httpRoute.parentGateway }}
+      namespace: {{ .Values.gateway.httpRoute.parentNamespace }}
+      {{- with .Values.ssh.tcpRoute.sectionName }}
+      sectionName: {{ . }}
+      {{- end }}
+  rules:
+    - backendRefs:
+        - group: ""
+          kind: Service
+          name: {{ include "vcsstar.fullname" . }}
+          port: {{ .Values.ssh.port }}
+{{- end }}

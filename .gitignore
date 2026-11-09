@@ -13,8 +13,13 @@ target/
 ui/node_modules/
 ui/dist/
 
+# Instance overlays describe a network; only the example is committed
+deploy/values-*.yaml
+!deploy/values-example.yaml
+
 # Local environment and dev overrides
 .env
 .env.*
 dev/*.local
 dev/corndogs.env
+.playwright-mcp/

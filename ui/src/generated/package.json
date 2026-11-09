@@ -13,7 +13,7 @@
     "dist"
   ],
   "main": "dist/index.js",
-  "name": "vscstar-types",
+  "name": "vcsstar-types",
   "scripts": {
     "build": "tsc"
   },

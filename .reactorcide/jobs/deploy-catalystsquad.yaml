@@ -1,5 +1,5 @@
-name: vscstar-deploy-catalystsquad
-description: "Build the vscstar image with buildkit and deploy it with Helm"
+name: vcsstar-deploy-catalystsquad
+description: "Build the vcsstar image with buildkit and deploy it with Helm"
 job:
   image: containers.catalystsquad.com/public/reactorcide/runnerbase:latest
   command: "bash ${REACTORCIDE_CODE_DIR:-/job/src}/.reactorcide/jobs/scripts/deploy.sh"
@@ -15,12 +15,13 @@ job:
       limit: "8Gi"
 environment:
   REGISTRY: "containers.catalystsquad.com"
-  IMAGE_PATH: "public/catalystcommunity/vscstar"
-  CLI_IMAGE_PATH: "public/catalystcommunity/vscstar-cli"
+  IMAGE_PATH: "public/catalystcommunity/vcsstar"
+  CLI_IMAGE_PATH: "public/catalystcommunity/vcsstar-cli"
   REGISTRY_USER: "${secret:catalystcommunity/registry:user}"
   REGISTRY_PASSWORD: "${secret:catalystcommunity/registry:password}"
   KUBECONFIG_CONTENT: "${secret:catalystcommunity/k8s:kubeconfig}"
-  LINKKEYS_API_KEY: "${secret:catalystcommunity/ci:vscstart-api-key}"
-  K8S_NAMESPACE: "vscstar"
-  HELM_RELEASE: "vscstar"
-  VALUES_FILE: "deploy/values-catalystsquad.yaml"
+  LINKKEYS_API_KEY: "${secret:catalystcommunity/ci:vcsstar-api-key}"
+  K8S_NAMESPACE: "vcsstar"
+  HELM_RELEASE: "vcsstar"
+  # The instance overlay (see deploy/values-example.yaml) lives in the secret store.
+  DEPLOY_VALUES: "${secret:catalystcommunity/vcsstar:values-catalystsquad}"

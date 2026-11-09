@@ -2,7 +2,7 @@
 // Source: <csil spec>
 // Target: typescript-codec
 
-import type { ActAsExchangeRequest, ApiToken, BeginDeviceRequest, BeginLoginRequest, BeginLoginResponse, BlobRequest, BlobResponse, BlockedAction, BranchProtection, Comment, CommentRequest, Commit, CommitPage, CommitStatus, CommitSummary, CompleteLoginRequest, ConfigureMirrorRequest, CreateEndpointRequest, CreateOrgRequest, CreateRepoRequest, CreateTeamRequest, CreateTokenRequest, Credential, CredentialRef, Ctx, DeleteRepoRequest, Delivery, DeliveryPage, DeliveryQuery, DeliveryRef, DeviceApproveRequest, DeviceCode, DevicePollRequest, DevicePollResponse, DiffRequest, DiffResponse, Empty, Endpoint, EndpointRef, Event, EventPayload, FedCapabilities, FedHello, FedHelloAck, FileDiff, ForkRequest, GetCommitRequest, GetOrgRequest, GetRepoRequest, Grant, HeadInfo, HeadQuery, Identity, ImportRequest, KeyRef, ListBlockedResponse, ListCommentsResponse, ListCredentialsRequest, ListCredentialsResponse, ListEndpointsRequest, ListEndpointsResponse, ListGrantsResponse, ListKeysResponse, ListOrgMembersRequest, ListOrgsRequest, ListPrRequest, ListProtectionsResponse, ListRefsRequest, ListRefsResponse, ListReposRequest, ListReviewsResponse, ListStatusRequest, ListStatusResponse, ListTeamsResponse, ListTokensResponse, LogRequest, MembershipPayload, MergeRequest, MergeResult, MirrorPayload, MirrorStatus, Ok, OpenPrRequest, Org, OrgMember, OrgMemberPage, OrgPage, OrgRef, OrgRepoRef, Page, PrHead, PrPage, PrPayload, PrRef, PullRequest, PushPayload, ReconcileReport, RefInfo, RefPayload, RegisterKeyRequest, ReleasePayload, RemoveGrantRequest, RemoveOrgMemberRequest, RemoveProtectionRequest, ReplayRequest, ReplayResult, Repo, RepoPage, RepoRef, RetargetRequest, Review, ReviewRequest, RevokeTokenRequest, ScopedBearer, ServerInfo, ServiceError, Session, SetCredentialRequest, SetGrantRequest, SetOrgMemberRequest, SetProtectionRequest, SetStatusRequest, SetTeamMemberRequest, SettingsPayload, Signature, SignedActAsScopeSet, SshKeyInfo, StatusPayload, StreamAck, StreamControl, StreamMessage, SubscribeRequest, Team, TeamRef, Timestamp, TreeEntry, TreeRequest, TreeResponse, UnsribeMarker, UnsubscribeRequest, UpdateEndpointRequest, UpdateOrgRequest, UpdatePrRequest, UpdateRefRequest, UpdateRepoRequest, VerifyHeadRequest, WhoAmI } from "./types.gen.ts";
+import type { ActAsExchangeRequest, ApiToken, BeginDeviceRequest, BeginLoginRequest, BeginLoginResponse, BlobRequest, BlobResponse, BlockedAction, BranchProtection, CaptureReport, Comment, CommentRequest, Commit, CommitPage, CommitStatus, CommitSummary, CompleteLoginRequest, ConfigureMirrorRequest, CreateEndpointRequest, CreateOrgRequest, CreateRepoRequest, CreateTeamRequest, CreateTokenRequest, Credential, CredentialRef, Ctx, DeleteRepoRequest, Delivery, DeliveryPage, DeliveryQuery, DeliveryRef, DeviceApproveRequest, DeviceCode, DevicePollRequest, DevicePollResponse, DiffRequest, DiffResponse, Empty, Endpoint, EndpointRef, Event, EventPayload, FedCapabilities, FedHello, FedHelloAck, FileDiff, ForkRequest, GetCommitRequest, GetOrgRequest, GetRepoRequest, Grant, HeadInfo, HeadQuery, Identity, ImportRequest, KeyRef, ListBlockedResponse, ListCommentsResponse, ListCredentialsRequest, ListCredentialsResponse, ListEndpointsRequest, ListEndpointsResponse, ListGrantsResponse, ListKeysResponse, ListOrgMembersRequest, ListOrgsRequest, ListPrRequest, ListProtectionsResponse, ListRefsRequest, ListRefsResponse, ListReposRequest, ListReviewsResponse, ListStatusRequest, ListStatusResponse, ListTeamsResponse, ListTokensResponse, LogRequest, MembershipPayload, MergeRequest, MergeResult, MirrorPayload, MirrorStatus, Ok, OpenPrRequest, Org, OrgMember, OrgMemberPage, OrgPage, OrgRef, OrgRepoRef, Page, PrHead, PrPage, PrPayload, PrRef, PullRequest, PushPayload, ReconcileReport, RefInfo, RefPayload, RegisterKeyRequest, ReleasePayload, RemoveGrantRequest, RemoveOrgMemberRequest, RemoveProtectionRequest, ReplayRequest, ReplayResult, Repo, RepoPage, RepoRef, RetargetRequest, Review, ReviewRequest, RevokeTokenRequest, ScopeSetRequest, ScopedBearer, ServerInfo, ServiceError, Session, SetCredentialRequest, SetGrantRequest, SetOrgMemberRequest, SetProtectionRequest, SetStatusRequest, SetTeamMemberRequest, SettingsPayload, Signature, SignedActAsScopeSet, SshKeyInfo, StatusPayload, StreamAck, StreamControl, StreamMessage, SubscribeRequest, Team, TeamRef, Timestamp, TreeEntry, TreeRequest, TreeResponse, UnsribeMarker, UnsubscribeRequest, UpdateEndpointRequest, UpdateOrgRequest, UpdatePrRequest, UpdateRefRequest, UpdateRepoRequest, VerifyHeadRequest, WhoAmI } from "./types.gen.ts";
 
 /** A CBOR semantic tag wrapping an inner value (e.g. tag 0 timestamp, tag 4 decimal). */
 export type CborTag = { readonly tag: number; readonly value: CborValue };
@@ -976,10 +976,34 @@ export function fromScopedBearerCbor(bytes: Uint8Array): ScopedBearer {
   return fromScopedBearerCborValue(decode(bytes));
 }
 
+export function toScopeSetRequestCborValue(v: ScopeSetRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("ctx", toCtxCborValue(v.ctx));
+  csilMap.set("scopes", v.scopes);
+  csilMap.set("grantee_cbor", v.granteeCbor);
+  return csilMap;
+}
+
+export function fromScopeSetRequestCborValue(value: CborValue): ScopeSetRequest {
+  return {
+    ctx: fromCtxCborValue(requireKey(value, "ctx")),
+    granteeCbor: asBytes(requireKey(value, "grantee_cbor")),
+    scopes: asArray(requireKey(value, "scopes")).map((csilE) => asString(csilE)),
+  };
+}
+
+export function toScopeSetRequestCbor(v: ScopeSetRequest): Uint8Array {
+  return encodeValue(toScopeSetRequestCborValue(v));
+}
+
+export function fromScopeSetRequestCbor(bytes: Uint8Array): ScopeSetRequest {
+  return fromScopeSetRequestCborValue(decode(bytes));
+}
+
 export function toSignedActAsScopeSetCborValue(v: SignedActAsScopeSet): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
-  csilMap.set("key_id", v.keyId);
-  csilMap.set("signature", v.signature);
+  csilMap.set("scopes", v.scopes);
+  csilMap.set("expires_at", v.expiresAt);
   csilMap.set("scope_set_cbor", v.scopeSetCbor);
   return csilMap;
 }
@@ -987,8 +1011,8 @@ export function toSignedActAsScopeSetCborValue(v: SignedActAsScopeSet): CborValu
 export function fromSignedActAsScopeSetCborValue(value: CborValue): SignedActAsScopeSet {
   return {
     scopeSetCbor: asBytes(requireKey(value, "scope_set_cbor")),
-    signature: asBytes(requireKey(value, "signature")),
-    keyId: asString(requireKey(value, "key_id")),
+    scopes: asArray(requireKey(value, "scopes")).map((csilE) => asString(csilE)),
+    expiresAt: asNumber(requireKey(value, "expires_at")),
   };
 }
 
@@ -1758,6 +1782,34 @@ export function toListRefsRequestCbor(v: ListRefsRequest): Uint8Array {
 
 export function fromListRefsRequestCbor(bytes: Uint8Array): ListRefsRequest {
   return fromListRefsRequestCborValue(decode(bytes));
+}
+
+export function toCaptureReportCborValue(v: CaptureReport): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("repo", toRepoRefCborValue(v.repo));
+  csilMap.set("bytes", v.bytes);
+  csilMap.set("objects", v.objects);
+  if (v.segment !== undefined) csilMap.set("segment", v.segment);
+  csilMap.set("uploaded", v.uploaded);
+  return csilMap;
+}
+
+export function fromCaptureReportCborValue(value: CborValue): CaptureReport {
+  return {
+    repo: fromRepoRefCborValue(requireKey(value, "repo")),
+    uploaded: asBool(requireKey(value, "uploaded")),
+    objects: asNumber(requireKey(value, "objects")),
+    bytes: asNumber(requireKey(value, "bytes")),
+    segment: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "segment")),
+  };
+}
+
+export function toCaptureReportCbor(v: CaptureReport): Uint8Array {
+  return encodeValue(toCaptureReportCborValue(v));
+}
+
+export function fromCaptureReportCbor(bytes: Uint8Array): CaptureReport {
+  return fromCaptureReportCborValue(decode(bytes));
 }
 
 export function toListRefsResponseCborValue(v: ListRefsResponse): CborValue {
@@ -3382,6 +3434,7 @@ export function toSetCredentialRequestCborValue(v: SetCredentialRequest): CborVa
   csilMap.set("org", v.org);
   csilMap.set("host", v.host);
   if (v.repo !== undefined) csilMap.set("repo", v.repo);
+  if (v.secret !== undefined) csilMap.set("secret", v.secret);
   if (v.enabled !== undefined) csilMap.set("enabled", v.enabled);
   csilMap.set("purpose", v.purpose);
   csilMap.set("provider", v.provider);
@@ -3400,6 +3453,7 @@ export function fromSetCredentialRequestCborValue(value: CborValue): SetCredenti
     authMethod: asString(requireKey(value, "auth_method")),
     host: asString(requireKey(value, "host")),
     secretRef: asString(requireKey(value, "secret_ref")),
+    secret: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "secret")),
     enabled: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "enabled")),
   };
 }

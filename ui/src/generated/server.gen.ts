@@ -2,7 +2,7 @@
 // Source: <csil spec>
 // Target: typescript-server
 
-import type { ActAsExchangeRequest, ApiToken, BeginDeviceRequest, BeginLoginRequest, BeginLoginResponse, BlobRequest, BlobResponse, BranchProtection, Comment, CommentRequest, Commit, CommitPage, CommitStatus, CompleteLoginRequest, ConfigureMirrorRequest, CreateEndpointRequest, CreateOrgRequest, CreateRepoRequest, CreateTeamRequest, CreateTokenRequest, Credential, CredentialRef, DeleteRepoRequest, DeliveryPage, DeliveryQuery, DeliveryRef, DeviceApproveRequest, DeviceCode, DevicePollRequest, DevicePollResponse, DiffRequest, DiffResponse, Empty, Endpoint, EndpointRef, FedHello, FedHelloAck, ForkRequest, GetCommitRequest, GetOrgRequest, GetRepoRequest, Grant, HeadInfo, HeadQuery, ImportRequest, KeyRef, ListBlockedResponse, ListCommentsResponse, ListCredentialsRequest, ListCredentialsResponse, ListEndpointsRequest, ListEndpointsResponse, ListGrantsResponse, ListKeysResponse, ListOrgMembersRequest, ListOrgsRequest, ListPrRequest, ListProtectionsResponse, ListRefsRequest, ListRefsResponse, ListReposRequest, ListReviewsResponse, ListStatusRequest, ListStatusResponse, ListTeamsResponse, ListTokensResponse, LogRequest, MergeRequest, MergeResult, MirrorStatus, Ok, OpenPrRequest, Org, OrgMember, OrgMemberPage, OrgPage, PrPage, PrRef, PullRequest, ReconcileReport, RefInfo, RegisterKeyRequest, RemoveGrantRequest, RemoveOrgMemberRequest, RemoveProtectionRequest, ReplayRequest, ReplayResult, Repo, RepoPage, RetargetRequest, Review, ReviewRequest, RevokeTokenRequest, ScopedBearer, ServerInfo, ServiceError, Session, SetCredentialRequest, SetGrantRequest, SetOrgMemberRequest, SetProtectionRequest, SetStatusRequest, SetTeamMemberRequest, SignedActAsScopeSet, SshKeyInfo, StreamControl, StreamMessage, Team, TeamRef, TreeRequest, TreeResponse, UpdateEndpointRequest, UpdateOrgRequest, UpdatePrRequest, UpdateRefRequest, UpdateRepoRequest, VerifyHeadRequest, WhoAmI } from "./types.gen.ts";
+import type { ActAsExchangeRequest, ApiToken, BeginDeviceRequest, BeginLoginRequest, BeginLoginResponse, BlobRequest, BlobResponse, BranchProtection, CaptureReport, Comment, CommentRequest, Commit, CommitPage, CommitStatus, CompleteLoginRequest, ConfigureMirrorRequest, CreateEndpointRequest, CreateOrgRequest, CreateRepoRequest, CreateTeamRequest, CreateTokenRequest, Credential, CredentialRef, DeleteRepoRequest, DeliveryPage, DeliveryQuery, DeliveryRef, DeviceApproveRequest, DeviceCode, DevicePollRequest, DevicePollResponse, DiffRequest, DiffResponse, Empty, Endpoint, EndpointRef, FedHello, FedHelloAck, ForkRequest, GetCommitRequest, GetOrgRequest, GetRepoRequest, Grant, HeadInfo, HeadQuery, ImportRequest, KeyRef, ListBlockedResponse, ListCommentsResponse, ListCredentialsRequest, ListCredentialsResponse, ListEndpointsRequest, ListEndpointsResponse, ListGrantsResponse, ListKeysResponse, ListOrgMembersRequest, ListOrgsRequest, ListPrRequest, ListProtectionsResponse, ListRefsRequest, ListRefsResponse, ListReposRequest, ListReviewsResponse, ListStatusRequest, ListStatusResponse, ListTeamsResponse, ListTokensResponse, LogRequest, MergeRequest, MergeResult, MirrorStatus, Ok, OpenPrRequest, Org, OrgMember, OrgMemberPage, OrgPage, PrPage, PrRef, PullRequest, ReconcileReport, RefInfo, RegisterKeyRequest, RemoveGrantRequest, RemoveOrgMemberRequest, RemoveProtectionRequest, ReplayRequest, ReplayResult, Repo, RepoPage, RetargetRequest, Review, ReviewRequest, RevokeTokenRequest, ScopeSetRequest, ScopedBearer, ServerInfo, ServiceError, Session, SetCredentialRequest, SetGrantRequest, SetOrgMemberRequest, SetProtectionRequest, SetStatusRequest, SetTeamMemberRequest, SignedActAsScopeSet, SshKeyInfo, StreamControl, StreamMessage, Team, TeamRef, TreeRequest, TreeResponse, UpdateEndpointRequest, UpdateOrgRequest, UpdatePrRequest, UpdateRefRequest, UpdateRepoRequest, VerifyHeadRequest, WhoAmI } from "./types.gen.ts";
 
 // The consumer-defined context carries auth, request id, etc. It is opaque to
 // generated code; the adapter defines its shape.
@@ -24,7 +24,7 @@ export interface AuthHandlers {
   beginDeviceLogin(req: BeginDeviceRequest, ctx: RequestContext): Promise<DeviceCode>;
   pollDeviceLogin(req: DevicePollRequest, ctx: RequestContext): Promise<DevicePollResponse>;
   exchangeActAsCredential(req: ActAsExchangeRequest, ctx: RequestContext): Promise<ScopedBearer>;
-  scopeSet(req: Empty, ctx: RequestContext): Promise<SignedActAsScopeSet>;
+  scopeSet(req: ScopeSetRequest, ctx: RequestContext): Promise<SignedActAsScopeSet>;
   /**
    * Browser side of the device flow. Needs a web session.
    */
@@ -285,6 +285,12 @@ export interface ReposHandlers {
   setProtection(req: SetProtectionRequest, ctx: RequestContext): Promise<BranchProtection>;
   removeProtection(req: RemoveProtectionRequest, ctx: RequestContext): Promise<Ok>;
   listProtections(req: GetRepoRequest, ctx: RequestContext): Promise<ListProtectionsResponse>;
+  /**
+   * Pack every object reachable from the current refs that no live segment
+   * holds, and upload it as one new segment. Use it for history that was
+   * written before the object store existed. Repeatable; no-op when covered.
+   */
+  captureHistory(req: GetRepoRequest, ctx: RequestContext): Promise<CaptureReport>;
 }
 
 export const ReposWireIds = {
@@ -309,6 +315,7 @@ export const ReposWireIds = {
     setProtection: 16,
     removeProtection: 17,
     listProtections: 18,
+    captureHistory: 19,
   },
 } as const;
 
@@ -395,7 +402,7 @@ export async function dispatch(
           return codec.encode(res);
         }
         case "scope-set": {
-          const req = codec.decode<Empty>(reqBytes);
+          const req = codec.decode<ScopeSetRequest>(reqBytes);
           const res = await handlers.auth.scopeSet(req, ctx);
           return codec.encode(res);
         }
@@ -797,6 +804,11 @@ export async function dispatch(
           const res = await handlers.repos.listProtections(req, ctx);
           return codec.encode(res);
         }
+        case "capture-history": {
+          const req = codec.decode<GetRepoRequest>(reqBytes);
+          const res = await handlers.repos.captureHistory(req, ctx);
+          return codec.encode(res);
+        }
         default:
           throw { code: 404, message: `unknown method ${service}.${method}` } satisfies ServiceError;
       }
@@ -881,7 +893,7 @@ export async function dispatchCompact(
           return codec.encode(res);
         }
         case 8: {
-          const req = codec.decode<Empty>(reqBytes);
+          const req = codec.decode<ScopeSetRequest>(reqBytes);
           const res = await handlers.auth.scopeSet(req, ctx);
           return codec.encode(res);
         }
@@ -1281,6 +1293,11 @@ export async function dispatchCompact(
         case 18: {
           const req = codec.decode<GetRepoRequest>(reqBytes);
           const res = await handlers.repos.listProtections(req, ctx);
+          return codec.encode(res);
+        }
+        case 19: {
+          const req = codec.decode<GetRepoRequest>(reqBytes);
+          const res = await handlers.repos.captureHistory(req, ctx);
           return codec.encode(res);
         }
         default:

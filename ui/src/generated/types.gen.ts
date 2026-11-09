@@ -24,7 +24,7 @@ export interface Ctx {
 }
 
 /**
- * Every error arm. Codes are registered in crates/vscstar-core/src/errors.rs.
+ * Every error arm. Codes are registered in crates/vcsstar-core/src/errors.rs.
  * Exactly two fields: the csilgen Rust channel router constructs
  * `ServiceError { code, message }` itself (csilgen request filed).
  */
@@ -86,7 +86,7 @@ export interface ServerInfo {
   instanceDomain: string;
   publicUrl: string;
   /**
-   * LinkKeys account of this instance, e.g. "vscstar@catalystsquad.com".
+   * LinkKeys account of this instance, e.g. "vcsstar@catalystsquad.com".
    */
   instanceIdentity: string;
 }
@@ -210,7 +210,7 @@ export interface DeviceApproveRequest {
 }
 
 /**
- * LinkKeys act-as grants: vscstar is the audience.
+ * LinkKeys act-as grants: vcsstar is the audience.
  */
 export interface ActAsExchangeRequest {
   ctx: Ctx;
@@ -229,17 +229,33 @@ export interface ScopedBearer {
   actingVia: string;
 }
 
+export interface ScopeSetRequest {
+  ctx: Ctx;
+  /**
+   * CBOR-encoded LinkKeys GranteeRef of the application that will act.
+   */
+  granteeCbor: Uint8Array;
+  /**
+   * Subset of the scopes this instance offers; empty means all of them.
+   */
+  scopes: string[];
+}
+
 export interface SignedActAsScopeSet {
   /**
-   * CBOR-encoded, instance-signed scope set document.
+   * CBOR-encoded LinkKeys SignedActAsScopeSet, signed by this instance's
+   * application keys. The grantee embeds it in its grant request.
    */
   scopeSetCbor: Uint8Array;
-  signature: Uint8Array;
-  keyId: string;
+  /**
+   * The scopes offered, for display.
+   */
+  scopes: string[];
+  expiresAt: Timestamp;
 }
 
 /**
- * SSH keys registered with vscstar.
+ * SSH keys registered with vcsstar.
  */
 export interface SshKeyInfo {
   keyId: string;
@@ -469,6 +485,18 @@ export interface ListRefsRequest {
   ctx: Ctx;
   repo: RepoRef;
   prefix?: string;
+}
+
+/**
+ * Result of `Repos/capture-history`. `objects` counts the objects that
+ * were missing from the segments; `segment` is the uploaded object key.
+ */
+export interface CaptureReport {
+  repo: RepoRef;
+  uploaded: boolean;
+  objects: number;
+  bytes: number;
+  segment?: string;
 }
 
 export interface ListRefsResponse {
@@ -949,7 +977,7 @@ export interface MirrorStatus {
   repo: RepoRef;
   githubRepo?: string;
   /**
-   * "authoritative_vscstar" | "import_drift" | "flag_drift"
+   * "authoritative_vcsstar" | "import_drift" | "flag_drift"
    */
   mode: string;
   paused: boolean;
@@ -1023,7 +1051,15 @@ export interface SetCredentialRequest {
   purpose: string;
   authMethod: string;
   host: string;
+  /**
+   * `env:<VAR>` reads an operator-provided environment variable; `stored`
+   * means `secret` is supplied here and sealed with the instance key.
+   */
   secretRef: string;
+  /**
+   * The secret value when secret_ref is `stored`. Never returned.
+   */
+  secret?: string;
   enabled?: boolean;
 }
 
@@ -1074,11 +1110,11 @@ export interface ImportRequest {
 export interface FedHello {
   ctx: Ctx;
   /**
-   * Hostname domain of the caller, e.g. "vscstar.todandlorna.com".
+   * Hostname domain of the caller, e.g. "vcsstar.todandlorna.com".
    */
   instance: string;
   /**
-   * LinkKeys account of the caller, e.g. "vscstar@todandlorna.com".
+   * LinkKeys account of the caller, e.g. "vcsstar@todandlorna.com".
    */
   instanceIdentity: string;
   instanceId: string;

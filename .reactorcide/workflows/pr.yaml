@@ -1,5 +1,5 @@
-id: vscstar-pr
-name: vscstar pull request checks
+id: vcsstar-pr
+name: vcsstar pull request checks
 on:
   events:
     - pull_request_opened
@@ -7,7 +7,9 @@ on:
   branches:
     - main
 jobs:
-  vscstar-gen-check:
+  vcsstar-gen-check:
     job_file: gen-check.yaml
-  vscstar-test:
+  vcsstar-test:
     job_file: test.yaml
+  vcsstar-ui:
+    job_file: ui.yaml

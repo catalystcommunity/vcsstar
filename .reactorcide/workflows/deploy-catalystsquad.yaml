@@ -1,12 +1,14 @@
-# Build the image and deploy vscstar.catalystsquad.com on every push to main
-# that changes server code, the contract, migrations, the chart, or values.
-id: vscstar-deploy-catalystsquad
-name: vscstar deploy catalystsquad
+# Build the image and deploy vcsstar.catalystsquad.com on every push to the
+# `production` branch that changes server code, the contract, migrations, the
+# chart, or values. Production is gated on that branch until the open gaps in
+# plan/14-status.md are closed; fast-forward `production` to `main` to deploy.
+id: vcsstar-deploy-catalystsquad
+name: vcsstar deploy catalystsquad
 on:
   events:
     - push
   branches:
-    - main
+    - production
 paths:
   include:
     - "crates/**"
@@ -15,10 +17,11 @@ paths:
     - "helm/**"
     - "deploy/**"
     - "Containerfile"
+    - "ui/**"
     - "Cargo.toml"
     - "Cargo.lock"
     - ".reactorcide/jobs/deploy-catalystsquad.yaml"
     - ".reactorcide/jobs/scripts/deploy.sh"
 jobs:
-  vscstar-deploy-catalystsquad:
+  vcsstar-deploy-catalystsquad:
     job_file: deploy-catalystsquad.yaml

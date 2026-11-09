@@ -1,0 +1,28 @@
+[package]
+name = "vcsstar-workers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "corndogs-backed worker loops: dispatcher, sweeper, hook delivery, mirror"
+
+[dependencies]
+vcsstar-core.workspace = true
+vcsstar-db.workspace = true
+vcsstar-types.workspace = true
+diesel.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ciborium.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+hex.workspace = true
+ureq.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+
+[lints]
+workspace = true

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared setup for vscstar CI jobs. Non-root profiles cannot write to
+# Shared setup for vcsstar CI jobs. Non-root profiles cannot write to
 # toolchain paths owned by root, so every cache lives under $HOME.
 set -euo pipefail
 cd "${REACTORCIDE_CODE_DIR:-/job/src}"
