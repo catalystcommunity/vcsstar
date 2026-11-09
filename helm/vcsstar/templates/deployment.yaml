@@ -1,0 +1,133 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vcsstar.fullname" . }}
+  labels:
+    {{- include "vcsstar.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  {{- if or .Values.cache.persistentVolumeClaim .Values.cache.createClaim.enabled }}
+  # A ReadWriteOnce cache volume cannot be shared by two pods.
+  strategy:
+    type: Recreate
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "vcsstar.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "vcsstar.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      # Service links would inject VCSSTAR_* variables that look like settings.
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: vcsstard
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["serve", "--roles", {{ .Values.roles | quote }}]
+          ports:
+            - name: http
+              containerPort: {{ .Values.server.httpPort }}
+            - name: rpc
+              containerPort: {{ .Values.server.rpcPort }}
+            {{- if .Values.ssh.enabled }}
+            - name: ssh
+              containerPort: {{ .Values.ssh.port }}
+            {{- end }}
+          volumeMounts:
+            - name: repos
+              mountPath: /var/lib/vcsstar
+            {{- if and .Values.ssh.enabled .Values.ssh.hostKeySecret }}
+            - name: ssh-host-key
+              mountPath: /var/lib/vcsstar/ssh
+              readOnly: true
+            {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "vcsstar.fullname" . }}
+            {{- with .Values.linkkeys.existingSecret }}
+            - secretRef:
+                name: {{ . }}
+                optional: true
+            {{- end }}
+            {{- with .Values.objectStore.existingSecret }}
+            - secretRef:
+                name: {{ . }}
+                optional: true
+            {{- end }}
+            {{- with .Values.credentialKeySecret }}
+            - secretRef:
+                name: {{ . }}
+                optional: true
+            {{- end }}
+          env:
+            {{- if .Values.postgresql.existingUrlSecret }}
+            - name: VCSSTAR__DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgresql.existingUrlSecret }}
+                  key: DATABASE_URL
+            {{- else if .Values.postgresql.enabled }}
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vcsstar.pgSecret" . }}
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vcsstar.pgSecret" . }}
+                  key: password
+            - name: VCSSTAR__DATABASE_URL
+              value: "postgresql://$(PGUSER):$(PGPASSWORD)@{{ include "vcsstar.fullname" . }}-postgres:5432/{{ .Values.postgresql.database }}?sslmode=require"
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 4
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        # Disposable cache: refs live in Postgres and history in the object
+        # store (phase 3b). Until then the cache holds the objects too, so
+        # size it for the repositories it serves.
+        - name: repos
+          {{- if .Values.cache.persistentVolumeClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.cache.persistentVolumeClaim }}
+          {{- else if .Values.cache.createClaim.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "vcsstar.fullname" . }}-cache
+          {{- else }}
+          emptyDir:
+            sizeLimit: {{ .Values.cache.sizeLimit }}
+          {{- end }}
+        {{- if and .Values.ssh.enabled .Values.ssh.hostKeySecret }}
+        - name: ssh-host-key
+          secret:
+            secretName: {{ .Values.ssh.hostKeySecret }}
+            defaultMode: 0400
+        {{- end }}

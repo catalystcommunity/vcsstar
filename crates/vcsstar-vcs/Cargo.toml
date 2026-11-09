@@ -1,0 +1,18 @@
+[package]
+name = "vcsstar-vcs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "VcsBackend trait (DVCS tier) and the git backend over system git"
+
+[dependencies]
+thiserror.workspace = true
+tracing.workspace = true
+tempfile.workspace = true
+hex.workspace = true
+
+[dev-dependencies]
+
+[lints]
+workspace = true

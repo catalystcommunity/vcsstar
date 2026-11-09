@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vcsstar.fullname" . }}
+  labels:
+    {{- include "vcsstar.labels" . | nindent 4 }}
+data:
+  VCSSTAR__LISTEN_HTTP: "0.0.0.0:{{ .Values.server.httpPort }}"
+  VCSSTAR__LISTEN_RPC: "0.0.0.0:{{ .Values.server.rpcPort }}"
+  VCSSTAR__PUBLIC_URL: {{ .Values.server.publicUrl | quote }}
+  VCSSTAR__INSTANCE_DOMAIN: {{ .Values.server.instanceDomain | quote }}
+  VCSSTAR__INSTANCE_IDENTITY: {{ .Values.server.instanceIdentity | quote }}
+  VCSSTAR__INSTANCE_ADMINS: {{ .Values.server.instanceAdmins | quote }}
+  VCSSTAR__OPEN_ORG_CREATION: {{ .Values.server.openOrgCreation | quote }}
+  RUST_LOG: {{ .Values.server.logFilter | quote }}
+  VCSSTAR__REPO_CACHE_DIR: "/var/lib/vcsstar/repos"
+  VCSSTAR__HOOK_SOCKET: "/var/lib/vcsstar/hook.sock"
+  {{- if .Values.ssh.enabled }}
+  VCSSTAR__LISTEN_SSH: "0.0.0.0:{{ .Values.ssh.port }}"
+  VCSSTAR__SSH_HOST_KEY_PATH: "/var/lib/vcsstar/ssh/ssh_host_ed25519_key"
+  {{- with .Values.ssh.publicHost }}
+  VCSSTAR__SSH_PUBLIC_HOST: {{ . | quote }}
+  {{- end }}
+  {{- end }}
+  {{- with .Values.linkkeys.rpAddr }}
+  VCSSTAR__LINKKEYS_RP_ADDR: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.linkkeys.rpFingerprints }}
+  VCSSTAR__LINKKEYS_RP_FINGERPRINTS: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.linkkeys.rpDomain }}
+  VCSSTAR__LINKKEYS_RP_DOMAIN: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.corndogs.addr }}
+  VCSSTAR__CORNDOGS_ADDR: {{ . | quote }}
+  VCSSTAR__CORNDOGS_TLS: {{ $.Values.corndogs.tls | quote }}
+  {{- end }}
+  {{- with .Values.objectStore.endpoint }}
+  VCSSTAR__OBJECT_STORE_ENDPOINT: {{ . | quote }}
+  VCSSTAR__OBJECT_STORE_BUCKET: {{ $.Values.objectStore.bucket | quote }}
+  VCSSTAR__OBJECT_STORE_REGION: {{ $.Values.objectStore.region | quote }}
+  {{- end }}

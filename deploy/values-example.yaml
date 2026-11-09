@@ -1,0 +1,57 @@
+# Example instance overlay. Real overlays describe a network and never live in
+# this repository: keep them outside the tree (for example
+# ~/.config/vcsstar/values-<instance>.yaml) and hand the file to the deploy
+# job through the DEPLOY_VALUES secret (see .reactorcide/jobs/deploy.yaml).
+# Replace every example.com value.
+roles: "api,git-ssh,dispatcher,sweeper,hook-worker,mirror-worker,ingest-worker"
+
+server:
+  publicUrl: "https://vcsstar.example.com"
+  instanceDomain: "example.com"
+  instanceIdentity: "00000000-0000-0000-0000-000000000000@example.com"
+  # The service account that owns the LinkKeys app registration is the
+  # first instance admin; human admins are added through Orgs ops.
+  instanceAdmins: "00000000-0000-0000-0000-000000000000@example.com"
+
+linkkeys:
+  rpAddr: "linkkeys.linkkeys.svc.cluster.local:4987"
+  # From `dig TXT _linkkeys.example.com`.
+  rpFingerprints: "<sha256 hex of each RP certificate, comma separated>"
+  rpDomain: "example.com"
+  existingSecret: "vcsstar-linkkeys"
+
+credentialKeySecret: "vcsstar-credential-key"
+
+corndogs:
+  addr: "corndogs.vcsstar.svc.cluster.local:5080"
+  tls: "false"
+
+ssh:
+  enabled: true
+  port: 2222
+  publicHost: "vcsstar.example.com:2222"
+  hostKeySecret: "vcsstar-ssh-host-key"
+  tcpRoute:
+    enabled: true
+
+nodeSelector:
+  kubernetes.io/arch: amd64
+
+postgresql:
+  enabled: true
+  storage:
+    size: 10Gi
+
+objectStore:
+  endpoint: "http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333"
+  bucket: "vcsstar-catalystsquad"
+  existingSecret: "vcsstar-objectstore"
+
+gateway:
+  httpRoute:
+    enabled: true
+    parentGateway: contour
+    parentNamespace: projectcontour
+    parentSection: http
+    hostnames:
+      - vcsstar.example.com

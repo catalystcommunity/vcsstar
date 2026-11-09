@@ -1,0 +1,19 @@
+{{- if and .Values.cache.createClaim.enabled (not .Values.cache.persistentVolumeClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "vcsstar.fullname" . }}-cache
+  labels:
+    {{- include "vcsstar.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- with .Values.cache.createClaim.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.cache.createClaim.size }}
+{{- end }}

@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vcsstar.fullname" . }}
+  labels:
+    {{- include "vcsstar.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "vcsstar.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.server.httpPort }}
+      targetPort: http
+    - name: rpc
+      port: {{ .Values.server.rpcPort }}
+      targetPort: rpc
+    {{- if .Values.ssh.enabled }}
+    - name: ssh
+      port: {{ .Values.ssh.port }}
+      targetPort: ssh
+    {{- end }}

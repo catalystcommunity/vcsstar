@@ -1,12 +1,15 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/vscstar-types",
-    "crates/vscstar-transport",
-    "crates/vscstar-db",
-    "crates/vscstar-core",
-    "crates/vscstard",
-    "crates/vscstar-cli",
+    "crates/vcsstar-types",
+    "crates/vcsstar-transport",
+    "crates/vcsstar-db",
+    "crates/vcsstar-core",
+    "crates/vcsstar-vcs",
+    "crates/vcsstar-store",
+    "crates/vcsstar-workers",
+    "crates/vcsstard",
+    "crates/vcsstar-cli",
 ]
 
 [workspace.package]
@@ -17,10 +20,13 @@ repository = "https://github.com/catalystcommunity/vscstar"
 
 [workspace.dependencies]
 # Internal
-vscstar-types = { path = "crates/vscstar-types", version = "0.0.0" }
-vscstar-transport = { path = "crates/vscstar-transport", version = "0.1.0" }
-vscstar-db = { path = "crates/vscstar-db", version = "0.1.0" }
-vscstar-core = { path = "crates/vscstar-core", version = "0.1.0" }
+vcsstar-types = { path = "crates/vcsstar-types", version = "0.0.0" }
+vcsstar-transport = { path = "crates/vcsstar-transport", version = "0.1.0" }
+vcsstar-db = { path = "crates/vcsstar-db", version = "0.1.0" }
+vcsstar-core = { path = "crates/vcsstar-core", version = "0.1.0" }
+vcsstar-vcs = { path = "crates/vcsstar-vcs", version = "0.1.0" }
+vcsstar-store = { path = "crates/vcsstar-store", version = "0.1.0" }
+vcsstar-workers = { path = "crates/vcsstar-workers", version = "0.1.0" }
 
 # Ecosystem pins. csilgen-transport must match the csilgen release in
 # tools/csilgen.sh (CSILGEN_COMMIT). corndogs must be >= 0.8.0.
@@ -30,7 +36,8 @@ linkkeys-rpc-client = { git = "https://github.com/catalystcommunity/linkkeys", r
 corndogs = { git = "https://github.com/catalystcommunity/corndogs", rev = "f1b6ec6086dd0341c09629791bfaa959397b3f9c", features = ["tls"] }
 
 # Server
-rocket = { version = "0.5", default-features = false, features = ["secrets"] }
+rocket = { version = "0.5", default-features = false }
+rocket_ws = "0.1"
 diesel = { version = "2.2", features = ["postgres", "r2d2", "uuid", "chrono"] }
 diesel_migrations = "2.2"
 r2d2 = "0.8"
@@ -58,6 +65,11 @@ crossbeam-channel = "0.5"
 tempfile = "3"
 hickory-resolver = "0.26"
 tokio = { version = "1", features = ["rt", "net", "time"] }
+russh = "0.65"
+ssh-key = { version = "0.6", features = ["ed25519", "std"] }
+flate2 = "1"
+parking_lot = "0.12"
+rust-s3 = { version = "0.38", default-features = false, features = ["sync-rustls-tls", "fail-on-err"] }
 
 [workspace.lints.rust]
 unsafe_code = "warn"

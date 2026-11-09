@@ -1,0 +1,27 @@
+[package]
+name = "vcsstar-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "RepoStore: refs in Postgres with compare-and-swap, history in local cache dirs (object-store segments in phase 3b)"
+
+[dependencies]
+vcsstar-vcs.workspace = true
+vcsstar-db.workspace = true
+diesel.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+hex.workspace = true
+rust-s3.workspace = true
+sha2.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

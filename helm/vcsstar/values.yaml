@@ -1,0 +1,119 @@
+# Default values for vcsstar. Instance values live in deploy/values-*.yaml.
+image:
+  repository: containers.catalystsquad.com/public/catalystcommunity/vcsstar
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets:
+  - name: regcred
+
+replicaCount: 1
+# Comma-separated roles for this deployment: api, git-ssh, dispatcher, ...
+roles: "api,git-ssh"
+
+server:
+  # Public origin of this instance.
+  publicUrl: "https://vcsstar.example.com"
+  instanceDomain: "example.com"
+  # LinkKeys account of this instance.
+  instanceIdentity: "vcsstar@example.com"
+  httpPort: 8080
+  rpcPort: 4988
+  # Comma-separated `user_id@domain` identities with instance admin rights.
+  instanceAdmins: ""
+  openOrgCreation: "false"
+  logFilter: "info"
+
+linkkeys:
+  # In-cluster TCP address of the domain linkkeys server (the `Rp` ops are TCP only).
+  rpAddr: ""
+  # Comma-separated raw-Ed25519-SPKI SHA-256 fingerprints from `_linkkeys.<domain>` TXT.
+  rpFingerprints: ""
+  rpDomain: ""
+  # Secret that holds SECRET_VCSSTAR__LINKKEYS_API_KEY. The deploy job writes it.
+  existingSecret: ""
+
+postgresql:
+  # Zalando postgres-operator cluster named <fullname>-postgres.
+  enabled: true
+  teamId: vcsstar
+  database: vcsstar
+  user: vcsstar
+  instances: 1
+  version: "17"
+  storage:
+    size: 5Gi
+  # Used instead of the operator when set (secret key DATABASE_URL).
+  existingUrlSecret: ""
+
+corndogs:
+  # In-cluster corndogs address for the work-capture queues.
+  addr: ""
+  tls: "true"
+
+# Secret holding SECRET_VCSSTAR__CREDENTIAL_KEY (base64 of 32 random bytes).
+# Seals mirror credentials stored through the API. Make it once per
+# instance and never rotate it without re-entering the credentials.
+credentialKeySecret: ""
+
+objectStore:
+  endpoint: ""
+  bucket: ""
+  region: "us-east-1"
+  # Secret with SECRET_VCSSTAR__OBJECT_STORE_ACCESS_KEY and
+  # SECRET_VCSSTAR__OBJECT_STORE_SECRET_KEY (envFrom, no prefix is added).
+  existingSecret: ""
+
+gateway:
+  httpRoute:
+    enabled: true
+    parentGateway: contour
+    parentNamespace: projectcontour
+    parentSection: http
+    hostnames: []
+
+service:
+  type: ClusterIP
+
+ssh:
+  enabled: true
+  # Container and Service port. 22 would collide with node sshd on a shared VIP.
+  port: 2222
+  # `host[:port]` advertised in clone URLs. Unset: no SSH URLs are shown.
+  publicHost: ""
+  # Secret with `ssh_host_ed25519_key` (and .pub). Unset: the pod makes an
+  # ephemeral host key at start, which breaks known_hosts on every restart.
+  hostKeySecret: ""
+  tcpRoute:
+    # TCPRoute on the shared Gateway; the gateway controller opens the port.
+    enabled: false
+    sectionName: ""
+
+cache:
+  # emptyDir size for the repository cache when no PVC is given.
+  sizeLimit: 10Gi
+  # Name of an existing PVC to mount instead of the emptyDir.
+  persistentVolumeClaim: ""
+  # Let the chart create a PVC (ReadWriteOnce) for the cache. The claim is
+  # kept on uninstall. With a PVC the Deployment uses the Recreate strategy.
+  # Use this when the instance has no object store, so history survives a
+  # pod restart; it still lives on one node only.
+  createClaim:
+    enabled: false
+    size: 20Gi
+    storageClassName: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 1Gi
+
+terminationGracePeriodSeconds: 45
+# Pin pods (and the Postgres cluster) to nodes with these labels, for example
+# `kubernetes.io/arch: amd64` on a mixed-arch cluster.
+nodeSelector: {}
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001

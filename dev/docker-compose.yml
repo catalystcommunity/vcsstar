@@ -1,19 +1,19 @@
-# Local development dependencies for vscstar.
+# Local development dependencies for vcsstar.
 # Start: docker compose -f dev/docker-compose.yml up -d
 # The services bind to localhost only.
 services:
   postgres:
     image: postgres:17
     environment:
-      POSTGRES_USER: vscstar
-      POSTGRES_PASSWORD: vscstar
-      POSTGRES_DB: vscstar
+      POSTGRES_USER: vcsstar
+      POSTGRES_PASSWORD: vcsstar
+      POSTGRES_DB: vcsstar
     ports:
       - "127.0.0.1:55433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vscstar -d vscstar"]
+      test: ["CMD-SHELL", "pg_isready -U vcsstar -d vcsstar"]
       interval: 2s
       timeout: 2s
       retries: 30
