@@ -1,0 +1,71 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/vscstar-types",
+    "crates/vscstar-transport",
+    "crates/vscstar-db",
+    "crates/vscstar-core",
+    "crates/vscstard",
+    "crates/vscstar-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/catalystcommunity/vscstar"
+
+[workspace.dependencies]
+# Internal
+vscstar-types = { path = "crates/vscstar-types", version = "0.0.0" }
+vscstar-transport = { path = "crates/vscstar-transport", version = "0.1.0" }
+vscstar-db = { path = "crates/vscstar-db", version = "0.1.0" }
+vscstar-core = { path = "crates/vscstar-core", version = "0.1.0" }
+
+# Ecosystem pins. csilgen-transport must match the csilgen release in
+# tools/csilgen.sh (CSILGEN_COMMIT). corndogs must be >= 0.8.0.
+csilgen-transport = { git = "https://github.com/catalystcommunity/csilgen", rev = "6fcc0981fba034d4f34e3a3da0f59368b3ecb193" }
+liblinkkeys = { git = "https://github.com/catalystcommunity/linkkeys", rev = "04a8e177a43212999616c94013f1831d7d69f137" }
+linkkeys-rpc-client = { git = "https://github.com/catalystcommunity/linkkeys", rev = "04a8e177a43212999616c94013f1831d7d69f137" }
+corndogs = { git = "https://github.com/catalystcommunity/corndogs", rev = "f1b6ec6086dd0341c09629791bfaa959397b3f9c", features = ["tls"] }
+
+# Server
+rocket = { version = "0.5", default-features = false, features = ["secrets"] }
+diesel = { version = "2.2", features = ["postgres", "r2d2", "uuid", "chrono"] }
+diesel_migrations = "2.2"
+r2d2 = "0.8"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls-pki-types = "1"
+rustls-pemfile = "2"
+ciborium = "0.2"
+ureq = { version = "2", default-features = false, features = ["tls"] }
+sha2 = "0.10"
+hmac = "0.12"
+uuid = { version = "1", features = ["v7", "v4"] }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+rand = "0.8"
+base64 = "0.22"
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+thiserror = "2"
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env", "string"] }
+libc = "0.2"
+crossbeam-channel = "0.5"
+tempfile = "3"
+hickory-resolver = "0.26"
+tokio = { version = "1", features = ["rt", "net", "time"] }
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

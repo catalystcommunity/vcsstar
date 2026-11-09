@@ -1,0 +1,81 @@
+# Default values for vscstar. Instance values live in deploy/values-*.yaml.
+image:
+  repository: containers.catalystsquad.com/public/catalystcommunity/vscstar
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets:
+  - name: regcred
+
+replicaCount: 1
+roles: "api"
+
+server:
+  # Public origin of this instance.
+  publicUrl: "https://vscstar.example.com"
+  instanceDomain: "example.com"
+  # LinkKeys account of this instance.
+  instanceIdentity: "vscstar@example.com"
+  httpPort: 8080
+  rpcPort: 4988
+  # Comma-separated `user_id@domain` identities with instance admin rights.
+  instanceAdmins: ""
+  openOrgCreation: "false"
+  logFilter: "info"
+
+linkkeys:
+  # In-cluster TCP address of the domain linkkeys server (the `Rp` ops are TCP only).
+  rpAddr: ""
+  # Comma-separated raw-Ed25519-SPKI SHA-256 fingerprints from `_linkkeys.<domain>` TXT.
+  rpFingerprints: ""
+  rpDomain: ""
+  # Secret that holds SECRET_VSCSTAR__LINKKEYS_API_KEY. The deploy job writes it.
+  existingSecret: ""
+
+postgresql:
+  # Zalando postgres-operator cluster named <fullname>-postgres.
+  enabled: true
+  teamId: vscstar
+  database: vscstar
+  user: vscstar
+  instances: 1
+  version: "17"
+  storage:
+    size: 5Gi
+  # Used instead of the operator when set (secret key DATABASE_URL).
+  existingUrlSecret: ""
+
+corndogs:
+  # In-cluster corndogs address for the work-capture queues (phase 2).
+  addr: ""
+  tls: "true"
+
+objectStore:
+  endpoint: ""
+  bucket: ""
+  region: "us-east-1"
+  # Secret with OBJECT_STORE_ACCESS_KEY and OBJECT_STORE_SECRET_KEY.
+  existingSecret: ""
+
+gateway:
+  httpRoute:
+    enabled: true
+    parentGateway: contour
+    parentNamespace: projectcontour
+    parentSection: http
+    hostnames: []
+
+service:
+  type: ClusterIP
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 1Gi
+
+terminationGracePeriodSeconds: 45
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001

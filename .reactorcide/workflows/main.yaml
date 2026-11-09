@@ -1,0 +1,12 @@
+id: vscstar-main
+name: vscstar main branch checks
+on:
+  events:
+    - push
+  branches:
+    - main
+jobs:
+  vscstar-gen-check:
+    job_file: gen-check.yaml
+  vscstar-test:
+    job_file: test.yaml

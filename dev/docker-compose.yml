@@ -1,0 +1,51 @@
+# Local development dependencies for vscstar.
+# Start: docker compose -f dev/docker-compose.yml up -d
+# The services bind to localhost only.
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: vscstar
+      POSTGRES_PASSWORD: vscstar
+      POSTGRES_DB: vscstar
+    ports:
+      - "127.0.0.1:55433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vscstar -d vscstar"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  corndogs:
+    image: containers.catalystsquad.com/public/catalystcommunity/corndogs:0.8.0
+    environment:
+      STORAGE_BACKEND: file
+      CORNDOGS_FILESTORE_DIR: /data
+      CORNDOGS_SUBMISSION_KEY_POLICY: required
+      CORNDOGS_TASK_GUARD_POLICY: required
+      CORNDOGS_RECEIPT_RETENTION: 1h
+      PROMETHEUS_ENABLED: "false"
+      LOGLEVEL: info
+    # The image runs as a non-root user; a named volume is root-owned.
+    # Dev task state is disposable, so a world-writable tmpfs is enough.
+    tmpfs:
+      - /data:mode=1777
+    ports:
+      - "127.0.0.1:55080:5080"
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:3.80
+    command: >-
+      server -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+      -master.volumeSizeLimitMB=64 -volume.max=8 -ip=seaweedfs
+    volumes:
+      - seaweed:/data
+      - ./seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
+    ports:
+      - "127.0.0.1:58333:8333"
+
+volumes:
+  pgdata:
+  seaweed:

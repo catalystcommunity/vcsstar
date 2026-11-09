@@ -1,0 +1,326 @@
+//! Server-rendered browser pages for login, the IDP callback, and device
+//! approval. The sign-in form is a native POST: the response is a 302 to
+//! the IDP, and a fetch would follow it cross-origin and burn the
+//! single-use login URL. These pages are deliberately plain; the SolidJS UI
+//! arrives in phase 5 and calls the same operations.
+
+#![allow(clippy::result_large_err)]
+
+use rocket::form::Form;
+use rocket::http::{Cookie, CookieJar, SameSite, Status};
+use rocket::response::content::RawHtml;
+use rocket::response::Redirect;
+use rocket::{get, post, routes, FromForm, Route, State};
+use vscstar_core::principal::{self, ReqCtx};
+use vscstar_core::services::login;
+use vscstar_core::App;
+use vscstar_transport::{Carrier, CredentialSource, Peer};
+
+pub const SESSION_COOKIE: &str = "vscstar_session";
+const ATTEMPT_COOKIE: &str = "vscstar_login_attempt";
+
+fn page(title: &str, body: &str) -> RawHtml<String> {
+    RawHtml(format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+<title>{title} · vscstar</title><style>body{{font:16px system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem;color:#222}}\
+input,button{{font:inherit;padding:.5rem .75rem;margin:.25rem 0}}input[type=text]{{width:100%;box-sizing:border-box}}\
+button{{cursor:pointer}}.err{{color:#a00}}.muted{{color:#666}}code{{background:#f3f3f3;padding:.1rem .3rem}}</style></head>\
+<body><h1>{title}</h1>{body}</body></html>"
+    ))
+}
+
+fn esc(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn anon_ctx() -> ReqCtx {
+    ReqCtx {
+        request_id: uuid::Uuid::now_v7().to_string(),
+        principal: None,
+        peer: Peer {
+            carrier: Carrier::Http,
+            ..Peer::default()
+        },
+    }
+}
+
+fn session_ctx(app: &App, cookies: &CookieJar<'_>) -> ReqCtx {
+    let peer = Peer {
+        credential: cookies.get(SESSION_COOKIE).map(|c| c.value().to_string()),
+        credential_source: CredentialSource::Cookie,
+        carrier: Carrier::Http,
+        ..Peer::default()
+    };
+    let principal = principal::resolve(app, &peer).ok().flatten();
+    ReqCtx {
+        request_id: uuid::Uuid::now_v7().to_string(),
+        principal,
+        peer,
+    }
+}
+
+#[derive(FromForm)]
+struct LoginForm {
+    identity: String,
+    return_to: Option<String>,
+    device_code: Option<String>,
+}
+
+#[get("/auth/login?<return_to>&<device_code>&<error>")]
+fn login_form(
+    return_to: Option<String>,
+    device_code: Option<String>,
+    error: Option<String>,
+) -> RawHtml<String> {
+    let err = error
+        .map(|e| format!("<p class=\"err\">{}</p>", esc(&e)))
+        .unwrap_or_default();
+    let device = device_code
+        .as_deref()
+        .map(|c| format!("<p>Approving CLI login code <code>{}</code> after sign-in.</p><input type=\"hidden\" name=\"device_code\" value=\"{}\">", esc(c), esc(c)))
+        .unwrap_or_default();
+    let rt = return_to
+        .as_deref()
+        .map(|r| {
+            format!(
+                "<input type=\"hidden\" name=\"return_to\" value=\"{}\">",
+                esc(r)
+            )
+        })
+        .unwrap_or_default();
+    page(
+        "Sign in",
+        &format!(
+            "{err}<form method=\"post\" action=\"/auth/login\">{device}{rt}\
+<label for=\"identity\">Your LinkKeys identity</label>\
+<input type=\"text\" id=\"identity\" name=\"identity\" placeholder=\"you@example.com\" autocomplete=\"username\" autofocus required>\
+<button type=\"submit\">Continue</button></form>\
+<p class=\"muted\">vscstar has no accounts of its own. Sign in with the LinkKeys identity of any domain.</p>"
+        ),
+    )
+}
+
+#[post("/auth/login", data = "<form>")]
+fn login_submit(
+    app: &State<App>,
+    cookies: &CookieJar<'_>,
+    form: Form<LoginForm>,
+) -> Result<Redirect, Redirect> {
+    let req = vscstar_types::BeginLoginRequest {
+        ctx: vscstar_types::Ctx {
+            request_id: uuid::Uuid::now_v7().to_string(),
+            deadline_ms: None,
+            contract_version: None,
+            contract_digest: None,
+        },
+        identity_input: form.identity.clone(),
+        return_to: form.return_to.clone().filter(|s| !s.is_empty()),
+        device_user_code: form.device_code.clone().filter(|s| !s.is_empty()),
+    };
+    match login::begin(app, &anon_ctx(), req) {
+        Ok(resp) => {
+            let secure = app.config.public_url.starts_with("https://");
+            cookies.add(
+                Cookie::build((ATTEMPT_COOKIE, resp.attempt_token))
+                    .http_only(true)
+                    .secure(secure)
+                    .same_site(SameSite::Lax)
+                    .path("/auth")
+                    .max_age(rocket::time::Duration::minutes(login::LOGIN_TTL_MINUTES))
+                    .build(),
+            );
+            Ok(Redirect::to(resp.redirect_url))
+        }
+        Err(e) => Err(Redirect::to(format!(
+            "/auth/login?error={}",
+            vscstar_core::linkkeys::urlencode(&e.message)
+        ))),
+    }
+}
+
+#[get("/auth/callback?<encrypted_token>&<error>")]
+fn callback(
+    app: &State<App>,
+    cookies: &CookieJar<'_>,
+    encrypted_token: Option<String>,
+    error: Option<String>,
+) -> Result<Redirect, Redirect> {
+    let attempt = cookies.get(ATTEMPT_COOKIE).map(|c| c.value().to_string());
+    cookies.remove(Cookie::build(ATTEMPT_COOKIE).path("/auth"));
+    if let Some(e) = error {
+        return Err(Redirect::to(format!(
+            "/auth/login?error={}",
+            vscstar_core::linkkeys::urlencode(&format!("identity provider: {e}"))
+        )));
+    }
+    let (Some(attempt), Some(token)) = (attempt, encrypted_token) else {
+        return Err(Redirect::to(
+            "/auth/login?error=login%20attempt%20missing%20or%20expired",
+        ));
+    };
+    let req = vscstar_types::CompleteLoginRequest {
+        ctx: vscstar_types::Ctx {
+            request_id: uuid::Uuid::now_v7().to_string(),
+            deadline_ms: None,
+            contract_version: None,
+            contract_digest: None,
+        },
+        attempt_token: attempt,
+        encrypted_token: token,
+    };
+    match login::complete(app, &anon_ctx(), req) {
+        Ok(session) => {
+            let secure = app.config.public_url.starts_with("https://");
+            cookies.add(
+                Cookie::build((SESSION_COOKIE, session.session_token))
+                    .http_only(true)
+                    .secure(secure)
+                    .same_site(SameSite::Lax)
+                    .path("/")
+                    .max_age(rocket::time::Duration::hours(login::SESSION_SLIDING_HOURS))
+                    .build(),
+            );
+            let target = session
+                .return_to
+                .filter(|r| r.starts_with('/') && !r.starts_with("//"))
+                .unwrap_or_else(|| "/auth/me".to_string());
+            Ok(Redirect::to(target))
+        }
+        Err(e) => Err(Redirect::to(format!(
+            "/auth/login?error={}",
+            vscstar_core::linkkeys::urlencode(&e.message)
+        ))),
+    }
+}
+
+#[get("/auth/me")]
+fn me(app: &State<App>, cookies: &CookieJar<'_>) -> Result<RawHtml<String>, Redirect> {
+    let ctx = session_ctx(app, cookies);
+    let Some(p) = ctx.principal.as_ref() else {
+        return Err(Redirect::to("/auth/login?return_to=/auth/me"));
+    };
+    Ok(page(
+        "Signed in",
+        &format!(
+            "<p>You are <strong>{}@{}</strong> <span class=\"muted\">({})</span>.</p>\
+<p><a href=\"/auth/device\">Approve a CLI login</a> · <form method=\"post\" action=\"/auth/logout\" style=\"display:inline\"><button type=\"submit\">Sign out</button></form></p>",
+            esc(&p.identity.handle),
+            esc(&p.identity.lk_domain),
+            esc(&p.key())
+        ),
+    ))
+}
+
+#[post("/auth/logout")]
+fn logout(app: &State<App>, cookies: &CookieJar<'_>) -> Redirect {
+    let ctx = session_ctx(app, cookies);
+    if ctx.principal.is_some() {
+        let _ = vscstar_core::services::auth::logout(
+            app,
+            &ctx,
+            vscstar_types::Empty { ctx: empty_ctx() },
+        );
+    }
+    cookies.remove(Cookie::build(SESSION_COOKIE).path("/"));
+    Redirect::to("/auth/login")
+}
+
+fn empty_ctx() -> vscstar_types::Ctx {
+    vscstar_types::Ctx {
+        request_id: uuid::Uuid::now_v7().to_string(),
+        deadline_ms: None,
+        contract_version: None,
+        contract_digest: None,
+    }
+}
+
+#[derive(FromForm)]
+struct DeviceForm {
+    code: String,
+    decision: String,
+}
+
+#[get("/auth/device?<code>&<msg>")]
+fn device_form(
+    app: &State<App>,
+    cookies: &CookieJar<'_>,
+    code: Option<String>,
+    msg: Option<String>,
+) -> Result<RawHtml<String>, Redirect> {
+    let ctx = session_ctx(app, cookies);
+    if ctx.principal.is_none() {
+        let mut target = "/auth/login?return_to=/auth/device".to_string();
+        if let Some(c) = code.as_deref() {
+            target = format!(
+                "/auth/login?device_code={}",
+                vscstar_core::linkkeys::urlencode(c)
+            );
+        }
+        return Err(Redirect::to(target));
+    }
+    let note = msg
+        .map(|m| format!("<p>{}</p>", esc(&m)))
+        .unwrap_or_default();
+    Ok(page(
+        "Approve CLI login",
+        &format!(
+            "{note}<form method=\"post\" action=\"/auth/device\">\
+<label for=\"code\">Code shown by the CLI</label>\
+<input type=\"text\" id=\"code\" name=\"code\" value=\"{}\" autocomplete=\"off\" required>\
+<button type=\"submit\" name=\"decision\" value=\"approve\">Approve</button> \
+<button type=\"submit\" name=\"decision\" value=\"deny\">Deny</button></form>\
+<p class=\"muted\">Only approve a code you requested yourself a moment ago.</p>",
+            esc(code.as_deref().unwrap_or(""))
+        ),
+    ))
+}
+
+#[post("/auth/device", data = "<form>")]
+fn device_submit(app: &State<App>, cookies: &CookieJar<'_>, form: Form<DeviceForm>) -> Redirect {
+    let ctx = session_ctx(app, cookies);
+    let req = vscstar_types::DeviceApproveRequest {
+        ctx: empty_ctx(),
+        user_code: form.code.clone(),
+        approve: form.decision == "approve",
+    };
+    match login::approve_device(app, &ctx, req) {
+        Ok(_) => Redirect::to(format!(
+            "/auth/device?msg={}",
+            if form.decision == "approve" {
+                "Approved.%20You%20can%20return%20to%20the%20terminal."
+            } else {
+                "Denied."
+            }
+        )),
+        Err(e) => Redirect::to(format!(
+            "/auth/device?msg={}",
+            vscstar_core::linkkeys::urlencode(&e.message)
+        )),
+    }
+}
+
+#[get("/")]
+fn index() -> Redirect {
+    Redirect::to("/auth/me")
+}
+
+pub fn routes() -> Vec<Route> {
+    routes![
+        index,
+        login_form,
+        login_submit,
+        callback,
+        me,
+        logout,
+        device_form,
+        device_submit
+    ]
+}
+
+#[allow(dead_code)]
+fn _status_unused() -> Status {
+    Status::Ok
+}

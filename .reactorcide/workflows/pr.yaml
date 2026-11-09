@@ -1,0 +1,13 @@
+id: vscstar-pr
+name: vscstar pull request checks
+on:
+  events:
+    - pull_request_opened
+    - pull_request_updated
+  branches:
+    - main
+jobs:
+  vscstar-gen-check:
+    job_file: gen-check.yaml
+  vscstar-test:
+    job_file: test.yaml

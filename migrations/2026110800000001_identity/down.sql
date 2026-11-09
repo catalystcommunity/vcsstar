@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS device_logins;
+DROP TABLE IF EXISTS pending_logins;
+DROP TABLE IF EXISTS api_tokens;
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS act_as_nonces;
+DROP TABLE IF EXISTS act_as_grants;
+DROP TABLE IF EXISTS app_key_cache;
+DROP TABLE IF EXISTS ssh_keys;
+DROP TABLE IF EXISTS identity_claims;
+DROP TABLE IF EXISTS identities;

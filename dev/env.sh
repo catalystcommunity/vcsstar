@@ -1,0 +1,13 @@
+# Source this file for local development: . dev/env.sh
+export DATABASE_URL="postgres://vscstar:vscstar@127.0.0.1:55433/vscstar"
+export VSCSTAR__DATABASE_URL="$DATABASE_URL"
+export VSCSTAR__CORNDOGS_ADDR="127.0.0.1:55080"
+export VSCSTAR__CORNDOGS_TLS="false"
+export VSCSTAR__OBJECT_STORE_ENDPOINT="http://127.0.0.1:58333"
+export VSCSTAR__OBJECT_STORE_BUCKET="vscstar-dev"
+export VSCSTAR__OBJECT_STORE_ACCESS_KEY="vscstar-dev"
+export VSCSTAR__OBJECT_STORE_SECRET_KEY="vscstar-dev-secret"
+export VSCSTAR__LISTEN_HTTP="127.0.0.1:8080"
+export VSCSTAR__LISTEN_RPC="127.0.0.1:4988"
+export VSCSTAR__PUBLIC_URL="http://127.0.0.1:8080"
+export VSCSTAR__INSTANCE_DOMAIN="catalystsquad.com"

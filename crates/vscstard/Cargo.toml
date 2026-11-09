@@ -1,0 +1,26 @@
+[package]
+name = "vscstard"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "vscstard"
+path = "src/main.rs"
+
+[dependencies]
+vscstar-types.workspace = true
+vscstar-transport.workspace = true
+vscstar-db.workspace = true
+vscstar-core.workspace = true
+rocket = { workspace = true }
+diesel.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+libc.workspace = true
+anyhow.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

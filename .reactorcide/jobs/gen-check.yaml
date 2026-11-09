@@ -1,0 +1,8 @@
+name: vscstar-gen-check
+job:
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:latest
+  command: "bash ${REACTORCIDE_CODE_DIR:-/job/src}/.reactorcide/jobs/scripts/gen-check.sh"
+  working_dir: /job
+  timeout: 900
+run_local:
+  user: host

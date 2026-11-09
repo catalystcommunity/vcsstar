@@ -1,0 +1,20 @@
+# Design plans stay local, never committed
+plan/
+
+# Rust
+target/
+**/*.rs.bk
+
+# csilgen generator modules are installed per repository (never committed)
+.generators
+.deps/
+
+# Web UI
+ui/node_modules/
+ui/dist/
+
+# Local environment and dev overrides
+.env
+.env.*
+dev/*.local
+dev/corndogs.env

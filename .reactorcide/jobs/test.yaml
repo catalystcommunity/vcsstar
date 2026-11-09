@@ -1,0 +1,14 @@
+name: vscstar-test
+job:
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:latest
+  command: "bash ${REACTORCIDE_CODE_DIR:-/job/src}/.reactorcide/jobs/scripts/test.sh"
+  working_dir: /job
+  timeout: 3600
+  resources:
+    cpu:
+      request: "2"
+      limit: "4"
+    memory:
+      limit: "8Gi"
+run_local:
+  user: host

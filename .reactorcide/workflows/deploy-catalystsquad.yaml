@@ -1,0 +1,24 @@
+# Build the image and deploy vscstar.catalystsquad.com on every push to main
+# that changes server code, the contract, migrations, the chart, or values.
+id: vscstar-deploy-catalystsquad
+name: vscstar deploy catalystsquad
+on:
+  events:
+    - push
+  branches:
+    - main
+paths:
+  include:
+    - "crates/**"
+    - "csil/**"
+    - "migrations/**"
+    - "helm/**"
+    - "deploy/**"
+    - "Containerfile"
+    - "Cargo.toml"
+    - "Cargo.lock"
+    - ".reactorcide/jobs/deploy-catalystsquad.yaml"
+    - ".reactorcide/jobs/scripts/deploy.sh"
+jobs:
+  vscstar-deploy-catalystsquad:
+    job_file: deploy-catalystsquad.yaml

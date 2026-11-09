@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS branch_protections;
+DROP TABLE IF EXISTS repo_grants;
+DROP TABLE IF EXISTS repo_segments;
+DROP TABLE IF EXISTS repo_refs;
+DROP TABLE IF EXISTS repos;
+DROP TABLE IF EXISTS team_members;
+DROP TABLE IF EXISTS teams;
+DROP TABLE IF EXISTS org_members;
+DROP TABLE IF EXISTS orgs;

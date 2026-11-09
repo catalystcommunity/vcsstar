@@ -1,0 +1,26 @@
+name: vscstar-deploy-catalystsquad
+description: "Build the vscstar image with buildkit and deploy it with Helm"
+job:
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:latest
+  command: "bash ${REACTORCIDE_CODE_DIR:-/job/src}/.reactorcide/jobs/scripts/deploy.sh"
+  timeout: 3600
+  capabilities:
+    - builder
+  disable_run_local: true
+  resources:
+    cpu:
+      request: "2"
+      limit: "4"
+    memory:
+      limit: "8Gi"
+environment:
+  REGISTRY: "containers.catalystsquad.com"
+  IMAGE_PATH: "public/catalystcommunity/vscstar"
+  CLI_IMAGE_PATH: "public/catalystcommunity/vscstar-cli"
+  REGISTRY_USER: "${secret:catalystcommunity/registry:user}"
+  REGISTRY_PASSWORD: "${secret:catalystcommunity/registry:password}"
+  KUBECONFIG_CONTENT: "${secret:catalystcommunity/k8s:kubeconfig}"
+  LINKKEYS_API_KEY: "${secret:catalystcommunity/ci:vscstart-api-key}"
+  K8S_NAMESPACE: "vscstar"
+  HELM_RELEASE: "vscstar"
+  VALUES_FILE: "deploy/values-catalystsquad.yaml"

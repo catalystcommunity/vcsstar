@@ -1,0 +1,11 @@
+{
+  "identities": [
+    {
+      "name": "vscstar-dev",
+      "credentials": [
+        { "accessKey": "vscstar-dev", "secretKey": "vscstar-dev-secret" }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

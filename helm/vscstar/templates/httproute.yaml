@@ -1,0 +1,27 @@
+{{- if .Values.gateway.httpRoute.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "vscstar.fullname" . }}
+  labels:
+    {{- include "vscstar.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ .Values.gateway.httpRoute.parentGateway }}
+      {{- with .Values.gateway.httpRoute.parentNamespace }}
+      namespace: {{ . }}
+      {{- end }}
+      {{- with .Values.gateway.httpRoute.parentSection }}
+      sectionName: {{ . }}
+      {{- end }}
+  {{- with .Values.gateway.httpRoute.hostnames }}
+  hostnames:
+    {{- range . }}
+    - {{ . | quote }}
+    {{- end }}
+  {{- end }}
+  rules:
+    - backendRefs:
+        - name: {{ include "vscstar.fullname" . }}
+          port: {{ .Values.server.httpPort }}
+{{- end }}

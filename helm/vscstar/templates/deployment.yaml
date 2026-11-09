@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vscstar.fullname" . }}
+  labels:
+    {{- include "vscstar.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "vscstar.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "vscstar.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      # Service links would inject VSCSTAR_* variables that look like settings.
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: vscstard
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["serve", "--roles", {{ .Values.roles | quote }}]
+          ports:
+            - name: http
+              containerPort: {{ .Values.server.httpPort }}
+            - name: rpc
+              containerPort: {{ .Values.server.rpcPort }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "vscstar.fullname" . }}
+            {{- with .Values.linkkeys.existingSecret }}
+            - secretRef:
+                name: {{ . }}
+                optional: true
+            {{- end }}
+            {{- with .Values.objectStore.existingSecret }}
+            - secretRef:
+                name: {{ . }}
+                optional: true
+            {{- end }}
+          env:
+            {{- if .Values.postgresql.existingUrlSecret }}
+            - name: VSCSTAR__DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgresql.existingUrlSecret }}
+                  key: DATABASE_URL
+            {{- else if .Values.postgresql.enabled }}
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vscstar.pgSecret" . }}
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vscstar.pgSecret" . }}
+                  key: password
+            - name: VSCSTAR__DATABASE_URL
+              value: "postgresql://$(PGUSER):$(PGPASSWORD)@{{ include "vscstar.fullname" . }}-postgres:5432/{{ .Values.postgresql.database }}?sslmode=require"
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 4
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

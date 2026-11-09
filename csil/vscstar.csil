@@ -1,0 +1,950 @@
+;;; vscstar: VCS collaboration platform contract.
+;;; Every capability of the server is an operation in this file. The Rust
+;;; server, the Rust and TypeScript clients, and the `vscstar` CLI are
+;;; generated from it. Wire-ids are part of the contract: append, never
+;;; renumber.
+options {
+    package: "vscstar",
+    version: "v1alpha1",
+    emit_packages: ["rust", "typescript"],
+    package_name: "github.com/catalystcommunity/vscstar/crates/vscstar-types",
+    package_version: "0.0.0",
+    emit_readme: false
+}
+
+;; ---------------------------------------------------------------------
+;; Scalars and shared records
+;; ---------------------------------------------------------------------
+
+;;; Unix time in milliseconds.
+Timestamp = int
+
+;;; Request context. The first field of every request record.
+Ctx = {
+    ;;; Caller-chosen id for logs, idempotency, and audit. UUID v7 by default.
+    request_id: text,
+    ? deadline_ms: uint,
+    ;;; Contract version and descriptor digest of the caller's generated code.
+    ? contract_version: text,
+    ? contract_digest: bytes
+}
+
+;;; Every error arm. Codes are registered in crates/vscstar-core/src/errors.rs.
+;;; Exactly two fields: the csilgen Rust channel router constructs
+;;; `ServiceError { code, message }` itself (csilgen request filed).
+ServiceError = { code: uint, message: text }
+
+Ok = { ok: bool }
+Empty = { ctx: Ctx }
+
+;;; A LinkKeys identity. `user_id@domain` is the key; `handle` is display data
+;;; and is never unique.
+Identity = {
+    user_id: text,
+    domain: text,
+    ? handle: text,
+    ? display_name: text
+}
+
+;;; Reference to a repository. `instance` absent means this instance.
+RepoRef = { ? instance: text, org: text, name: text }
+OrgRef = { org: text }
+;;; Reference to a repo or an org: repo absent means the org itself.
+OrgRepoRef = { org: text, ? repo: text }
+
+Page = { ? cursor: text, ? limit: uint }
+
+;; ---------------------------------------------------------------------
+;; Meta
+;; ---------------------------------------------------------------------
+
+ServerInfo = {
+    version: text,
+    contract_version: text,
+    contract_digest: bytes,
+    features: [* text],
+    instance_domain: text,
+    public_url: text,
+    ;;; LinkKeys account of this instance, e.g. "vscstar@catalystsquad.com".
+    instance_identity: text
+}
+
+;;; Server metadata. Unauthenticated.
+@wire-id(10)
+service Meta {
+    @wire-id(0)
+    server-info: Empty -> ServerInfo / ServiceError
+}
+
+;; ---------------------------------------------------------------------
+;; Auth
+;; ---------------------------------------------------------------------
+
+;;; Browser login, step 1. The server answers with the IDP redirect URL.
+BeginLoginRequest = {
+    ctx: Ctx,
+    ;;; "handle@domain" or "user_id@domain" as the user typed it.
+    identity_input: text,
+    ? return_to: text,
+    ;;; Present when a CLI device login is being approved.
+    ? device_user_code: text
+}
+BeginLoginResponse = {
+    redirect_url: text,
+    ;;; Opaque attempt token; the browser carries it in an HttpOnly cookie.
+    attempt_token: text,
+    expires_at: Timestamp
+}
+
+;;; Browser login, step 2: the IDP callback.
+CompleteLoginRequest = {
+    ctx: Ctx,
+    attempt_token: text,
+    encrypted_token: text
+}
+Session = {
+    session_token: text,
+    identity: Identity,
+    expires_at: Timestamp,
+    ? return_to: text
+}
+
+CreateTokenRequest = {
+    ctx: Ctx,
+    name: text,
+    scopes: [* text],
+    ? client_label: text,
+    ? expires_at: Timestamp
+}
+ApiToken = {
+    id: text,
+    name: text,
+    scopes: [* text],
+    ? client_label: text,
+    created_at: Timestamp,
+    ? expires_at: Timestamp,
+    ;;; Present only in the response that creates the token.
+    ? secret: text
+}
+RevokeTokenRequest = { ctx: Ctx, token_id: text }
+ListTokensResponse = { tokens: [* ApiToken] }
+
+WhoAmI = {
+    identity: Identity,
+    scopes: [* text],
+    ;;; "session" | "api_token" | "act_as"
+    credential_kind: text,
+    ? acting_via: text,
+    ? expires_at: Timestamp
+}
+
+;;; CLI device flow.
+BeginDeviceRequest = { ctx: Ctx, client_label: text, scopes: [* text] }
+DeviceCode = {
+    device_code: text,
+    user_code: text,
+    verification_url: text,
+    expires_at: Timestamp,
+    poll_interval_ms: uint
+}
+DevicePollRequest = { ctx: Ctx, device_code: text }
+;;; `pending` is true until the user approves; then `token` is present once.
+DevicePollResponse = { pending: bool, ? token: ApiToken }
+DeviceApproveRequest = { ctx: Ctx, user_code: text, approve: bool }
+
+;;; LinkKeys act-as grants: vscstar is the audience.
+ActAsExchangeRequest = {
+    ctx: Ctx,
+    ;;; CBOR-encoded LinkKeys ActAsCredential as presented by the grantee.
+    credential_cbor: bytes,
+    requested_scopes: [* text]
+}
+ScopedBearer = {
+    bearer: text,
+    scopes: [* text],
+    expires_at: Timestamp,
+    subject: Identity,
+    acting_via: text
+}
+SignedActAsScopeSet = {
+    ;;; CBOR-encoded, instance-signed scope set document.
+    scope_set_cbor: bytes,
+    signature: bytes,
+    key_id: text
+}
+
+;;; SSH keys registered with vscstar.
+SshKeyInfo = {
+    key_id: text,
+    ;;; OpenSSH public key line.
+    public_key: text,
+    ;;; "auth" | "signing"
+    usage: text,
+    ;;; "attested" | "unattested" | "revoked"
+    status: text,
+    ? application_id: text,
+    ? instance_id: text,
+    ? attested_until: Timestamp,
+    created_at: Timestamp
+}
+RegisterKeyRequest = {
+    ctx: Ctx,
+    public_key: text,
+    usage: text,
+    ;;; LinkKeys application key coordinates; absent means an unattested upload.
+    ? application_id: text,
+    ? instance_id: text,
+    ? lk_key_id: text
+}
+KeyRef = { ctx: Ctx, key_id: text }
+ListKeysResponse = { keys: [* SshKeyInfo] }
+
+@wire-id(1)
+service Auth {
+    @wire-id(0)
+    begin-login: BeginLoginRequest -> BeginLoginResponse / ServiceError,
+    @wire-id(1)
+    complete-login: CompleteLoginRequest -> Session / ServiceError,
+    @wire-id(2)
+    create-token: CreateTokenRequest -> ApiToken / ServiceError,
+    @wire-id(3)
+    revoke-token: RevokeTokenRequest -> Ok / ServiceError,
+    @wire-id(4)
+    whoami: Empty -> WhoAmI / ServiceError,
+    @wire-id(5)
+    begin-device-login: BeginDeviceRequest -> DeviceCode / ServiceError,
+    @wire-id(6)
+    poll-device-login: DevicePollRequest -> DevicePollResponse / ServiceError,
+    @wire-id(7)
+    exchange-act-as-credential: ActAsExchangeRequest -> ScopedBearer / ServiceError,
+    @wire-id(8)
+    scope-set: Empty -> SignedActAsScopeSet / ServiceError,
+    ;;; Browser side of the device flow. Needs a web session.
+    @wire-id(9)
+    approve-device-login: DeviceApproveRequest -> Ok / ServiceError,
+    @wire-id(10)
+    register-key: RegisterKeyRequest -> SshKeyInfo / ServiceError,
+    @wire-id(11)
+    list-keys: Empty -> ListKeysResponse / ServiceError,
+    @wire-id(12)
+    revoke-key: KeyRef -> Ok / ServiceError,
+    @wire-id(13)
+    list-tokens: Empty -> ListTokensResponse / ServiceError,
+    @wire-id(14)
+    logout: Empty -> Ok / ServiceError
+}
+
+;; ---------------------------------------------------------------------
+;; Orgs
+;; ---------------------------------------------------------------------
+
+Org = {
+    name: text,
+    ? display_name: text,
+    ? github_owner: text,
+    created_at: Timestamp
+}
+CreateOrgRequest = { ctx: Ctx, name: text, ? display_name: text, ? github_owner: text }
+GetOrgRequest = { ctx: Ctx, org: text }
+ListOrgsRequest = { ctx: Ctx, ? page: Page }
+OrgPage = { orgs: [* Org], ? next_cursor: text }
+UpdateOrgRequest = { ctx: Ctx, org: text, ? display_name: text, ? github_owner: text }
+
+OrgMember = { identity: Identity, role: text }
+SetOrgMemberRequest = {
+    ctx: Ctx,
+    org: text,
+    ;;; "user_id@domain"
+    identity: text,
+    ;;; "owner" | "admin" | "member"
+    role: text
+}
+RemoveOrgMemberRequest = { ctx: Ctx, org: text, identity: text }
+ListOrgMembersRequest = { ctx: Ctx, org: text, ? page: Page }
+OrgMemberPage = { members: [* OrgMember], ? next_cursor: text }
+
+Team = { org: text, name: text, members: [* Identity] }
+CreateTeamRequest = { ctx: Ctx, org: text, name: text }
+TeamRef = { ctx: Ctx, org: text, team: text }
+SetTeamMemberRequest = { ctx: Ctx, org: text, team: text, identity: text, member: bool }
+ListTeamsResponse = { teams: [* Team] }
+
+@wire-id(2)
+service Orgs {
+    @wire-id(0)
+    create: CreateOrgRequest -> Org / ServiceError,
+    @wire-id(1)
+    get: GetOrgRequest -> Org / ServiceError,
+    @wire-id(2)
+    list: ListOrgsRequest -> OrgPage / ServiceError,
+    @wire-id(3)
+    update: UpdateOrgRequest -> Org / ServiceError,
+    @wire-id(4)
+    set-member: SetOrgMemberRequest -> OrgMember / ServiceError,
+    @wire-id(5)
+    remove-member: RemoveOrgMemberRequest -> Ok / ServiceError,
+    @wire-id(6)
+    list-members: ListOrgMembersRequest -> OrgMemberPage / ServiceError,
+    @wire-id(7)
+    create-team: CreateTeamRequest -> Team / ServiceError,
+    @wire-id(8)
+    delete-team: TeamRef -> Ok / ServiceError,
+    @wire-id(9)
+    set-team-member: SetTeamMemberRequest -> Team / ServiceError,
+    @wire-id(10)
+    list-teams: GetOrgRequest -> ListTeamsResponse / ServiceError
+}
+
+;; ---------------------------------------------------------------------
+;; Repos
+;; ---------------------------------------------------------------------
+
+Repo = {
+    org: text,
+    name: text,
+    ;;; "git" | "hg"
+    vcs_type: text,
+    ;;; "public" | "org" | "private"
+    visibility: text,
+    default_branch: text,
+    ? description: text,
+    ? fork_of: RepoRef,
+    mirror_enabled: bool,
+    archived: bool,
+    created_at: Timestamp,
+    ;;; Clone URLs for this instance.
+    https_url: text,
+    ? ssh_url: text
+}
+CreateRepoRequest = {
+    ctx: Ctx,
+    org: text,
+    name: text,
+    ? vcs_type: text,
+    ? visibility: text,
+    ? default_branch: text,
+    ? description: text
+}
+GetRepoRequest = { ctx: Ctx, repo: RepoRef }
+ListReposRequest = { ctx: Ctx, ? org: text, ? page: Page }
+RepoPage = { repos: [* Repo], ? next_cursor: text }
+UpdateRepoRequest = {
+    ctx: Ctx,
+    repo: RepoRef,
+    ? description: text,
+    ? default_branch: text,
+    ? visibility: text,
+    ? archived: bool,
+    ? new_name: text
+}
+DeleteRepoRequest = { ctx: Ctx, repo: RepoRef, confirm_name: text }
+ForkRequest = { ctx: Ctx, source: RepoRef, org: text, ? name: text }
+
+;;; A named ref and its target revision id (hex for git).
+RefInfo = { name: text, target: text, ? peeled: text }
+ListRefsRequest = { ctx: Ctx, repo: RepoRef, ? prefix: text }
+ListRefsResponse = { refs: [* RefInfo], refs_version: uint }
+;;; Compare-and-swap ref update through the API (not the VCS wire).
+UpdateRefRequest = {
+    ctx: Ctx,
+    repo: RepoRef,
+    name: text,
+    ;;; Expected current target; absent means the ref must not exist.
+    ? expected: text,
+    ;;; New target; absent means delete.
+    ? target: text
+}
+
+Signature = {
+    ;;; "verified" | "valid_unattested" | "unverified" | "missing"
+    status: text,
+    ? signer: Identity,
+    ? key_fingerprint: text
+}
+Commit = {
+    id: text,
+    parents: [* text],
+    tree: text,
+    author_name: text,
+    author_email: text,
+    authored_at: Timestamp,
+    committer_name: text,
+    committer_email: text,
+    committed_at: Timestamp,
+    message: text,
+    signature: Signature
+}
+LogRequest = { ctx: Ctx, repo: RepoRef, rev: text, ? path: text, ? page: Page }
+CommitPage = { commits: [* Commit], ? next_cursor: text }
+GetCommitRequest = { ctx: Ctx, repo: RepoRef, rev: text }
+
+TreeEntry = {
+    name: text,
+    ;;; "blob" | "tree" | "symlink" | "submodule"
+    kind: text,
+    id: text,
+    mode: uint,
+    ? size: uint
+}
+TreeRequest = { ctx: Ctx, repo: RepoRef, rev: text, ? path: text }
+TreeResponse = { entries: [* TreeEntry], rev_id: text }
+BlobRequest = { ctx: Ctx, repo: RepoRef, rev: text, path: text, ? offset: uint, ? limit: uint }
+BlobResponse = {
+    id: text,
+    size: uint,
+    offset: uint,
+    content: bytes,
+    truncated: bool,
+    binary: bool
+}
+
+DiffRequest = { ctx: Ctx, repo: RepoRef, base: text, head: text, ? path: text, ? page: Page }
+FileDiff = {
+    ;;; "added" | "modified" | "deleted" | "renamed" | "binary"
+    status: text,
+    ? old_path: text,
+    ? new_path: text,
+    additions: uint,
+    deletions: uint,
+    ;;; Unified diff text for this file, absent when binary or paged out.
+    ? patch: text
+}
+DiffResponse = { files: [* FileDiff], ? next_cursor: text }
+
+;;; Access grants on a repo.
+Grant = {
+    ;;; "identity" | "team"
+    grantee_kind: text,
+    ;;; "user_id@domain" or team name
+    grantee: text,
+    ;;; "admin" | "maintain" | "write" | "read"
+    role: text
+}
+SetGrantRequest = { ctx: Ctx, repo: RepoRef, grant: Grant }
+RemoveGrantRequest = { ctx: Ctx, repo: RepoRef, grantee_kind: text, grantee: text }
+ListGrantsResponse = { grants: [* Grant] }
+
+BranchProtection = {
+    ref_pattern: text,
+    required_approvals: uint,
+    dismiss_stale: bool,
+    ;;; "none" | "any" | "attested"
+    required_signature_level: text,
+    required_checks: [* text],
+    ;;; subset of "merge" | "squash" | "rebase"
+    allowed_merge_kinds: [* text],
+    allow_force_push: bool,
+    allow_delete: bool
+}
+SetProtectionRequest = { ctx: Ctx, repo: RepoRef, protection: BranchProtection }
+RemoveProtectionRequest = { ctx: Ctx, repo: RepoRef, ref_pattern: text }
+ListProtectionsResponse = { protections: [* BranchProtection] }
+
+@wire-id(3)
+service Repos {
+    @wire-id(0)
+    create: CreateRepoRequest -> Repo / ServiceError,
+    @wire-id(1)
+    get: GetRepoRequest -> Repo / ServiceError,
+    @wire-id(2)
+    list: ListReposRequest -> RepoPage / ServiceError,
+    @wire-id(3)
+    update: UpdateRepoRequest -> Repo / ServiceError,
+    @wire-id(4)
+    fork: ForkRequest -> Repo / ServiceError,
+    @wire-id(5)
+    list-refs: ListRefsRequest -> ListRefsResponse / ServiceError,
+    @wire-id(6)
+    log: LogRequest -> CommitPage / ServiceError,
+    @wire-id(7)
+    tree: TreeRequest -> TreeResponse / ServiceError,
+    @wire-id(8)
+    blob: BlobRequest -> BlobResponse / ServiceError,
+    @wire-id(9)
+    diff: DiffRequest -> DiffResponse / ServiceError,
+    @wire-id(10)
+    delete: DeleteRepoRequest -> Ok / ServiceError,
+    @wire-id(11)
+    update-ref: UpdateRefRequest -> RefInfo / ServiceError,
+    @wire-id(12)
+    get-commit: GetCommitRequest -> Commit / ServiceError,
+    @wire-id(13)
+    set-grant: SetGrantRequest -> Grant / ServiceError,
+    @wire-id(14)
+    remove-grant: RemoveGrantRequest -> Ok / ServiceError,
+    @wire-id(15)
+    list-grants: GetRepoRequest -> ListGrantsResponse / ServiceError,
+    @wire-id(16)
+    set-protection: SetProtectionRequest -> BranchProtection / ServiceError,
+    @wire-id(17)
+    remove-protection: RemoveProtectionRequest -> Ok / ServiceError,
+    @wire-id(18)
+    list-protections: GetRepoRequest -> ListProtectionsResponse / ServiceError
+}
+
+;; ---------------------------------------------------------------------
+;; Pull requests
+;; ---------------------------------------------------------------------
+
+PrHead = { repo: RepoRef, ref: text }
+PullRequest = {
+    repo: RepoRef,
+    number: uint,
+    title: text,
+    ? body: text,
+    author: Identity,
+    ;;; "open" | "merged" | "closed"
+    state: text,
+    base_ref: text,
+    head: PrHead,
+    base_sha: text,
+    head_sha: text,
+    ? merge_base_sha: text,
+    ;;; "clean" | "conflicts" | "unknown"
+    mergeable: text,
+    ? merge_kind: text,
+    ? merged_commit: text,
+    ? merged_by: Identity,
+    created_at: Timestamp,
+    updated_at: Timestamp,
+    ? closed_at: Timestamp
+}
+PrRef = { ctx: Ctx, repo: RepoRef, number: uint }
+OpenPrRequest = {
+    ctx: Ctx,
+    repo: RepoRef,
+    title: text,
+    ? body: text,
+    base_ref: text,
+    head: PrHead
+}
+ListPrRequest = { ctx: Ctx, repo: RepoRef, ? state: text, ? page: Page }
+PrPage = { pull_requests: [* PullRequest], ? next_cursor: text }
+
+Review = {
+    number: uint,
+    reviewer: Identity,
+    ;;; "approved" | "changes_requested" | "comment"
+    state: text,
+    head_sha: text,
+    ? body: text,
+    created_at: Timestamp
+}
+ReviewRequest = { ctx: Ctx, repo: RepoRef, number: uint, state: text, ? body: text, head_sha: text }
+Comment = {
+    id: text,
+    number: uint,
+    author: Identity,
+    body: text,
+    ? path: text,
+    ? line: uint,
+    ? commit_sha: text,
+    created_at: Timestamp,
+    ? edited_at: Timestamp
+}
+CommentRequest = {
+    ctx: Ctx,
+    repo: RepoRef,
+    number: uint,
+    body: text,
+    ? path: text,
+    ? line: uint,
+    ? commit_sha: text
+}
+ListCommentsResponse = { comments: [* Comment] }
+ListReviewsResponse = { reviews: [* Review] }
+
+MergeRequest = {
+    ctx: Ctx,
+    repo: RepoRef,
+    number: uint,
+    ;;; Stale-view guard: the merge is refused when the head moved.
+    expected_head_sha: text,
+    ;;; "merge" | "squash" | "rebase"
+    merge_kind: text,
+    ? message: text
+}
+MergeResult = { pull_request: PullRequest, merged_commit: text }
+RetargetRequest = { ctx: Ctx, repo: RepoRef, number: uint, base_ref: text }
+UpdatePrRequest = { ctx: Ctx, repo: RepoRef, number: uint, ? title: text, ? body: text }
+
+@wire-id(4)
+service PullRequests {
+    @wire-id(0)
+    open: OpenPrRequest -> PullRequest / ServiceError,
+    @wire-id(1)
+    get: PrRef -> PullRequest / ServiceError,
+    @wire-id(2)
+    list: ListPrRequest -> PrPage / ServiceError,
+    @wire-id(3)
+    review: ReviewRequest -> Review / ServiceError,
+    @wire-id(4)
+    comment: CommentRequest -> Comment / ServiceError,
+    @wire-id(5)
+    merge: MergeRequest -> MergeResult / ServiceError,
+    @wire-id(6)
+    close: PrRef -> PullRequest / ServiceError,
+    @wire-id(7)
+    reopen: PrRef -> PullRequest / ServiceError,
+    @wire-id(8)
+    retarget: RetargetRequest -> PullRequest / ServiceError,
+    @wire-id(9)
+    update: UpdatePrRequest -> PullRequest / ServiceError,
+    @wire-id(10)
+    list-reviews: PrRef -> ListReviewsResponse / ServiceError,
+    @wire-id(11)
+    list-comments: PrRef -> ListCommentsResponse / ServiceError
+}
+
+;; ---------------------------------------------------------------------
+;; Statuses (CI results per revision)
+;; ---------------------------------------------------------------------
+
+CommitStatus = {
+    sha: text,
+    context: text,
+    ;;; "pending" | "success" | "failure" | "error"
+    state: text,
+    ? target_url: text,
+    ? description: text,
+    reporter: Identity,
+    created_at: Timestamp
+}
+SetStatusRequest = {
+    ctx: Ctx,
+    repo: RepoRef,
+    sha: text,
+    context: text,
+    state: text,
+    ? target_url: text,
+    ? description: text
+}
+ListStatusRequest = { ctx: Ctx, repo: RepoRef, sha: text }
+ListStatusResponse = { statuses: [* CommitStatus] }
+
+@wire-id(5)
+service Statuses {
+    @wire-id(0)
+    set: SetStatusRequest -> CommitStatus / ServiceError,
+    @wire-id(1)
+    list: ListStatusRequest -> ListStatusResponse / ServiceError
+}
+
+;; ---------------------------------------------------------------------
+;; Hooks (outbound event delivery)
+;; ---------------------------------------------------------------------
+
+Endpoint = {
+    id: text,
+    org: text,
+    ? repo: text,
+    ;;; "https" | "corndogs"
+    kind: text,
+    ? url: text,
+    ? corndogs_queue: text,
+    event_filter: [* text],
+    ;;; "json" | "cbor"
+    content_type: text,
+    active: bool,
+    unordered: bool,
+    created_at: Timestamp
+}
+CreateEndpointRequest = {
+    ctx: Ctx,
+    org: text,
+    ? repo: text,
+    kind: text,
+    ? url: text,
+    ? corndogs_queue: text,
+    event_filter: [* text],
+    ? content_type: text,
+    ;;; HMAC secret for https endpoints. Stored, never returned.
+    ? secret: text,
+    ? unordered: bool
+}
+ListEndpointsRequest = { ctx: Ctx, target: OrgRepoRef }
+ListEndpointsResponse = { endpoints: [* Endpoint] }
+EndpointRef = { ctx: Ctx, endpoint_id: text }
+UpdateEndpointRequest = {
+    ctx: Ctx,
+    endpoint_id: text,
+    ? url: text,
+    ? event_filter: [* text],
+    ? active: bool,
+    ? secret: text,
+    ? unordered: bool
+}
+Delivery = {
+    id: text,
+    endpoint_id: text,
+    event_lane: text,
+    event_seq: uint,
+    event_kind: text,
+    ;;; "pending" | "delivered" | "dead"
+    state: text,
+    attempts: uint,
+    ? next_attempt_at: Timestamp,
+    ? last_status: uint,
+    ? last_error: text,
+    ? delivered_at: Timestamp
+}
+DeliveryQuery = { ctx: Ctx, endpoint_id: text, ? state: text, ? page: Page }
+DeliveryPage = { deliveries: [* Delivery], ? next_cursor: text }
+DeliveryRef = { ctx: Ctx, delivery_id: text }
+
+@wire-id(6)
+service Hooks {
+    @wire-id(0)
+    create-endpoint: CreateEndpointRequest -> Endpoint / ServiceError,
+    @wire-id(1)
+    list-endpoints: ListEndpointsRequest -> ListEndpointsResponse / ServiceError,
+    @wire-id(2)
+    delete-endpoint: EndpointRef -> Ok / ServiceError,
+    @wire-id(3)
+    list-deliveries: DeliveryQuery -> DeliveryPage / ServiceError,
+    @wire-id(4)
+    redeliver: DeliveryRef -> Ok / ServiceError,
+    @wire-id(5)
+    update-endpoint: UpdateEndpointRequest -> Endpoint / ServiceError
+}
+
+;; ---------------------------------------------------------------------
+;; Mirror (GitHub golden-source mirror)
+;; ---------------------------------------------------------------------
+
+MirrorStatus = {
+    repo: RepoRef,
+    ? github_repo: text,
+    ;;; "authoritative_vscstar" | "import_drift" | "flag_drift"
+    mode: text,
+    paused: bool,
+    cursor_seq: uint,
+    pending: uint,
+    blocked: uint,
+    ? last_success_at: Timestamp,
+    ? last_error: text,
+    ? last_full_reconcile_at: Timestamp
+}
+BlockedAction = {
+    id: text,
+    event_seq: uint,
+    ;;; "git_push" | "api_call"
+    action_kind: text,
+    object_key: text,
+    error: text,
+    blocked_at: Timestamp,
+    credential_purpose: text
+}
+ListBlockedResponse = { actions: [* BlockedAction] }
+ReplayRequest = {
+    ctx: Ctx,
+    repo: RepoRef,
+    ;;; Empty means every blocked action of the repo.
+    action_ids: [* text]
+}
+ReplayResult = { requeued: uint }
+Credential = {
+    id: text,
+    org: text,
+    ? repo: text,
+    ;;; "github"
+    provider: text,
+    ;;; "mirror_git_push" | "mirror_api" | "import_fetch" | "webhook_inbound"
+    purpose: text,
+    ;;; "pat" | "github_app"
+    auth_method: text,
+    host: text,
+    ;;; Pointer into the secret store, never the secret.
+    secret_ref: text,
+    enabled: bool
+}
+SetCredentialRequest = {
+    ctx: Ctx,
+    org: text,
+    ? repo: text,
+    provider: text,
+    purpose: text,
+    auth_method: text,
+    host: text,
+    secret_ref: text,
+    ? enabled: bool
+}
+ListCredentialsRequest = { ctx: Ctx, target: OrgRepoRef }
+ListCredentialsResponse = { credentials: [* Credential] }
+CredentialRef = { ctx: Ctx, credential_id: text }
+ConfigureMirrorRequest = {
+    ctx: Ctx,
+    repo: RepoRef,
+    ;;; "owner/name" on GitHub.
+    github_repo: text,
+    ? mode: text,
+    ? enabled: bool
+}
+ReconcileReport = {
+    repo: RepoRef,
+    started_at: Timestamp,
+    finished_at: Timestamp,
+    refs_checked: uint,
+    refs_pushed: uint,
+    drift_refs: [* text],
+    ? error: text
+}
+ImportRequest = {
+    ctx: Ctx,
+    org: text,
+    name: text,
+    github_repo: text,
+    ? mode: text,
+    ? visibility: text
+}
+
+@wire-id(7)
+service Mirror {
+    @wire-id(0)
+    status: GetRepoRequest -> MirrorStatus / ServiceError,
+    @wire-id(1)
+    list-blocked: GetRepoRequest -> ListBlockedResponse / ServiceError,
+    @wire-id(2)
+    replay-blocked: ReplayRequest -> ReplayResult / ServiceError,
+    @wire-id(3)
+    set-credential: SetCredentialRequest -> Credential / ServiceError,
+    @wire-id(4)
+    reconcile: GetRepoRequest -> ReconcileReport / ServiceError,
+    @wire-id(5)
+    pause: GetRepoRequest -> Ok / ServiceError,
+    @wire-id(6)
+    resume: GetRepoRequest -> Ok / ServiceError,
+    @wire-id(7)
+    import-repo: ImportRequest -> Repo / ServiceError,
+    @wire-id(8)
+    configure: ConfigureMirrorRequest -> MirrorStatus / ServiceError,
+    @wire-id(9)
+    list-credentials: ListCredentialsRequest -> ListCredentialsResponse / ServiceError,
+    @wire-id(10)
+    remove-credential: CredentialRef -> Ok / ServiceError
+}
+
+;; ---------------------------------------------------------------------
+;; Federation (instance to instance)
+;; ---------------------------------------------------------------------
+
+FedHello = {
+    ctx: Ctx,
+    ;;; Hostname domain of the caller, e.g. "vscstar.todandlorna.com".
+    instance: text,
+    ;;; LinkKeys account of the caller, e.g. "vscstar@todandlorna.com".
+    instance_identity: text,
+    instance_id: text,
+    key_id: text,
+    nonce: bytes,
+    timestamp: Timestamp,
+    ;;; Signature over (nonce, timestamp, peer_domain) with the named key.
+    signature: bytes,
+    capabilities: FedCapabilities
+}
+FedCapabilities = {
+    protocol_versions: [* text],
+    vcs_types: [* text],
+    event_kinds: [* text],
+    max_frame_bytes: uint
+}
+FedHelloAck = {
+    instance: text,
+    instance_identity: text,
+    instance_id: text,
+    key_id: text,
+    nonce: bytes,
+    timestamp: Timestamp,
+    signature: bytes,
+    capabilities: FedCapabilities,
+    peer_session_token: text,
+    expires_at: Timestamp
+}
+VerifyHeadRequest = {
+    ctx: Ctx,
+    repo: RepoRef,
+    ref: text,
+    sha: text,
+    ;;; The user who opened the PR; the head instance checks read access.
+    on_behalf_of: text
+}
+HeadQuery = { ctx: Ctx, repo: RepoRef, ref: text }
+HeadInfo = { repo: RepoRef, ref: text, sha: text, exists: bool, readable: bool, as_of: Timestamp }
+
+@wire-id(8)
+service Federation {
+    @wire-id(0)
+    handshake: FedHello -> FedHelloAck / ServiceError,
+    @wire-id(1)
+    verify-head: VerifyHeadRequest -> HeadInfo / ServiceError,
+    @wire-id(2)
+    head-info: HeadQuery -> HeadInfo / ServiceError,
+    @wire-id(3)
+    repo-info: GetRepoRequest -> Repo / ServiceError
+}
+
+;; ---------------------------------------------------------------------
+;; Events (outbox records; also streamed)
+;; ---------------------------------------------------------------------
+
+CommitSummary = {
+    id: text,
+    author_name: text,
+    author_email: text,
+    message_head: text,
+    ;;; "verified" | "valid_unattested" | "unverified" | "missing"
+    signature: text
+}
+PushPayload = {
+    ref: text,
+    before: text,
+    after: text,
+    forced: bool,
+    commits: [* CommitSummary]
+}
+RefPayload = { ref: text, ? before: text, ? after: text }
+PrPayload = { number: uint, ? head_sha: text, ? base_ref: text, ? state: text, ? merge_kind: text }
+ReleasePayload = { tag: text, name: text, ? body: text, draft: bool, prerelease: bool }
+MirrorPayload = { object_key: text, ? error: text, action_kind: text }
+SettingsPayload = { changed: [* text] }
+StatusPayload = { sha: text, context: text, state: text }
+MembershipPayload = { identity: text, ? role: text, ? team: text }
+EventPayload = PushPayload / RefPayload / PrPayload / ReleasePayload
+             / MirrorPayload / SettingsPayload / StatusPayload / MembershipPayload
+
+Event = {
+    lane: text,
+    seq: uint,
+    ;;; One of the kinds listed in plan/05-events-webhooks.md.
+    kind: text,
+    ? actor: Identity,
+    ? repo: RepoRef,
+    ? org: text,
+    ? subject: text,
+    at: Timestamp,
+    payload: EventPayload
+}
+
+;;; Client-to-server messages on the event stream.
+SubscribeRequest = {
+    ;;; Lanes to follow: "org/repo" or "org". Empty means every lane the
+    ;;; caller may read.
+    lanes: [* text],
+    ? kinds: [* text],
+    ;;; Resume after this sequence on the first lane; absent means live only.
+    ? after_seq: uint
+}
+UnsubscribeRequest = { lanes: [* text] }
+StreamControl = SubscribeRequest / UnsribeMarker
+UnsribeMarker = { unsubscribe: UnsubscribeRequest }
+
+;;; Server-to-client messages on the event stream.
+StreamAck = { subscribed: [* text] }
+StreamMessage = Event / StreamAck
+
+;;; csil-events: UI live updates and federation ref notifications.
+@wire-id(9)
+service EventStream {
+    @wire-id(0)
+    subscribe: StreamControl <-> StreamMessage
+}

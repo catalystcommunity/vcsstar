@@ -1,0 +1,8 @@
+[print_schema]
+file = "crates/vscstar-db/src/schema.rs"
+custom_type_derives = ["diesel::query_builder::QueryId", "Clone"]
+# Partitions are not tables the application queries directly.
+filter = { except_tables = ["repo_refs_p0", "repo_refs_p1", "repo_refs_p2", "repo_refs_p3", "repo_refs_p4", "repo_refs_p5", "repo_refs_p6", "repo_refs_p7", "repo_refs_p8", "repo_refs_p9", "repo_refs_p10", "repo_refs_p11", "repo_refs_p12", "repo_refs_p13", "repo_refs_p14", "repo_refs_p15", "events_default", "__diesel_schema_migrations"] }
+
+[migrations_directory]
+dir = "migrations"
