@@ -12,6 +12,13 @@ uuid.workspace = true
 chrono.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+# Static libpq for environments without the system library (CI runner).
+# Build with `--features vcsstar-db/bundled-pq`. Production images link the
+# system libpq, which carries TLS.
+pq-sys = { version = "0.7", optional = true, features = ["bundled_without_openssl"] }
+
+[features]
+bundled-pq = ["dep:pq-sys"]
 
 [lints]
 workspace = true

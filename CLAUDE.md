@@ -177,6 +177,10 @@ VCSSTAR__SSH_PUBLIC_HOST=127.0.0.1:2222 target/debug/vcsstard serve --roles api,
 `cargo test --workspace` with `DATABASE_URL` set also runs the database
 tests (`login_flow`, `push_flow`); they skip without it.
 
+Local builds link the system `libpq`. The CI runner image has none, so the
+test job builds with `--features vcsstar-db/bundled-pq` (static libpq
+without TLS). Production images keep the system library.
+
 ## Code generation
 
 ```sh
