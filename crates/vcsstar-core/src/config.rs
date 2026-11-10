@@ -4,6 +4,21 @@
 
 use std::env;
 
+/// Token-bucket sizes per minute; `0` disables a limit. Buckets are per
+/// node and keyed by peer address, typed identity, device code, or
+/// approving principal (`VCSSTAR__RATE_*_PER_MINUTE`).
+#[derive(Debug, Clone)]
+pub struct RateLimits {
+    /// `Auth/begin-login`, `Auth/complete-login`, `Auth/begin-device-login`
+    /// per peer address, and `begin-login` per typed identity.
+    pub login_per_minute: u32,
+    /// `Auth/poll-device-login` per device code and per peer address.
+    pub device_poll_per_minute: u32,
+    /// `Auth/approve-device-login` per approving principal: user codes are
+    /// short, so guesses must stay slow.
+    pub device_approve_per_minute: u32,
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub database_url: String,
@@ -25,6 +40,8 @@ pub struct Config {
     pub instance_admins: Vec<String>,
     /// When true, any authenticated identity may create an organization.
     pub open_org_creation: bool,
+    /// Per-node limits on the unauthenticated login entry points.
+    pub rate_limits: RateLimits,
     /// Node-local cache of repository directories (`VCSSTAR__REPO_CACHE_DIR`).
     /// Disposable: refs live in Postgres, history in the object store.
     pub repo_cache_dir: std::path::PathBuf,
@@ -156,6 +173,17 @@ impl Config {
             open_org_creation: var("OPEN_ORG_CREATION")
                 .map(|v| v == "true")
                 .unwrap_or(false),
+            rate_limits: RateLimits {
+                login_per_minute: var("RATE_LOGIN_PER_MINUTE")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(10),
+                device_poll_per_minute: var("RATE_DEVICE_POLL_PER_MINUTE")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(40),
+                device_approve_per_minute: var("RATE_DEVICE_APPROVE_PER_MINUTE")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(6),
+            },
             hook_socket: var("HOOK_SOCKET")
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|| repo_cache_dir.join("hook.sock")),

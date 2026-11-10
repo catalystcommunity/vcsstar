@@ -1043,6 +1043,12 @@ export interface Credential {
   enabled: boolean;
 }
 
+/**
+ * Adds one credential. Credentials with the same scope and purpose form a
+ * set: each operation picks one member at random, so several tokens or
+ * Apps share the load and one can be removed (`remove-credential`)
+ * without a gap.
+ */
 export interface SetCredentialRequest {
   ctx: Ctx;
   org: string;
@@ -1057,7 +1063,10 @@ export interface SetCredentialRequest {
    */
   secretRef: string;
   /**
-   * The secret value when secret_ref is `stored`. Never returned.
+   * The secret value when secret_ref is `stored`. Never returned. For
+   * `pat` it is the token. For `github_app` it is a JSON object
+   * `{"app_id","installation_id","private_key"}` (the App's PEM key);
+   * vcsstar mints short-lived installation tokens from it.
    */
   secret?: string;
   enabled?: boolean;

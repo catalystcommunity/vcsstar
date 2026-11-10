@@ -172,13 +172,15 @@ pub mod cred {
         }
     }
 
-    /// Repo-scoped credential first, then the org default.
-    pub fn find(
+    /// The credential set for a purpose: every enabled row at the most
+    /// specific scope (the repository's own rows when it has any, else the
+    /// organization's).
+    pub fn candidates(
         conn: &mut PgConnection,
         org_id: Uuid,
         repo_id: Uuid,
         purpose: &str,
-    ) -> Result<Option<CredentialRow>, Error> {
+    ) -> Result<Vec<CredentialRow>, Error> {
         let rows: Vec<CredentialRow> = credentials::table
             .filter(credentials::org_id.eq(org_id))
             .filter(credentials::purpose.eq(purpose))
@@ -190,11 +192,60 @@ pub mod cred {
             )
             .select(CredentialRow::as_select())
             .load(conn)?;
-        Ok(rows
-            .iter()
-            .find(|r| r.repo_id == Some(repo_id))
-            .or_else(|| rows.iter().find(|r| r.repo_id.is_none()))
-            .cloned())
+        let (repo_rows, org_rows): (Vec<_>, Vec<_>) =
+            rows.into_iter().partition(|r| r.repo_id == Some(repo_id));
+        Ok(if repo_rows.is_empty() {
+            org_rows
+        } else {
+            repo_rows
+        })
+    }
+
+    /// One member of the credential set, chosen at random so several
+    /// tokens or Apps share the load.
+    pub fn find(
+        conn: &mut PgConnection,
+        org_id: Uuid,
+        repo_id: Uuid,
+        purpose: &str,
+    ) -> Result<Option<CredentialRow>, Error> {
+        use rand::seq::SliceRandom;
+        let set = candidates(conn, org_id, repo_id, purpose)?;
+        Ok(set.choose(&mut rand::thread_rng()).cloned())
+    }
+
+    /// Purposes tried for a request, in order: api <-> git_push share
+    /// credentials, and an import may use either.
+    fn purpose_order(purpose: &str) -> Vec<&str> {
+        match purpose {
+            "mirror_api" => vec!["mirror_api", "mirror_git_push"],
+            "mirror_git_push" => vec!["mirror_git_push", "mirror_api"],
+            "import_fetch" => vec!["import_fetch", "mirror_git_push", "mirror_api"],
+            p => vec![p],
+        }
+    }
+
+    /// After a terminal GitHub failure: drop the cached installation token
+    /// of a `github_app` credential, so a replay mints a fresh one instead
+    /// of presenting a token GitHub already refused.
+    pub fn forget_app_token(
+        app: &App,
+        conn: &mut PgConnection,
+        org_id: Uuid,
+        repo_id: Uuid,
+        purpose: &str,
+    ) {
+        for p in purpose_order(purpose) {
+            if let Ok(set) = candidates(conn, org_id, repo_id, p) {
+                if set.is_empty() {
+                    continue;
+                }
+                for row in set.iter().filter(|r| r.auth_method == "github_app") {
+                    app.github_app_tokens.forget(row.id);
+                }
+                return;
+            }
+        }
     }
 
     /// Token for a purpose, with fallbacks: api <-> git_push share PATs.
@@ -205,17 +256,15 @@ pub mod cred {
         repo_id: Uuid,
         purpose: &str,
     ) -> Result<(String, String), Failure> {
-        let order: Vec<&str> = match purpose {
-            "mirror_api" => vec!["mirror_api", "mirror_git_push"],
-            "mirror_git_push" => vec!["mirror_git_push", "mirror_api"],
-            "import_fetch" => vec!["import_fetch", "mirror_git_push", "mirror_api"],
-            p => vec![p],
-        };
-        for p in order {
+        for p in purpose_order(purpose) {
             if let Some(row) =
                 find(conn, org_id, repo_id, p).map_err(|e| Failure::Transient(e.message))?
             {
                 let v = value(app, &row).map_err(|e| Failure::Terminal(e.message))?;
+                if row.auth_method == "github_app" {
+                    let token = crate::github_app::installation_token(app, row.id, &v)?;
+                    return Ok((p.to_string(), token));
+                }
                 return Ok((p.to_string(), v));
             }
         }
@@ -665,6 +714,7 @@ pub fn execute(app: &App, conn: &mut DbConn, action_id: Uuid) -> Result<Exec, Er
         Ok(Exec::Blocked(reason)) => {
             record_attempt(conn, action.id, false, None, Some(&reason))?;
             set_blocked(conn, &org, &repo, &action, &reason)?;
+            cred::forget_app_token(app, conn, org.id, repo.id, &action.credential_purpose);
             Ok(Exec::Blocked(reason))
         }
         Ok(Exec::Transient(reason)) => {

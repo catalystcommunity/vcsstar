@@ -881,13 +881,30 @@ fn device_login(schema: &Schema, url: &str, lm: &ArgMatches) -> Result<String, C
     }
     loop {
         std::thread::sleep(std::time::Duration::from_millis(interval));
-        let polled = call(
+        let polled = match call(
             schema,
             &anon,
             "Auth",
             "poll-device-login",
             serde_json::json!({"device_code": device_code}),
-        )?;
+        ) {
+            Ok(v) => v,
+            // 30 = ResourceExhausted: the server asked us to slow down.
+            Err(CliError::Service(err)) if err.get("code").and_then(Json::as_u64) == Some(30) => {
+                let wait = err
+                    .get("message")
+                    .and_then(Json::as_str)
+                    .and_then(|m| m.split("try again in ").nth(1))
+                    .and_then(|r| r.split_whitespace().next())
+                    .and_then(|n| n.parse::<u64>().ok())
+                    .unwrap_or(interval / 1000 * 2)
+                    .clamp(1, 60);
+                eprintln!("(rate limited; waiting {wait} s)");
+                std::thread::sleep(std::time::Duration::from_secs(wait));
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
         if polled.get("pending").and_then(Json::as_bool) == Some(false) {
             let secret = polled
                 .get("token")

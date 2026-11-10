@@ -117,3 +117,8 @@ podSecurityContext:
   runAsNonRoot: true
   runAsUser: 10001
   fsGroup: 10001
+
+# `vcsstard` serves Prometheus text at GET /metrics on the HTTP port. The
+# annotations let an annotation-driven scraper find it.
+metrics:
+  scrape: true

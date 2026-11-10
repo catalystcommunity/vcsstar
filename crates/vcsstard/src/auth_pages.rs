@@ -16,6 +16,8 @@ use vcsstar_core::services::login;
 use vcsstar_core::App;
 use vcsstar_transport::{Carrier, CredentialSource, Peer};
 
+use crate::http::HttpPeer;
+
 pub const SESSION_COOKIE: &str = "vcsstar_session";
 const ATTEMPT_COOKIE: &str = "vcsstar_login_attempt";
 
@@ -36,23 +38,24 @@ fn esc(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
-fn anon_ctx() -> ReqCtx {
+fn anon_ctx(remote: &str) -> ReqCtx {
     ReqCtx {
         request_id: uuid::Uuid::now_v7().to_string(),
         principal: None,
         peer: Peer {
             carrier: Carrier::Http,
+            remote: remote.to_string(),
             ..Peer::default()
         },
     }
 }
 
-fn session_ctx(app: &App, cookies: &CookieJar<'_>) -> ReqCtx {
+fn session_ctx(app: &App, cookies: &CookieJar<'_>, remote: &str) -> ReqCtx {
     let peer = Peer {
         credential: cookies.get(SESSION_COOKIE).map(|c| c.value().to_string()),
         credential_source: CredentialSource::Cookie,
         carrier: Carrier::Http,
-        ..Peer::default()
+        remote: remote.to_string(),
     };
     let principal = principal::resolve(app, &peer).ok().flatten();
     ReqCtx {
@@ -107,6 +110,7 @@ fn login_form(
 fn login_submit(
     app: &State<App>,
     cookies: &CookieJar<'_>,
+    peer: HttpPeer,
     form: Form<LoginForm>,
 ) -> Result<Redirect, Redirect> {
     let req = vcsstar_types::BeginLoginRequest {
@@ -120,7 +124,7 @@ fn login_submit(
         return_to: form.return_to.clone().filter(|s| !s.is_empty()),
         device_user_code: form.device_code.clone().filter(|s| !s.is_empty()),
     };
-    match login::begin(app, &anon_ctx(), req) {
+    match login::begin(app, &anon_ctx(&peer.0.remote), req) {
         Ok(resp) => {
             let secure = app.config.public_url.starts_with("https://");
             cookies.add(
@@ -145,6 +149,7 @@ fn login_submit(
 fn callback(
     app: &State<App>,
     cookies: &CookieJar<'_>,
+    peer: HttpPeer,
     encrypted_token: Option<String>,
     error: Option<String>,
 ) -> Result<Redirect, Redirect> {
@@ -171,7 +176,7 @@ fn callback(
         attempt_token: attempt,
         encrypted_token: token,
     };
-    match login::complete(app, &anon_ctx(), req) {
+    match login::complete(app, &anon_ctx(&peer.0.remote), req) {
         Ok(session) => {
             let secure = app.config.public_url.starts_with("https://");
             cookies.add(
@@ -197,8 +202,12 @@ fn callback(
 }
 
 #[get("/auth/me")]
-fn me(app: &State<App>, cookies: &CookieJar<'_>) -> Result<RawHtml<String>, Redirect> {
-    let ctx = session_ctx(app, cookies);
+fn me(
+    app: &State<App>,
+    cookies: &CookieJar<'_>,
+    peer: HttpPeer,
+) -> Result<RawHtml<String>, Redirect> {
+    let ctx = session_ctx(app, cookies, &peer.0.remote);
     let Some(p) = ctx.principal.as_ref() else {
         return Err(Redirect::to("/auth/login?return_to=/auth/me"));
     };
@@ -215,8 +224,8 @@ fn me(app: &State<App>, cookies: &CookieJar<'_>) -> Result<RawHtml<String>, Redi
 }
 
 #[post("/auth/logout")]
-fn logout(app: &State<App>, cookies: &CookieJar<'_>) -> Redirect {
-    let ctx = session_ctx(app, cookies);
+fn logout(app: &State<App>, cookies: &CookieJar<'_>, peer: HttpPeer) -> Redirect {
+    let ctx = session_ctx(app, cookies, &peer.0.remote);
     if ctx.principal.is_some() {
         let _ = vcsstar_core::services::auth::logout(
             app,
@@ -247,10 +256,11 @@ struct DeviceForm {
 fn device_form(
     app: &State<App>,
     cookies: &CookieJar<'_>,
+    peer: HttpPeer,
     code: Option<String>,
     msg: Option<String>,
 ) -> Result<RawHtml<String>, Redirect> {
-    let ctx = session_ctx(app, cookies);
+    let ctx = session_ctx(app, cookies, &peer.0.remote);
     if ctx.principal.is_none() {
         let mut target = "/auth/login?return_to=/auth/device".to_string();
         if let Some(c) = code.as_deref() {
@@ -279,8 +289,13 @@ fn device_form(
 }
 
 #[post("/auth/device", data = "<form>")]
-fn device_submit(app: &State<App>, cookies: &CookieJar<'_>, form: Form<DeviceForm>) -> Redirect {
-    let ctx = session_ctx(app, cookies);
+fn device_submit(
+    app: &State<App>,
+    cookies: &CookieJar<'_>,
+    peer: HttpPeer,
+    form: Form<DeviceForm>,
+) -> Redirect {
+    let ctx = session_ctx(app, cookies, &peer.0.remote);
     let req = vcsstar_types::DeviceApproveRequest {
         ctx: empty_ctx(),
         user_code: form.code.clone(),

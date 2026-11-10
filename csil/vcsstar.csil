@@ -775,6 +775,10 @@ Credential = {
     secret_ref: text,
     enabled: bool
 }
+;;; Adds one credential. Credentials with the same scope and purpose form a
+;;; set: each operation picks one member at random, so several tokens or
+;;; Apps share the load and one can be removed (`remove-credential`)
+;;; without a gap.
 SetCredentialRequest = {
     ctx: Ctx,
     org: text,
@@ -786,7 +790,10 @@ SetCredentialRequest = {
     ;;; `env:<VAR>` reads an operator-provided environment variable; `stored`
     ;;; means `secret` is supplied here and sealed with the instance key.
     secret_ref: text,
-    ;;; The secret value when secret_ref is `stored`. Never returned.
+    ;;; The secret value when secret_ref is `stored`. Never returned. For
+    ;;; `pat` it is the token. For `github_app` it is a JSON object
+    ;;; `{"app_id","installation_id","private_key"}` (the App's PEM key);
+    ;;; vcsstar mints short-lived installation tokens from it.
     ? secret: text,
     ? enabled: bool
 }

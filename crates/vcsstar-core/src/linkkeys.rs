@@ -254,6 +254,32 @@ impl Rp<'_> {
             .call("userinfo-fetch", encode_rp_user_info_request(&req))?;
         decode_user_info(&bytes).map_err(|e| Error::internal(format!("userinfo decode: {e:?}")))
     }
+
+    /// The signing keys of `domain` as the RP resolved them. vcsstar verifies
+    /// claim signatures against these itself. A `stale` result (the home
+    /// domain was unreachable) is refused: it is never current trust.
+    pub fn resolve_domain_keys(&self, domain: &str) -> Result<Vec<lk::DomainPublicKey>, Error> {
+        use liblinkkeys::generated::{
+            decode_rp_resolve_domain_keys_response, encode_rp_resolve_domain_keys_request,
+        };
+        let req = lk::RpResolveDomainKeysRequest {
+            domain: domain.to_string(),
+            max_cache_age_seconds: Some(300),
+        };
+        let bytes = self.caller.call(
+            "resolve-domain-keys",
+            encode_rp_resolve_domain_keys_request(&req),
+        )?;
+        let resp = decode_rp_resolve_domain_keys_response(&bytes)
+            .map_err(|e| Error::internal(format!("resolve-domain-keys decode: {e:?}")))?;
+        if resp.cache_status == "stale" {
+            return Err(Error::new(
+                Code::Unavailable,
+                "home domain unreachable; its signing keys could not be refreshed",
+            ));
+        }
+        Ok(resp.keys)
+    }
 }
 
 /// Checks vcsstar performs itself after the RP verified the assertion.

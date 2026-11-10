@@ -3,11 +3,14 @@
 
 use std::sync::{Arc, Mutex};
 
+use liblinkkeys::claims::{sign_claim, ClaimSigner, ClaimSpec};
+use liblinkkeys::crypto::{fingerprint, generate_keypair, SigningAlgorithm};
 use liblinkkeys::generated::types as lk;
 use liblinkkeys::generated::{
-    decode_rp_decrypt_request, decode_rp_sign_request, decode_rp_user_info_request,
-    decode_rp_verify_request, encode_rp_decrypt_response, encode_rp_sign_response,
-    encode_rp_verify_response, encode_user_info,
+    decode_rp_decrypt_request, decode_rp_resolve_domain_keys_request, decode_rp_sign_request,
+    decode_rp_user_info_request, decode_rp_verify_request, encode_rp_decrypt_response,
+    encode_rp_resolve_domain_keys_response, encode_rp_sign_response, encode_rp_verify_response,
+    encode_user_info,
 };
 use vcsstar_core::linkkeys::RpCaller;
 use vcsstar_core::principal::ReqCtx;
@@ -15,9 +18,66 @@ use vcsstar_core::services::login;
 use vcsstar_core::{App, Config, Error};
 use vcsstar_transport::Peer;
 
+const HOME: &str = "todandlorna.com";
+const USER: &str = "0193a000-0000-7000-8000-000000000042";
+
+/// The fake home domain's one signing key. Claims are signed with it and
+/// `resolve-domain-keys` serves its public half, so the real verification
+/// path in `login::complete` runs.
+struct HomeKey {
+    public: Vec<u8>,
+    private: Vec<u8>,
+}
+
+impl HomeKey {
+    fn new() -> Self {
+        let (public, private) = generate_keypair(SigningAlgorithm::Ed25519);
+        Self { public, private }
+    }
+
+    fn domain_key(&self) -> lk::DomainPublicKey {
+        let now = chrono::Utc::now();
+        lk::DomainPublicKey {
+            key_id: "k1".into(),
+            public_key: self.public.clone(),
+            fingerprint: fingerprint(&self.public),
+            algorithm: "ed25519".into(),
+            key_usage: "sign".into(),
+            created_at: (now - chrono::Duration::days(1)).to_rfc3339(),
+            expires_at: (now + chrono::Duration::days(1)).to_rfc3339(),
+            revoked_at: None,
+            signed_by_key_id: None,
+            key_signature: None,
+        }
+    }
+
+    fn claim(&self, claim_type: &str, value: &str) -> lk::Claim {
+        let attested = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        sign_claim(
+            &ClaimSpec {
+                claim_id: &format!("c-{claim_type}"),
+                claim_type,
+                claim_value: value.as_bytes(),
+                user_id: USER,
+                subject_domain: HOME,
+                expires_at: None,
+                attested_at: &attested,
+            },
+            &[ClaimSigner {
+                domain: HOME,
+                key_id: "k1",
+                algorithm: SigningAlgorithm::Ed25519,
+                private_key_bytes: &self.private,
+            }],
+        )
+        .expect("sign claim")
+    }
+}
+
 struct FakeRp {
     nonce: Mutex<Option<String>>,
     verified: bool,
+    home: HomeKey,
 }
 
 impl RpCaller for FakeRp {
@@ -47,7 +107,7 @@ impl RpCaller for FakeRp {
                 let req = decode_rp_verify_request(&payload).unwrap();
                 let now = chrono::Utc::now();
                 let assertion = lk::IdentityAssertion {
-                    user_id: "0193a000-0000-7000-8000-000000000042".into(),
+                    user_id: USER.into(),
                     domain: req.expected_domain.clone(),
                     audience: "catalystsquad.com".into(),
                     nonce: self.nonce.lock().unwrap().clone().unwrap_or_default(),
@@ -63,31 +123,31 @@ impl RpCaller for FakeRp {
             }
             "userinfo-fetch" => {
                 let req = decode_rp_user_info_request(&payload).unwrap();
-                assert_eq!(req.domain, "todandlorna.com");
-                let claim = |t: &str, v: &str| lk::Claim {
-                    claim_id: format!("c-{t}"),
-                    user_id: "0193a000-0000-7000-8000-000000000042".into(),
-                    claim_type: t.into(),
-                    claim_value: v.as_bytes().to_vec(),
-                    signatures: vec![lk::ClaimSignature {
-                        domain: "todandlorna.com".into(),
-                        signed_by_key_id: "k1".into(),
-                        signature: vec![1, 2, 3],
-                    }],
-                    attested_at: "2026-01-01T00:00:00Z".into(),
-                    created_at: "2026-01-01T00:00:00Z".into(),
-                    expires_at: None,
-                    revoked_at: None,
-                };
+                assert_eq!(req.domain, HOME);
                 Ok(encode_user_info(&lk::UserInfo {
-                    user_id: "0193a000-0000-7000-8000-000000000042".into(),
-                    domain: "todandlorna.com".into(),
+                    user_id: USER.into(),
+                    domain: HOME.into(),
                     display_name: "Alice".into(),
                     claims: vec![
-                        claim("handle", "alice"),
-                        claim("email", "alice@example.com"),
+                        self.home.claim("handle", "alice"),
+                        self.home.claim("email", "alice@example.com"),
                     ],
                 }))
+            }
+            "resolve-domain-keys" => {
+                let req = decode_rp_resolve_domain_keys_request(&payload).unwrap();
+                assert_eq!(req.domain, HOME);
+                let now = chrono::Utc::now().to_rfc3339();
+                Ok(encode_rp_resolve_domain_keys_response(
+                    &lk::RpResolveDomainKeysResponse {
+                        domain: HOME.into(),
+                        keys: vec![self.home.domain_key()],
+                        revocations: vec![],
+                        fetched_at: now.clone(),
+                        revocations_checked_at: now,
+                        cache_status: "fresh".into(),
+                    },
+                ))
             }
             other => panic!("unexpected rp op {other}"),
         }
@@ -95,11 +155,16 @@ impl RpCaller for FakeRp {
 }
 
 fn app(verified: bool) -> Option<App> {
+    app_with(verified, |_| {})
+}
+
+fn app_with(verified: bool, tune: impl FnOnce(&mut Config)) -> Option<App> {
     let url = std::env::var("DATABASE_URL").ok()?;
     std::env::set_var("VCSSTAR__DATABASE_URL", &url);
     std::env::set_var("VCSSTAR__LINKKEYS_RP_DOMAIN", "catalystsquad.com");
     std::env::set_var("VCSSTAR__PUBLIC_URL", "http://test.local");
-    let config = Config::from_env().ok()?;
+    let mut config = Config::from_env().ok()?;
+    tune(&mut config);
     let db = vcsstar_db::pool(&url, 2).ok()?;
     vcsstar_db::run_migrations(&mut *db.get().ok()?).ok()?;
     Some(App::with_rp(
@@ -108,6 +173,7 @@ fn app(verified: bool) -> Option<App> {
         Arc::new(FakeRp {
             nonce: Mutex::new(None),
             verified,
+            home: HomeKey::new(),
         }),
     ))
 }
@@ -224,4 +290,30 @@ fn unverified_assertion_is_refused() {
     )
     .unwrap_err();
     assert_eq!(err.code, vcsstar_core::Code::Unauthenticated);
+}
+
+#[test]
+fn login_begin_is_rate_limited_per_peer_and_identity() {
+    let Some(app) = app_with(true, |c| c.rate_limits.login_per_minute = 2) else {
+        return;
+    };
+    let begin = |identity: &str| {
+        login::begin(
+            &app,
+            &ctx(),
+            vcsstar_types::BeginLoginRequest {
+                ctx: wire_ctx(),
+                identity_input: identity.into(),
+                return_to: None,
+                device_user_code: None,
+            },
+        )
+    };
+    begin("alice@todandlorna.com").expect("first");
+    begin("alice@todandlorna.com").expect("second");
+    let err = begin("alice@todandlorna.com").expect_err("third is over the limit");
+    assert_eq!(err.code, vcsstar_core::Code::ResourceExhausted);
+    // The peer bucket is spent too, so another identity from the same peer waits.
+    let err = begin("bob@todandlorna.com").expect_err("peer bucket");
+    assert_eq!(err.code, vcsstar_core::Code::ResourceExhausted);
 }

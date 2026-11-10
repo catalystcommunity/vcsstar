@@ -20,6 +20,11 @@ spec:
         {{- include "vcsstar.selectorLabels" . | nindent 8 }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if .Values.metrics.scrape }}
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: {{ .Values.server.httpPort | quote }}
+        {{- end }}
     spec:
       # Service links would inject VCSSTAR_* variables that look like settings.
       enableServiceLinks: false

@@ -16,6 +16,8 @@ pub enum Code {
     AlreadyExists = 21,
     Conflict = 22,
     PreconditionFailed = 23,
+    /// A rate limit or quota was hit; retry later.
+    ResourceExhausted = 30,
     NotImplemented = 90,
 }
 

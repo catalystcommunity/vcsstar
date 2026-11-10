@@ -8,13 +8,16 @@ pub mod dispatch;
 pub mod errors;
 pub mod events_json;
 pub mod github;
+pub mod github_app;
 pub mod instance_keys;
 pub mod linkkeys;
+pub mod metrics;
 pub mod mirror;
 pub mod outbox;
 pub mod principal;
 pub mod push;
 pub mod queue;
+pub mod ratelimit;
 pub mod services;
 pub mod tokens;
 pub mod vcs;
@@ -42,6 +45,10 @@ pub struct App {
     /// Lazily dialed corndogs connection for request-cycle submissions
     /// (ingest-first receivers). Workers hold their own connections.
     pub queue: Arc<std::sync::Mutex<Option<queue::Queue>>>,
+    /// Per-node token buckets for the login entry points.
+    pub limiter: Arc<ratelimit::Limiter>,
+    /// GitHub App installation tokens minted on this node.
+    pub github_app_tokens: Arc<github_app::TokenCache>,
 }
 
 impl App {
@@ -97,6 +104,8 @@ impl App {
             store,
             pushes: Arc::new(push::PushRegistry::default()),
             queue: Arc::new(std::sync::Mutex::new(None)),
+            limiter: Arc::new(ratelimit::Limiter::new()),
+            github_app_tokens: Arc::new(github_app::TokenCache::default()),
         }
     }
 
