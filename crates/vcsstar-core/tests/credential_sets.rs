@@ -119,7 +119,10 @@ fn two_credentials_form_a_set_and_both_get_picked() {
         .expect("set credential");
         ids.push(c.id);
     }
-    assert_ne!(ids[0], ids[1], "the second set-credential adds, not replaces");
+    assert_ne!(
+        ids[0], ids[1],
+        "the second set-credential adds, not replaces"
+    );
 
     let listed = mirror::list_credentials(
         &app,
@@ -141,9 +144,14 @@ fn two_credentials_form_a_set_and_both_get_picked() {
     assert_eq!(set.len(), 2);
     let mut seen = HashSet::new();
     for _ in 0..64 {
-        let (purpose, token) =
-            cred::token_for(&app, &mut conn, org.id, uuid::Uuid::nil(), "mirror_git_push")
-                .expect("token");
+        let (purpose, token) = cred::token_for(
+            &app,
+            &mut conn,
+            org.id,
+            uuid::Uuid::nil(),
+            "mirror_git_push",
+        )
+        .expect("token");
         assert_eq!(purpose, "mirror_git_push");
         seen.insert(token);
     }
@@ -164,7 +172,13 @@ fn two_credentials_form_a_set_and_both_get_picked() {
     .expect("remove");
     let set = cred::candidates(&mut conn, org.id, uuid::Uuid::nil(), "mirror_git_push").unwrap();
     assert_eq!(set.len(), 1);
-    let (_, token) =
-        cred::token_for(&app, &mut conn, org.id, uuid::Uuid::nil(), "mirror_git_push").unwrap();
+    let (_, token) = cred::token_for(
+        &app,
+        &mut conn,
+        org.id,
+        uuid::Uuid::nil(),
+        "mirror_git_push",
+    )
+    .unwrap();
     assert_eq!(token, "token-b");
 }
