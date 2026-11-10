@@ -33,6 +33,36 @@ pub struct Client {
     token: String,
 }
 
+/// Exchange an App JWT for an installation access token
+/// (`POST /app/installations/{id}/access_tokens`). Returns the token and
+/// its expiry. 401 and 404 are terminal: the App key or installation id
+/// is wrong and a retry cannot help.
+pub fn installation_token(
+    base: &str,
+    jwt: &str,
+    installation_id: &str,
+) -> Result<(String, chrono::DateTime<chrono::Utc>), Failure> {
+    let client = Client::new(base, jwt);
+    let path = format!("/app/installations/{installation_id}/access_tokens");
+    let (status, j) = client.call("POST", &path, Some(&json!({})))?;
+    if status == 404 {
+        return Err(Failure::Terminal(format!(
+            "GitHub App installation {installation_id} not found (is the App installed on the owner?)"
+        )));
+    }
+    let token = j
+        .get("token")
+        .and_then(Json::as_str)
+        .ok_or_else(|| Failure::Terminal("GitHub returned no installation token".into()))?;
+    let expires_at = j
+        .get("expires_at")
+        .and_then(Json::as_str)
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|t| t.with_timezone(&chrono::Utc))
+        .unwrap_or_else(|| chrono::Utc::now() + chrono::Duration::minutes(55));
+    Ok((token.to_string(), expires_at))
+}
+
 /// Minimal view of a GitHub repository.
 #[derive(Debug, Clone)]
 pub struct RepoInfo {

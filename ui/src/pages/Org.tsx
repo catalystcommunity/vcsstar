@@ -14,7 +14,7 @@ export function OrgPage() {
   const [err, setErr] = createSignal("");
   const [member, setMember] = createSignal({ identity: "", role: "member" });
   const [team, setTeam] = createSignal("");
-  const [cred, setCred] = createSignal({ purpose: "mirror_git_push", secretRef: "stored", secret: "" });
+  const [cred, setCred] = createSignal({ purpose: "mirror_git_push", authMethod: "pat", secretRef: "stored", secret: "" });
 
   const run = async (f: () => Promise<unknown>, after?: () => void) => {
     setErr("");
@@ -162,7 +162,7 @@ export function OrgPage() {
                   org: org(),
                   provider: "github",
                   purpose: c.purpose,
-                  authMethod: "pat",
+                  authMethod: c.authMethod,
                   host: "github.com",
                   secretRef: c.secretRef,
                   secret: c.secretRef === "stored" ? c.secret : undefined,
@@ -180,13 +180,29 @@ export function OrgPage() {
             <option>import_fetch</option>
             <option>webhook_inbound</option>
           </select>
+          <select value={cred().authMethod} onChange={(e) => setCred({ ...cred(), authMethod: e.currentTarget.value })}>
+            <option value="pat">personal access token</option>
+            <option value="github_app">GitHub App</option>
+          </select>
           <input placeholder="stored or env:VAR" value={cred().secretRef} onInput={(e) => setCred({ ...cred(), secretRef: e.currentTarget.value })} />
-          <Show when={cred().secretRef === "stored"}>
+          <Show when={cred().secretRef === "stored" && cred().authMethod === "pat"}>
             <input type="password" placeholder="token" size={36} value={cred().secret} onInput={(e) => setCred({ ...cred(), secret: e.currentTarget.value })} />
+          </Show>
+          <Show when={cred().secretRef === "stored" && cred().authMethod === "github_app"}>
+            <textarea
+              placeholder='{"app_id": "…", "installation_id": "…", "private_key": "-----BEGIN RSA PRIVATE KEY-----…"}'
+              rows={4}
+              cols={48}
+              value={cred().secret}
+              onInput={(e) => setCred({ ...cred(), secret: e.currentTarget.value })}
+            />
           </Show>
           <button>Set credential</button>
         </form>
-        <p class="muted small">A stored token is sealed with the instance key and never shown again.</p>
+        <p class="muted small">
+          A stored secret is sealed with the instance key and never shown again. A GitHub App credential is the App id, the
+          installation id, and the App's private key; vcsstar mints one-hour installation tokens from it.
+        </p>
       </Show>
 
       <HooksPanel org={org()} />

@@ -353,9 +353,9 @@ pub fn set_credential(
     if !["pat", "github_app"].contains(&req.auth_method.as_str()) {
         return Err(Error::invalid("auth_method must be pat or github_app"));
     }
-    if req.auth_method == "github_app" {
-        return Err(Error::not_implemented(
-            "github_app credentials (use a pat for now)",
+    if req.auth_method == "github_app" && req.purpose == "webhook_inbound" {
+        return Err(Error::invalid(
+            "webhook_inbound is a shared secret; it has no github_app form",
         ));
     }
     let ciphertext = if req.secret_ref == "stored" {
@@ -364,10 +364,19 @@ pub fn set_credential(
             .as_deref()
             .filter(|s| !s.trim().is_empty())
             .ok_or_else(|| Error::invalid("secret is required when secret_ref is stored"))?;
+        if req.auth_method == "github_app" {
+            crate::github_app::AppCredential::parse(secret)?;
+        }
         Some(cred::seal(app, secret.trim().as_bytes())?)
     } else if let Some(var) = req.secret_ref.strip_prefix("env:") {
         if var.is_empty() || !var.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
             return Err(Error::invalid("env: ref must name an environment variable"));
+        }
+        // Check the value now when the variable is already set on this node.
+        if req.auth_method == "github_app" {
+            if let Ok(v) = std::env::var(var) {
+                crate::github_app::AppCredential::parse(&v)?;
+            }
         }
         None
     } else {
@@ -383,23 +392,9 @@ pub fn set_credential(
             credentials::auth_method.eq(&req.auth_method),
             credentials::host.eq(&req.host),
             credentials::secret_ref.eq(&req.secret_ref),
-            credentials::secret_ciphertext.eq(ciphertext.clone()),
-            credentials::enabled.eq(req.enabled.unwrap_or(true)),
-            credentials::created_by.eq(ctx.actor_id()),
-        ))
-        .on_conflict((
-            credentials::org_id,
-            credentials::repo_id,
-            credentials::provider,
-            credentials::purpose,
-        ))
-        .do_update()
-        .set((
-            credentials::auth_method.eq(&req.auth_method),
-            credentials::host.eq(&req.host),
-            credentials::secret_ref.eq(&req.secret_ref),
             credentials::secret_ciphertext.eq(ciphertext),
             credentials::enabled.eq(req.enabled.unwrap_or(true)),
+            credentials::created_by.eq(ctx.actor_id()),
         ))
         .returning(CredentialRow::as_returning())
         .get_result(&mut conn)?;

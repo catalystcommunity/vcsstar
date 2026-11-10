@@ -44,13 +44,20 @@ pub fn callback_url(app: &App) -> String {
 }
 
 /// Step 1. The browser (or the UI through the API) submits the identity.
-pub fn begin(
-    app: &App,
-    _ctx: &ReqCtx,
-    req: BeginLoginRequest,
-) -> Result<BeginLoginResponse, Error> {
+pub fn begin(app: &App, ctx: &ReqCtx, req: BeginLoginRequest) -> Result<BeginLoginResponse, Error> {
+    let limits = &app.config.rate_limits;
+    app.limiter
+        .take(&peer_key("login", ctx), limits.login_per_minute, "login")?;
     let input = liblinkkeys::identity_input::parse_identity_input(&req.identity_input)
         .map_err(|e| Error::invalid(e.to_string()))?;
+    app.limiter.take(
+        &format!(
+            "login:id:{}",
+            req.identity_input.trim().to_ascii_lowercase()
+        ),
+        limits.login_per_minute,
+        "login",
+    )?;
     let rp = app.rp()?;
     let nonce = hex::encode(rand_bytes(16));
     let signed = rp.sign_request(&callback_url(app), &nonce)?;
@@ -92,7 +99,12 @@ pub fn begin(
 
 /// Step 2. The IDP redirected back with `encrypted_token`; the attempt token
 /// came back in the browser's cookie.
-pub fn complete(app: &App, _ctx: &ReqCtx, req: CompleteLoginRequest) -> Result<Session, Error> {
+pub fn complete(app: &App, ctx: &ReqCtx, req: CompleteLoginRequest) -> Result<Session, Error> {
+    app.limiter.take(
+        &peer_key("complete", ctx),
+        app.config.rate_limits.login_per_minute,
+        "login",
+    )?;
     let mut conn = app.conn()?;
     let pending = claim_pending(&mut conn, &req.attempt_token)?;
     let rp = app.rp()?;
@@ -120,7 +132,15 @@ pub fn complete(app: &App, _ctx: &ReqCtx, req: CompleteLoginRequest) -> Result<S
 
     let api_base = linkkeys::browser_base(&pending.idp_domain);
     let info = rp.userinfo_fetch(&signed_assertion, &api_base, &pending.idp_domain)?;
-    let claims = Claims::from_userinfo(&info);
+    // The RP verified the assertion; the claims it relayed are checked here
+    // against the home domain's own signing keys (plan/01, trust policy).
+    let home_keys = rp.resolve_domain_keys(&verified.assertion.domain)?;
+    let claims = Claims::verified(
+        &info,
+        &verified.assertion.user_id,
+        &verified.assertion.domain,
+        &home_keys,
+    )?;
     let handle = claims.handle.clone().ok_or_else(|| {
         Error::new(
             Code::Unauthenticated,
@@ -149,6 +169,7 @@ pub fn complete(app: &App, _ctx: &ReqCtx, req: CompleteLoginRequest) -> Result<S
     })
 }
 
+#[derive(Debug)]
 struct Claims {
     handle: Option<String>,
     display_name: Option<String>,
@@ -156,16 +177,71 @@ struct Claims {
     email_signed: bool,
 }
 
+/// What the home domain's signatures say about one claim.
+enum Verdict {
+    /// At least one valid signature by the home domain over this exact value.
+    Verified,
+    /// No home-domain signature at all; display data at best.
+    Unsigned,
+    /// Home-domain signatures are present but do not verify.
+    Invalid(String),
+}
+
+/// Only the home domain's own signatures count: a handle or an email is
+/// that domain's statement about its user. Third-party attestations are
+/// ignored in v1.
+fn home_domain_verdict(
+    claim: &lk::Claim,
+    domain: &str,
+    keys: &[liblinkkeys::claims::DomainKeySet],
+) -> Verdict {
+    let mut own = claim.clone();
+    own.signatures
+        .retain(|s| s.domain.eq_ignore_ascii_case(domain));
+    if own.signatures.is_empty() {
+        return Verdict::Unsigned;
+    }
+    match liblinkkeys::claims::verify_claim(&own, domain, keys) {
+        Ok(()) => Verdict::Verified,
+        Err(e) => Verdict::Invalid(e.to_string()),
+    }
+}
+
 impl Claims {
-    fn from_userinfo(info: &lk::UserInfo) -> Self {
+    /// Claims vcsstar trusts. `handle` needs a valid home-domain signature;
+    /// a handle whose signatures fail is a login failure, not a fallback.
+    /// `email` is stored as verified only with a valid signature; an
+    /// unsigned email stays display data; one with bad signatures is
+    /// dropped. `display_name` is display data.
+    fn verified(
+        info: &lk::UserInfo,
+        user_id: &str,
+        subject_domain: &str,
+        home_keys: &[lk::DomainPublicKey],
+    ) -> Result<Self, Error> {
+        if !info.user_id.eq_ignore_ascii_case(user_id)
+            || !info.domain.eq_ignore_ascii_case(subject_domain)
+        {
+            return Err(Error::new(
+                Code::Unauthenticated,
+                "userinfo identity does not match the assertion",
+            ));
+        }
+        // The IDP signed its own domain string into every payload; use it.
+        let domain = info.domain.as_str();
+        let key_set = [liblinkkeys::claims::DomainKeySet {
+            domain: domain.to_string(),
+            keys: home_keys.to_vec(),
+        }];
         let mut c = Claims {
             handle: None,
             display_name: None,
             email: None,
             email_signed: false,
         };
+        let mut handle_rejected: Option<String> = None;
         for claim in &info.claims {
-            if claim.revoked_at.is_some() {
+            if claim.revoked_at.is_some() || !claim.user_id.eq_ignore_ascii_case(user_id) {
                 continue;
             }
             let value = String::from_utf8_lossy(&claim.claim_value)
@@ -175,19 +251,52 @@ impl Claims {
                 continue;
             }
             match claim.claim_type.as_str() {
-                "handle" if c.handle.is_none() => c.handle = Some(value),
+                "handle" if c.handle.is_none() => {
+                    match home_domain_verdict(claim, domain, &key_set) {
+                        Verdict::Verified => c.handle = Some(value),
+                        Verdict::Unsigned => {
+                            handle_rejected
+                                .get_or_insert_with(|| "no home-domain signature".to_string());
+                        }
+                        Verdict::Invalid(reason) => {
+                            tracing::warn!(%domain, %reason, "handle claim signature rejected");
+                            handle_rejected = Some(reason);
+                        }
+                    }
+                }
                 "display_name" if c.display_name.is_none() => c.display_name = Some(value),
                 "email" if c.email.is_none() => {
-                    c.email_signed = !claim.signatures.is_empty();
-                    c.email = Some(value);
+                    match home_domain_verdict(claim, domain, &key_set) {
+                        Verdict::Verified => {
+                            c.email = Some(value);
+                            c.email_signed = true;
+                        }
+                        Verdict::Unsigned => {
+                            c.email = Some(value);
+                            c.email_signed = false;
+                        }
+                        Verdict::Invalid(reason) => {
+                            tracing::warn!(%domain, %reason, "email claim signature rejected; email dropped");
+                        }
+                    }
                 }
                 _ => {}
+            }
+        }
+        if c.handle.is_none() {
+            if let Some(reason) = handle_rejected {
+                return Err(Error::new(
+                    Code::Unauthenticated,
+                    format!(
+                        "the handle claim did not verify against the home domain's keys: {reason}"
+                    ),
+                ));
             }
         }
         if c.display_name.is_none() && !info.display_name.trim().is_empty() {
             c.display_name = Some(info.display_name.trim().to_string());
         }
-        c
+        Ok(c)
     }
 }
 
@@ -321,11 +430,12 @@ fn find_device_by_user_code(conn: &mut DbConn, code: &str) -> Result<DeviceLogin
         .ok_or_else(|| Error::not_found("device code (expired or already used)"))
 }
 
-pub fn begin_device(
-    app: &App,
-    _ctx: &ReqCtx,
-    req: BeginDeviceRequest,
-) -> Result<DeviceCode, Error> {
+pub fn begin_device(app: &App, ctx: &ReqCtx, req: BeginDeviceRequest) -> Result<DeviceCode, Error> {
+    app.limiter.take(
+        &peer_key("device", ctx),
+        app.config.rate_limits.login_per_minute,
+        "device login",
+    )?;
     check_scopes(&req.scopes)?;
     if req.client_label.trim().is_empty() || req.client_label.len() > 100 {
         return Err(Error::invalid("client_label must be 1-100 characters"));
@@ -361,9 +471,17 @@ pub fn begin_device(
 
 pub fn poll_device(
     app: &App,
-    _ctx: &ReqCtx,
+    ctx: &ReqCtx,
     req: DevicePollRequest,
 ) -> Result<DevicePollResponse, Error> {
+    let per_minute = app.config.rate_limits.device_poll_per_minute;
+    app.limiter
+        .take(&peer_key("poll", ctx), per_minute, "device poll")?;
+    app.limiter.take(
+        &crate::ratelimit::key_of_secret("poll", &req.device_code),
+        per_minute,
+        "device poll",
+    )?;
     let mut conn = app.conn()?;
     let digest = tokens::hash(req.device_code.trim());
     let row: Option<DeviceLogin> = device_logins::table
@@ -473,6 +591,12 @@ pub fn approve_device(app: &App, ctx: &ReqCtx, req: DeviceApproveRequest) -> Res
     if p.kind != crate::principal::CredentialKind::Session {
         return Err(Error::forbidden("device approval needs a browser session"));
     }
+    // User codes are short; every attempt counts, approved or not.
+    app.limiter.take(
+        &format!("approve:{}", p.key()),
+        app.config.rate_limits.device_approve_per_minute,
+        "device approval",
+    )?;
     let mut conn = app.conn()?;
     let row = find_device_by_user_code(&mut conn, &req.user_code)?;
     if req.approve {
@@ -483,6 +607,16 @@ pub fn approve_device(app: &App, ctx: &ReqCtx, req: DeviceApproveRequest) -> Res
             .execute(&mut conn)?;
     }
     Ok(WireOk { ok: true })
+}
+
+/// Bucket key for the peer address. An unknown address shares one bucket,
+/// which only ever makes the limit stricter.
+fn peer_key(what: &str, ctx: &ReqCtx) -> String {
+    let remote = ctx.peer.remote.trim();
+    format!(
+        "{what}:ip:{}",
+        if remote.is_empty() { "unknown" } else { remote }
+    )
 }
 
 /// Maintenance: drop expired pending logins and device codes.
@@ -502,6 +636,166 @@ pub fn purge_expired(conn: &mut DbConn) -> Result<usize, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use liblinkkeys::claims::{sign_claim, ClaimSigner, ClaimSpec};
+    use liblinkkeys::crypto::{fingerprint, generate_keypair, SigningAlgorithm};
+
+    const USER: &str = "01a11ea7-24d3-7612-8586-8e4645452613";
+
+    struct Domain {
+        name: &'static str,
+        key_id: &'static str,
+        public: lk::DomainPublicKey,
+        private: Vec<u8>,
+    }
+
+    fn domain(name: &'static str, key_id: &'static str) -> Domain {
+        let (public, private) = generate_keypair(SigningAlgorithm::Ed25519);
+        let now = Utc::now();
+        Domain {
+            name,
+            key_id,
+            public: lk::DomainPublicKey {
+                key_id: key_id.into(),
+                fingerprint: fingerprint(&public),
+                public_key: public,
+                algorithm: "ed25519".into(),
+                key_usage: "sign".into(),
+                created_at: (now - Duration::days(1)).to_rfc3339(),
+                expires_at: (now + Duration::days(1)).to_rfc3339(),
+                revoked_at: None,
+                signed_by_key_id: None,
+                key_signature: None,
+            },
+            private,
+        }
+    }
+
+    fn signed(d: &Domain, claim_type: &str, value: &str) -> lk::Claim {
+        let attested = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        sign_claim(
+            &ClaimSpec {
+                claim_id: &format!("{claim_type}-1"),
+                claim_type,
+                claim_value: value.as_bytes(),
+                user_id: USER,
+                subject_domain: "home.test",
+                expires_at: None,
+                attested_at: &attested,
+            },
+            &[ClaimSigner {
+                domain: d.name,
+                key_id: d.key_id,
+                algorithm: SigningAlgorithm::Ed25519,
+                private_key_bytes: &d.private,
+            }],
+        )
+        .expect("sign")
+    }
+
+    fn unsigned(claim_type: &str, value: &str) -> lk::Claim {
+        let mut c = signed(&domain("x.test", "x"), claim_type, value);
+        c.signatures.clear();
+        c
+    }
+
+    fn info(claims: Vec<lk::Claim>) -> lk::UserInfo {
+        lk::UserInfo {
+            user_id: USER.into(),
+            domain: "home.test".into(),
+            display_name: "Alice".into(),
+            claims,
+        }
+    }
+
+    #[test]
+    fn home_domain_signed_handle_and_email_verify() {
+        let home = domain("home.test", "k1");
+        let c = Claims::verified(
+            &info(vec![
+                signed(&home, "handle", "alice"),
+                signed(&home, "email", "alice@home.test"),
+            ]),
+            USER,
+            "home.test",
+            std::slice::from_ref(&home.public),
+        )
+        .expect("verified");
+        assert_eq!(c.handle.as_deref(), Some("alice"));
+        assert_eq!(c.email.as_deref(), Some("alice@home.test"));
+        assert!(c.email_signed);
+        assert_eq!(c.display_name.as_deref(), Some("Alice"));
+    }
+
+    #[test]
+    fn handle_signed_by_another_domain_is_refused() {
+        let home = domain("home.test", "k1");
+        let other = domain("other.test", "k9");
+        let err = Claims::verified(
+            &info(vec![signed(&other, "handle", "alice")]),
+            USER,
+            "home.test",
+            std::slice::from_ref(&home.public),
+        )
+        .expect_err("refused");
+        assert_eq!(err.code, Code::Unauthenticated);
+    }
+
+    #[test]
+    fn tampered_handle_is_refused_and_unsigned_email_is_unverified() {
+        let home = domain("home.test", "k1");
+        let mut forged = signed(&home, "handle", "alice");
+        forged.claim_value = b"mallory".to_vec();
+        let err = Claims::verified(
+            &info(vec![forged]),
+            USER,
+            "home.test",
+            std::slice::from_ref(&home.public),
+        )
+        .expect_err("refused");
+        assert!(err.message.contains("did not verify"), "{}", err.message);
+
+        let c = Claims::verified(
+            &info(vec![
+                signed(&home, "handle", "alice"),
+                unsigned("email", "alice@example.org"),
+            ]),
+            USER,
+            "home.test",
+            std::slice::from_ref(&home.public),
+        )
+        .expect("verified");
+        assert_eq!(c.email.as_deref(), Some("alice@example.org"));
+        assert!(!c.email_signed);
+    }
+
+    #[test]
+    fn email_with_bad_home_signature_is_dropped() {
+        let home = domain("home.test", "k1");
+        let mut forged = signed(&home, "email", "alice@home.test");
+        forged.claim_value = b"ceo@home.test".to_vec();
+        let c = Claims::verified(
+            &info(vec![signed(&home, "handle", "alice"), forged]),
+            USER,
+            "home.test",
+            std::slice::from_ref(&home.public),
+        )
+        .expect("verified");
+        assert!(c.email.is_none());
+        assert!(!c.email_signed);
+    }
+
+    #[test]
+    fn userinfo_for_another_identity_is_refused() {
+        let home = domain("home.test", "k1");
+        let err = Claims::verified(
+            &info(vec![signed(&home, "handle", "alice")]),
+            "01a11ea7-0000-7612-8586-8e4645452613",
+            "home.test",
+            std::slice::from_ref(&home.public),
+        )
+        .expect_err("refused");
+        assert_eq!(err.code, Code::Unauthenticated);
+    }
 
     #[test]
     fn user_codes_have_no_lookalikes() {

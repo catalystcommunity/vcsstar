@@ -68,6 +68,23 @@ helm/                    chart for the catalyst cluster
 - LinkKeys `Rp` ops go over TCP 4987 only, through
   `vcsstar_core::linkkeys::TcpRpCaller`. When `VCSSTAR__LINKKEYS_RP_ADDR`
   is unset, login is disabled and tokens still work.
+- After `Rp/verify-assertion`, `login::complete` fetches the home domain's
+  signing keys (`Rp/resolve-domain-keys`, stale results refused) and checks
+  the `handle` and `email` claim signatures itself. A handle without a
+  valid home-domain signature fails the login. An email is `email_verified`
+  only with a valid signature; unsigned stays display data; a bad
+  signature drops the value.
+- The login entry points are rate limited per node with token buckets
+  (`vcsstar_core::ratelimit`): `VCSSTAR__RATE_LOGIN_PER_MINUTE` (begin,
+  complete, device begin; per peer and per typed identity, default 10),
+  `VCSSTAR__RATE_DEVICE_POLL_PER_MINUTE` (per device code and peer, 40),
+  `VCSSTAR__RATE_DEVICE_APPROVE_PER_MINUTE` (per approving principal, 6).
+  `0` disables one. Over the limit answers `ResourceExhausted` (code 30)
+  with "try again in N s" in the message and `retry_after_s=N` in
+  `detail`; the CLI device poll backs off on it. Every refusal increments
+  `vcsstar_rate_limited_total{entry}`.
+- `GET /metrics` serves Prometheus text (`vcsstar_core::metrics`); the
+  chart adds `prometheus.io/*` scrape annotations (`metrics.scrape`).
 - CLI: `vcsstar login <url>` runs the device flow by default; the user
   approves the code at `/auth/device`. `--token-stdin` and `--token-file`
   store a token directly. First admin: `vcsstard bootstrap-token`.
@@ -110,6 +127,17 @@ helm/                    chart for the catalyst cluster
 - Mirror credentials: `secret_ref` is `env:<VAR>` or `stored` (sealed with
   `SECRET_VCSSTAR__CREDENTIAL_KEY`). The token never enters argv: git gets
   it through `GIT_CONFIG_*` environment entries.
+- Credentials with the same scope and purpose form a set: `set-credential`
+  adds a member, `remove-credential` drops one by id, and every operation
+  picks a member at random (`cred::find`); the webhook receiver accepts a
+  signature by any member. The repository's own set shadows the
+  organization's.
+- `auth_method` is `pat` (the secret is the token) or `github_app` (the
+  secret is JSON `{"app_id","installation_id","private_key"}`).
+  `vcsstar_core::github_app` mints a ten-minute RS256 App JWT and exchanges
+  it for a one-hour installation token, cached per credential on the node
+  and dropped on a terminal GitHub failure. Workers see a plain token
+  either way. `webhook_inbound` has no `github_app` form.
 - `POST /hooks/github` verifies `X-Hub-Signature-256` with the repo's
   `webhook_inbound` credential, captures the raw body into corndogs, and
   answers 202. The ingest worker verifies the hinted ref; it never applies

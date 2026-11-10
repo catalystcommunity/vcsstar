@@ -20,7 +20,7 @@ struct Shared {
 }
 
 /// Carrier facts pulled from the HTTP request.
-struct HttpPeer(Peer);
+pub(crate) struct HttpPeer(pub(crate) Peer);
 
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for HttpPeer {
@@ -63,6 +63,15 @@ fn rpc(shared: &State<Shared>, peer: HttpPeer, body: Vec<u8>) -> (ContentType, V
 #[get("/healthz")]
 fn healthz() -> &'static str {
     "ok"
+}
+
+/// Prometheus text exposition for this process.
+#[get("/metrics")]
+fn metrics() -> (ContentType, String) {
+    (
+        ContentType::new("text", "plain; version=0.0.4"),
+        vcsstar_core::metrics::render(),
+    )
 }
 
 /// Client-side routes of the SPA: anything no other route claimed gets
@@ -125,21 +134,31 @@ fn github_hook(shared: &State<Shared>, req: GithubHeaders, body: Vec<u8>) -> (Ht
             "no mirror for this repository\n".into(),
         );
     };
-    let cred = match vcsstar_core::mirror::cred::find(&mut conn, org_id, repo_id, "webhook_inbound")
-    {
-        Ok(Some(c)) => c,
-        _ => {
-            return (
-                HttpStatus::Unauthorized,
-                "no webhook_inbound credential for this repository\n".into(),
-            )
+    // Several webhook secrets may be live at once (rotation, or hooks set
+    // up at different times); the signature must match one of them.
+    let set =
+        match vcsstar_core::mirror::cred::candidates(&mut conn, org_id, repo_id, "webhook_inbound")
+        {
+            Ok(set) if !set.is_empty() => set,
+            _ => {
+                return (
+                    HttpStatus::Unauthorized,
+                    "no webhook_inbound credential for this repository\n".into(),
+                )
+            }
+        };
+    let mut matched = false;
+    for cred in &set {
+        let secret = match vcsstar_core::mirror::cred::value(app, cred) {
+            Ok(s) => s,
+            Err(e) => return (HttpStatus::ServiceUnavailable, format!("{}\n", e.message)),
+        };
+        if vcsstar_core::github::verify_webhook_signature(secret.as_bytes(), &body, sig) {
+            matched = true;
+            break;
         }
-    };
-    let secret = match vcsstar_core::mirror::cred::value(app, &cred) {
-        Ok(s) => s,
-        Err(e) => return (HttpStatus::ServiceUnavailable, format!("{}\n", e.message)),
-    };
-    if !vcsstar_core::github::verify_webhook_signature(secret.as_bytes(), &body, sig) {
+    }
+    if !matched {
         return (HttpStatus::Unauthorized, "signature mismatch\n".into());
     }
     let _ = credentials::table; // (schema import kept for clarity)
@@ -244,7 +263,7 @@ pub fn serve(
                 .mount("/", routes![spa_fallback]);
         }
         let rocket = rocket
-            .mount("/", routes![rpc, healthz, readyz, github_hook])
+            .mount("/", routes![rpc, healthz, readyz, metrics, github_hook])
             .mount("/", crate::auth_pages::routes())
             .mount("/", crate::gitwire::routes())
             .mount("/", crate::events_ws::routes())
