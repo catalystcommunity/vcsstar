@@ -15,6 +15,8 @@ ensure_rust() {
     if ! command -v cargo >/dev/null 2>&1; then
         curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable >/dev/null
     fi
+    # The runner image ships the minimal profile: no rustfmt, no clippy.
+    rustup component add rustfmt clippy >/dev/null
     rustc --version
     cargo --version
 }
