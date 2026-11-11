@@ -31,8 +31,8 @@ vcsstar-workers = { path = "crates/vcsstar-workers", version = "0.1.0" }
 # Ecosystem pins. csilgen-transport must match the csilgen release in
 # tools/csilgen.sh (CSILGEN_COMMIT). corndogs must be >= 0.8.0.
 csilgen-transport = { git = "https://github.com/catalystcommunity/csilgen", rev = "6fcc0981fba034d4f34e3a3da0f59368b3ecb193" }
-liblinkkeys = { git = "https://github.com/catalystcommunity/linkkeys", rev = "04a8e177a43212999616c94013f1831d7d69f137" }
-linkkeys-rpc-client = { git = "https://github.com/catalystcommunity/linkkeys", rev = "04a8e177a43212999616c94013f1831d7d69f137" }
+liblinkkeys = { git = "https://github.com/catalystcommunity/linkkeys", rev = "3227a58c78a795a876b86258793375df291d3dcd" }
+linkkeys-rpc-client = { git = "https://github.com/catalystcommunity/linkkeys", rev = "3227a58c78a795a876b86258793375df291d3dcd" }
 corndogs = { git = "https://github.com/catalystcommunity/corndogs", rev = "f1b6ec6086dd0341c09629791bfaa959397b3f9c", features = ["tls"] }
 
 # Server

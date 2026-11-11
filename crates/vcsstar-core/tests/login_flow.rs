@@ -85,6 +85,11 @@ impl RpCaller for FakeRp {
         match op {
             "sign-request" => {
                 let req = decode_rp_sign_request(&payload).unwrap();
+                assert_eq!(
+                    req.application_id.as_deref(),
+                    Some("vcsstar"),
+                    "sign-request names the application consent is keyed by"
+                );
                 assert!(req
                     .requested_claims
                     .as_ref()

@@ -198,6 +198,9 @@ impl Rp<'_> {
         let req = lk::RpSignRequest {
             callback_url: callback_url.to_string(),
             nonce: nonce.to_string(),
+            // Standing consent is per application (LinkKeys 0.16.7): name
+            // the same application the instance keys and act-as use.
+            application_id: Some(crate::instance_keys::APPLICATION_ID.to_string()),
             requested_claims: Some(requested_claims()),
             authentication_requirements: None,
             flow_context: None,
