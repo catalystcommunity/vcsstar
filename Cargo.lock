@@ -892,7 +892,7 @@ dependencies = [
 [[package]]
 name = "csilgen-transport"
 version = "0.1.0"
-source = "git+https://github.com/catalystcommunity/linkkeys?rev=04a8e177a43212999616c94013f1831d7d69f137#04a8e177a43212999616c94013f1831d7d69f137"
+source = "git+https://github.com/catalystcommunity/linkkeys?rev=3227a58c78a795a876b86258793375df291d3dcd#3227a58c78a795a876b86258793375df291d3dcd"
 dependencies = [
  "ciborium",
  "ciborium-io",
@@ -2315,7 +2315,7 @@ checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 [[package]]
 name = "liblinkkeys"
 version = "0.1.0"
-source = "git+https://github.com/catalystcommunity/linkkeys?rev=04a8e177a43212999616c94013f1831d7d69f137#04a8e177a43212999616c94013f1831d7d69f137"
+source = "git+https://github.com/catalystcommunity/linkkeys?rev=3227a58c78a795a876b86258793375df291d3dcd#3227a58c78a795a876b86258793375df291d3dcd"
 dependencies = [
  "aes-gcm 0.10.3",
  "argon2 0.5.3",
@@ -2344,10 +2344,10 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 [[package]]
 name = "linkkeys-rpc-client"
 version = "0.1.0"
-source = "git+https://github.com/catalystcommunity/linkkeys?rev=04a8e177a43212999616c94013f1831d7d69f137#04a8e177a43212999616c94013f1831d7d69f137"
+source = "git+https://github.com/catalystcommunity/linkkeys?rev=3227a58c78a795a876b86258793375df291d3dcd#3227a58c78a795a876b86258793375df291d3dcd"
 dependencies = [
  "ciborium",
- "csilgen-transport 0.1.0 (git+https://github.com/catalystcommunity/linkkeys?rev=04a8e177a43212999616c94013f1831d7d69f137)",
+ "csilgen-transport 0.1.0 (git+https://github.com/catalystcommunity/linkkeys?rev=3227a58c78a795a876b86258793375df291d3dcd)",
  "liblinkkeys",
  "log",
  "rcgen",
@@ -4585,7 +4585,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

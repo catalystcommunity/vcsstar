@@ -73,6 +73,15 @@ helm/                    chart for the catalyst cluster
 - LinkKeys `Rp` ops go over TCP 4987 only, through
   `vcsstar_core::linkkeys::TcpRpCaller`. When `VCSSTAR__LINKKEYS_RP_ADDR`
   is unset, login is disabled and tokens still work.
+- `Rp/sign-request` asks for the claims `handle` (required), `display_name`
+  and `email` (optional), and names the application `vcsstar`
+  (`instance_keys::APPLICATION_ID`, the same id the instance keys and
+  act-as grants use). LinkKeys 0.16.7 keys standing consent by user, RP
+  domain, and application, so a person consents once per application, and
+  the consent screen shows the display name of the instance's LinkKeys
+  account: give that account a name people recognize. A server older than
+  0.16.7 ignores the field. The linkkeys crates are pinned by git rev in
+  `Cargo.toml` (`liblinkkeys`, `linkkeys-rpc-client`; v0.16.7 now).
 - After `Rp/verify-assertion`, `login::complete` fetches the home domain's
   signing keys (`Rp/resolve-domain-keys`, stale results refused) and checks
   the `handle` and `email` claim signatures itself. A handle without a
