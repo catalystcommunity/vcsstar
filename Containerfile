@@ -9,7 +9,7 @@ COPY migrations ./migrations
 RUN cargo build --release --locked --workspace \
     && strip target/release/vcsstard target/release/vcsstar
 
-# The web UI: SolidJS built with Vite into static files.
+# The web UI: TypeScript on Zest web components, built with Vite into static files.
 FROM node:22-bookworm-slim AS ui
 WORKDIR /ui
 COPY ui/package.json ui/package-lock.json ./

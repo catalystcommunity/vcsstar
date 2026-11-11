@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="vcsstar">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22428a"/>
+      <stop offset="1" stop-color="#0c1a3d"/>
+    </linearGradient>
+    <linearGradient id="star" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe7a3"/>
+      <stop offset="1" stop-color="#f0bf4f"/>
+    </linearGradient>
+  </defs>
+  <!-- The git tile: a rounded square on its corner. -->
+  <rect x="18" y="18" width="64" height="64" rx="13" transform="rotate(45 50 50)" fill="url(#tile)" stroke="#4a6fc2" stroke-width="1.5"/>
+  <!-- The branch line of the git mark, kept faint; the star sits where the main node was. -->
+  <line x1="29" y1="71" x2="71" y2="29" stroke="#f3c969" stroke-opacity="0.45" stroke-width="2" stroke-linecap="round"/>
+  <!-- Two small nodes, as sparks. -->
+  <path transform="translate(72 28)" d="M0 -5 L1.5 -1.5 L5 0 L1.5 1.5 L0 5 L-1.5 1.5 L-5 0 L-1.5 -1.5 Z" fill="#ffe7a3"/>
+  <path transform="translate(28 72)" d="M0 -4 L1.2 -1.2 L4 0 L1.2 1.2 L0 4 L-1.2 1.2 L-4 0 L-1.2 -1.2 Z" fill="#ffe7a3" fill-opacity="0.9"/>
+  <!-- The star. -->
+  <path transform="translate(0 2)" d="M50 24 L56.17 41.51 L74.73 41.97 L59.99 53.24 L65.28 71.03 L50 60.5 L34.72 71.03 L40.01 53.24 L25.27 41.97 L43.83 41.51 Z" fill="url(#star)" stroke="#8a6512" stroke-width="0.75" stroke-linejoin="round"/>
+</svg>

@@ -6,8 +6,6 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "strict": true,
-    "jsx": "preserve",
-    "jsxImportSource": "solid-js",
     "types": ["vite/client"],
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,

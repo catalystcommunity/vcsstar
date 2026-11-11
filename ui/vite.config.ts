@@ -1,10 +1,8 @@
 import { defineConfig } from "vite";
-import solid from "vite-plugin-solid";
 
 // The dev server proxies the CSIL carrier and the server-rendered auth
 // pages to a local vcsstard so cookies stay same-origin.
 export default defineConfig({
-  plugins: [solid()],
   server: {
     port: 5173,
     proxy: {
@@ -17,5 +15,8 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     sourcemap: false,
+    // Zest tokens use light-dark(); an older target rewrites it to a
+    // page-wide media query and color-scheme on part of a page stops working.
+    cssTarget: ["chrome123", "firefox120", "safari17.5"],
   },
 });

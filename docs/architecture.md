@@ -66,7 +66,8 @@ flowchart TB
     class cd queue
 ```
 
-Every pod runs the roles its deployment names. The pods hold no state of
+The web UI is plain TypeScript on Zest web components; it speaks CSIL-RPC
+to the api pods and nothing else. Every pod runs the roles its deployment names. The pods hold no state of
 their own: sessions, tokens, refs, pull requests, the outbox, mirror state,
 the GitHub lane breakers, the rate table, and the pass clocks live in
 Postgres; pending work lives in corndogs; history lives in the object store.
