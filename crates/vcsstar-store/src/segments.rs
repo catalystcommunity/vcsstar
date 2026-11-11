@@ -130,6 +130,8 @@ pub struct Segment {
     pub kind: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub superseded_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// A reachability bitmap (`.bitmap`) was uploaded beside the index.
+    pub has_bitmap: bool,
 }
 
 /// Live segments in order.
@@ -181,6 +183,7 @@ pub fn copy_all(conn: &mut PgConnection, src: Uuid, dst: Uuid) -> Result<usize> 
                 repo_segments::size.eq(s.size),
                 repo_segments::content_hash.eq(&s.content_hash),
                 repo_segments::kind.eq(&s.kind),
+                repo_segments::has_bitmap.eq(s.has_bitmap),
             ))
             .execute(conn)?;
     }
@@ -226,6 +229,44 @@ pub fn object_key(repo_id: Uuid, stem: &str) -> String {
 
 pub fn idx_key(pack_key: &str) -> String {
     pack_key.trim_end_matches(".pack").to_string() + ".idx"
+}
+
+pub fn bitmap_key(pack_key: &str) -> String {
+    pack_key.trim_end_matches(".pack").to_string() + ".bitmap"
+}
+
+/// Replace the live manifest with one consolidated segment, inside the
+/// caller's transaction. Returns the object keys of the segments it
+/// replaced (the caller deletes their objects after the commit). Segments
+/// appended after `seen` (a push that landed during the repack) stay.
+pub fn consolidate(
+    conn: &mut PgConnection,
+    repo_id: Uuid,
+    seen: &[Segment],
+    object_key: &str,
+    size: i64,
+    content_hash: &str,
+    has_bitmap: bool,
+) -> Result<Vec<String>> {
+    let ordinals: Vec<i32> = seen.iter().map(|s| s.ordinal).collect();
+    let replaced: Vec<String> = diesel::update(
+        repo_segments::table
+            .filter(repo_segments::repo_id.eq(repo_id))
+            .filter(repo_segments::ordinal.eq_any(&ordinals))
+            .filter(repo_segments::superseded_at.is_null()),
+    )
+    .set(repo_segments::superseded_at.eq(chrono::Utc::now()))
+    .returning(repo_segments::object_key)
+    .get_results(conn)?;
+    let ordinal = append(conn, repo_id, object_key, size, content_hash, "pack")?;
+    diesel::update(
+        repo_segments::table
+            .filter(repo_segments::repo_id.eq(repo_id))
+            .filter(repo_segments::ordinal.eq(ordinal)),
+    )
+    .set(repo_segments::has_bitmap.eq(has_bitmap))
+    .execute(conn)?;
+    Ok(replaced)
 }
 
 /// The pack checksum (trailing 20 or 32 bytes) as hex: the content hash.

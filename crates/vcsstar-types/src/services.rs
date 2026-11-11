@@ -96,6 +96,20 @@ pub trait Auth {
     ) -> Result<ListTokensResponse, ServiceError>;
     /// logout (request/response).
     fn logout(&self, ctx: &Self::Context, input: Empty) -> Result<Ok, ServiceError>;
+    /// GitHub account link of the caller (see GithubLink).
+    fn github_link_status(
+        &self,
+        ctx: &Self::Context,
+        input: Empty,
+    ) -> Result<GithubLink, ServiceError>;
+    /// set-github-token (request/response).
+    fn set_github_token(
+        &self,
+        ctx: &Self::Context,
+        input: SetGithubTokenRequest,
+    ) -> Result<GithubLink, ServiceError>;
+    /// unlink-github (request/response).
+    fn unlink_github(&self, ctx: &Self::Context, input: Empty) -> Result<Ok, ServiceError>;
 }
 
 /// Wire-id ordinals for the Auth service (transport compact profiles).
@@ -116,6 +130,9 @@ pub mod auth_wire_ids {
     pub const OP_REVOKE_KEY: u64 = 12;
     pub const OP_LIST_TOKENS: u64 = 13;
     pub const OP_LOGOUT: u64 = 14;
+    pub const OP_GITHUB_LINK_STATUS: u64 = 15;
+    pub const OP_SET_GITHUB_TOKEN: u64 = 16;
+    pub const OP_UNLINK_GITHUB: u64 = 17;
 }
 
 /// Orgs service trait
@@ -481,6 +498,16 @@ pub trait Mirror {
         ctx: &Self::Context,
         input: CredentialRef,
     ) -> Result<Ok, ServiceError>;
+    /// Repositories visible under the organization's `github_owner`, with
+    /// the vcsstar repository that mirrors each one when there is one.
+    /// Enable one with `import-repo`.
+    fn list_github_repos(
+        &self,
+        ctx: &Self::Context,
+        input: ListGithubReposRequest,
+    ) -> Result<GithubRepoPage, ServiceError>;
+    /// This node's view of GitHub availability and rate limits.
+    fn health(&self, ctx: &Self::Context, input: Empty) -> Result<GithubHealth, ServiceError>;
 }
 
 /// Wire-id ordinals for the Mirror service (transport compact profiles).
@@ -497,6 +524,60 @@ pub mod mirror_wire_ids {
     pub const OP_CONFIGURE: u64 = 8;
     pub const OP_LIST_CREDENTIALS: u64 = 9;
     pub const OP_REMOVE_CREDENTIAL: u64 = 10;
+    pub const OP_LIST_GITHUB_REPOS: u64 = 11;
+    pub const OP_HEALTH: u64 = 12;
+}
+
+/// ServiceAccounts service trait
+pub trait ServiceAccounts {
+    type Context;
+    /// create (request/response).
+    fn create(
+        &self,
+        ctx: &Self::Context,
+        input: CreateServiceAccountRequest,
+    ) -> Result<ServiceAccount, ServiceError>;
+    /// list (request/response).
+    fn list(
+        &self,
+        ctx: &Self::Context,
+        input: GetOrgRequest,
+    ) -> Result<ListServiceAccountsResponse, ServiceError>;
+    /// Disabling refuses every token of the account; enabling lets the
+    /// tokens that were not revoked work again.
+    fn disable(&self, ctx: &Self::Context, input: ServiceAccountRef) -> Result<Ok, ServiceError>;
+    /// enable (request/response).
+    fn enable(&self, ctx: &Self::Context, input: ServiceAccountRef) -> Result<Ok, ServiceError>;
+    /// create-token (request/response).
+    fn create_token(
+        &self,
+        ctx: &Self::Context,
+        input: CreateServiceAccountTokenRequest,
+    ) -> Result<ApiToken, ServiceError>;
+    /// list-tokens (request/response).
+    fn list_tokens(
+        &self,
+        ctx: &Self::Context,
+        input: ServiceAccountRef,
+    ) -> Result<ListTokensResponse, ServiceError>;
+    /// revoke-token (request/response).
+    fn revoke_token(
+        &self,
+        ctx: &Self::Context,
+        input: RevokeServiceAccountTokenRequest,
+    ) -> Result<Ok, ServiceError>;
+}
+
+/// Wire-id ordinals for the ServiceAccounts service (transport compact profiles).
+pub mod service_accounts_wire_ids {
+    pub const SERVICE: u64 = 11;
+    pub const OP_CREATE: u64 = 0;
+    pub const OP_LIST: u64 = 1;
+    pub const OP_DISABLE: u64 = 2;
+    pub const OP_ENABLE: u64 = 3;
+    pub const OP_CREATE_TOKEN: u64 = 4;
+    pub const OP_LIST_TOKENS: u64 = 5;
+    pub const OP_REVOKE_TOKEN: u64 = 6;
 }
 
 /// Federation service trait

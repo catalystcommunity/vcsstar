@@ -22,6 +22,13 @@ linkkeys:
 
 credentialKeySecret: "vcsstar-credential-key"
 
+# The instance's GitHub App (optional): the deploy job writes the Secret
+# from the store keys catalystcommunity/vcsstar:github-app-*. Users then
+# connect their GitHub account on the Account page.
+githubApp:
+  existingSecret: "vcsstar-github-app"
+  slug: ""
+
 corndogs:
   addr: "corndogs.vcsstar.svc.cluster.local:5080"
   tls: "false"
@@ -39,8 +46,30 @@ nodeSelector:
 
 postgresql:
   enabled: true
+  operator: cnpg
+  instances: 2
   storage:
     size: 10Gi
+    storageClass: longhorn
+  # Base backups and WAL archive into the object store (CloudNativePG
+  # barman); the Secret holds ACCESS_KEY_ID and ACCESS_SECRET_KEY.
+  backup:
+    barmanObjectStore:
+      destinationPath: s3://vcsstar-backups/catalystsquad/
+      endpointURL: http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333
+      s3Credentials:
+        accessKeyId:
+          name: vcsstar-backup-s3
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: vcsstar-backup-s3
+          key: ACCESS_SECRET_KEY
+      wal:
+        compression: gzip
+      data:
+        compression: gzip
+    retentionPolicy: 30d
+    target: prefer-standby
 
 objectStore:
   endpoint: "http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333"

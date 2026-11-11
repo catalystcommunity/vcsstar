@@ -216,6 +216,40 @@ impl<T: AsyncTransport> AuthAsyncClient<T> {
             .await?;
         decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
     }
+
+    /// GitHub account link of the caller (see GithubLink).
+    pub async fn github_link_status(&self, req: Empty) -> Result<GithubLink, ClientError> {
+        let csil_resp = self
+            .transport
+            .call("Auth", "github-link-status", &encode_empty(&req))
+            .await?;
+        decode_github_link(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// set-github-token (request/response).
+    pub async fn set_github_token(
+        &self,
+        req: SetGithubTokenRequest,
+    ) -> Result<GithubLink, ClientError> {
+        let csil_resp = self
+            .transport
+            .call(
+                "Auth",
+                "set-github-token",
+                &encode_set_github_token_request(&req),
+            )
+            .await?;
+        decode_github_link(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// unlink-github (request/response).
+    pub async fn unlink_github(&self, req: Empty) -> Result<Ok, ClientError> {
+        let csil_resp = self
+            .transport
+            .call("Auth", "unlink-github", &encode_empty(&req))
+            .await?;
+        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
 }
 
 /// Typed client for the Orgs service.
@@ -925,6 +959,149 @@ impl<T: AsyncTransport> MirrorAsyncClient<T> {
         let csil_resp = self
             .transport
             .call("Mirror", "remove-credential", &encode_credential_ref(&req))
+            .await?;
+        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// Repositories visible under the organization's `github_owner`, with
+    /// the vcsstar repository that mirrors each one when there is one.
+    /// Enable one with `import-repo`.
+    pub async fn list_github_repos(
+        &self,
+        req: ListGithubReposRequest,
+    ) -> Result<GithubRepoPage, ClientError> {
+        let csil_resp = self
+            .transport
+            .call(
+                "Mirror",
+                "list-github-repos",
+                &encode_list_github_repos_request(&req),
+            )
+            .await?;
+        decode_github_repo_page(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// This node's view of GitHub availability and rate limits.
+    pub async fn health(&self, req: Empty) -> Result<GithubHealth, ClientError> {
+        let csil_resp = self
+            .transport
+            .call("Mirror", "health", &encode_empty(&req))
+            .await?;
+        decode_github_health(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+}
+
+/// Typed client for the ServiceAccounts service.
+pub struct ServiceAccountsAsyncClient<T: AsyncTransport> {
+    #[allow(dead_code)]
+    transport: T,
+}
+
+impl<T: AsyncTransport> ServiceAccountsAsyncClient<T> {
+    pub fn new(transport: T) -> Self {
+        Self { transport }
+    }
+
+    /// create (request/response).
+    pub async fn create(
+        &self,
+        req: CreateServiceAccountRequest,
+    ) -> Result<ServiceAccount, ClientError> {
+        let csil_resp = self
+            .transport
+            .call(
+                "ServiceAccounts",
+                "create",
+                &encode_create_service_account_request(&req),
+            )
+            .await?;
+        decode_service_account(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// list (request/response).
+    pub async fn list(
+        &self,
+        req: GetOrgRequest,
+    ) -> Result<ListServiceAccountsResponse, ClientError> {
+        let csil_resp = self
+            .transport
+            .call("ServiceAccounts", "list", &encode_get_org_request(&req))
+            .await?;
+        decode_list_service_accounts_response(&csil_resp)
+            .map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// Disabling refuses every token of the account; enabling lets the
+    /// tokens that were not revoked work again.
+    pub async fn disable(&self, req: ServiceAccountRef) -> Result<Ok, ClientError> {
+        let csil_resp = self
+            .transport
+            .call(
+                "ServiceAccounts",
+                "disable",
+                &encode_service_account_ref(&req),
+            )
+            .await?;
+        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// enable (request/response).
+    pub async fn enable(&self, req: ServiceAccountRef) -> Result<Ok, ClientError> {
+        let csil_resp = self
+            .transport
+            .call(
+                "ServiceAccounts",
+                "enable",
+                &encode_service_account_ref(&req),
+            )
+            .await?;
+        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// create-token (request/response).
+    pub async fn create_token(
+        &self,
+        req: CreateServiceAccountTokenRequest,
+    ) -> Result<ApiToken, ClientError> {
+        let csil_resp = self
+            .transport
+            .call(
+                "ServiceAccounts",
+                "create-token",
+                &encode_create_service_account_token_request(&req),
+            )
+            .await?;
+        decode_api_token(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// list-tokens (request/response).
+    pub async fn list_tokens(
+        &self,
+        req: ServiceAccountRef,
+    ) -> Result<ListTokensResponse, ClientError> {
+        let csil_resp = self
+            .transport
+            .call(
+                "ServiceAccounts",
+                "list-tokens",
+                &encode_service_account_ref(&req),
+            )
+            .await?;
+        decode_list_tokens_response(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// revoke-token (request/response).
+    pub async fn revoke_token(
+        &self,
+        req: RevokeServiceAccountTokenRequest,
+    ) -> Result<Ok, ClientError> {
+        let csil_resp = self
+            .transport
+            .call(
+                "ServiceAccounts",
+                "revoke-token",
+                &encode_revoke_service_account_token_request(&req),
+            )
             .await?;
         decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
     }

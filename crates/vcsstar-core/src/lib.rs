@@ -9,6 +9,9 @@ pub mod errors;
 pub mod events_json;
 pub mod github;
 pub mod github_app;
+pub mod github_health;
+pub mod github_link;
+pub mod github_sync;
 pub mod instance_keys;
 pub mod linkkeys;
 pub mod metrics;
@@ -53,6 +56,7 @@ pub struct App {
 
 impl App {
     pub fn new(config: Config, db: DbPool) -> Self {
+        github_health::attach(db.clone());
         let rp: Option<Arc<dyn linkkeys::RpCaller>> =
             match linkkeys::TcpRpCaller::from_config(&config.linkkeys) {
                 Ok(c) => Some(Arc::new(c)),
@@ -128,6 +132,14 @@ impl App {
         let q = guard.as_ref().expect("connected");
         match q.submit(queue_name, key, payload, priority) {
             Ok(_) => Ok(()),
+            // Code 4: the key was submitted before with a different payload.
+            // The work is already captured; the connection is fine.
+            Err(queue::QueueError::Client(corndogs::ClientError::Service { code: 4, message })) => {
+                Err(Error::new(
+                    Code::AlreadyExists,
+                    format!("corndogs: a task with key {key} is already captured: {message}"),
+                ))
+            }
             Err(e) => {
                 *guard = None;
                 Err(Error::new(Code::Unavailable, format!("corndogs: {e}")))

@@ -79,6 +79,11 @@ spec:
                 name: {{ . }}
                 optional: true
             {{- end }}
+            {{- with .Values.githubApp.existingSecret }}
+            - secretRef:
+                name: {{ . }}
+                optional: true
+            {{- end }}
           env:
             {{- if .Values.postgresql.existingUrlSecret }}
             - name: VCSSTAR__DATABASE_URL
@@ -98,7 +103,7 @@ spec:
                   name: {{ include "vcsstar.pgSecret" . }}
                   key: password
             - name: VCSSTAR__DATABASE_URL
-              value: "postgresql://$(PGUSER):$(PGPASSWORD)@{{ include "vcsstar.fullname" . }}-postgres:5432/{{ .Values.postgresql.database }}?sslmode=require"
+              value: "postgresql://$(PGUSER):$(PGPASSWORD)@{{ include "vcsstar.pgHost" . }}:5432/{{ .Values.postgresql.database }}?sslmode=require"
             {{- end }}
           readinessProbe:
             httpGet:

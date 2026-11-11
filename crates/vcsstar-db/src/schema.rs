@@ -103,7 +103,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    events (lane, seq, created_at) {
+    events (lane, seq) {
         lane -> Text,
         seq -> Int8,
         repo_id -> Nullable<Uuid>,
@@ -113,7 +113,70 @@ diesel::table! {
         subject -> Nullable<Text>,
         payload_cbor -> Bytea,
         created_at -> Timestamptz,
+        origin -> Nullable<Text>,
         dispatched_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    github_identities (identity_id) {
+        identity_id -> Uuid,
+        github_id -> Int8,
+        login -> Text,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    github_lanes (lane) {
+        lane -> Text,
+        consecutive_failures -> Int4,
+        opens -> Int4,
+        open_until -> Nullable<Timestamptz>,
+        probing_since -> Nullable<Timestamptz>,
+        last_error -> Nullable<Text>,
+        last_failure_at -> Nullable<Timestamptz>,
+        last_success_at -> Nullable<Timestamptz>,
+        recovered_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    github_link_attempts (state_hash) {
+        state_hash -> Bytea,
+        identity_id -> Uuid,
+        return_to -> Nullable<Text>,
+        created_at -> Timestamptz,
+        expires_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    github_links (identity_id) {
+        identity_id -> Uuid,
+        github_id -> Int8,
+        login -> Text,
+        kind -> Text,
+        access_ciphertext -> Bytea,
+        access_expires_at -> Nullable<Timestamptz>,
+        refresh_ciphertext -> Nullable<Bytea>,
+        refresh_expires_at -> Nullable<Timestamptz>,
+        broken_at -> Nullable<Timestamptz>,
+        broken_reason -> Nullable<Text>,
+        linked_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        last_used_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    github_rate_limits (token_label) {
+        token_label -> Text,
+        remaining -> Int8,
+        limit -> Int8,
+        reset_at -> Timestamptz,
+        hold_until -> Nullable<Timestamptz>,
+        seen_at -> Timestamptz,
     }
 }
 
@@ -253,6 +316,8 @@ diesel::table! {
         last_error -> Nullable<Text>,
         last_full_reconcile_at -> Nullable<Timestamptz>,
         created_at -> Timestamptz,
+        last_pull_sync_at -> Nullable<Timestamptz>,
+        last_pull_pass_at -> Nullable<Timestamptz>,
     }
 }
 
@@ -301,6 +366,9 @@ diesel::table! {
         commit_sha -> Nullable<Text>,
         created_at -> Timestamptz,
         edited_at -> Nullable<Timestamptz>,
+        github_id -> Nullable<Int8>,
+        github_kind -> Nullable<Text>,
+        github_updated_at -> Nullable<Timestamptz>,
     }
 }
 
@@ -320,6 +388,7 @@ diesel::table! {
         head_sha_at_review -> Text,
         body -> Nullable<Text>,
         created_at -> Timestamptz,
+        github_id -> Nullable<Int8>,
     }
 }
 
@@ -346,6 +415,8 @@ diesel::table! {
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
         closed_at -> Nullable<Timestamptz>,
+        github_number -> Nullable<Int4>,
+        github_updated_at -> Nullable<Timestamptz>,
     }
 }
 
@@ -379,6 +450,7 @@ diesel::table! {
         kind -> Text,
         created_at -> Timestamptz,
         superseded_at -> Nullable<Timestamptz>,
+        has_bitmap -> Bool,
     }
 }
 
@@ -396,6 +468,18 @@ diesel::table! {
         archived -> Bool,
         mirror_enabled -> Bool,
         refs_version -> Int8,
+        created_at -> Timestamptz,
+        repacked_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    service_accounts (identity_id) {
+        identity_id -> Uuid,
+        org_id -> Uuid,
+        name -> Text,
+        description -> Nullable<Text>,
+        created_by -> Nullable<Uuid>,
         created_at -> Timestamptz,
     }
 }
@@ -468,6 +552,9 @@ diesel::joinable!(credentials -> orgs (org_id));
 diesel::joinable!(credentials -> repos (repo_id));
 diesel::joinable!(device_logins -> api_tokens (api_token_id));
 diesel::joinable!(device_logins -> identities (identity_id));
+diesel::joinable!(github_identities -> identities (identity_id));
+diesel::joinable!(github_link_attempts -> identities (identity_id));
+diesel::joinable!(github_links -> identities (identity_id));
 diesel::joinable!(hook_deliveries -> hook_endpoints (endpoint_id));
 diesel::joinable!(hook_endpoints -> identities (created_by));
 diesel::joinable!(hook_endpoints -> orgs (org_id));
@@ -489,6 +576,7 @@ diesel::joinable!(repo_refs -> identities (updated_by));
 diesel::joinable!(repo_refs -> repos (repo_id));
 diesel::joinable!(repo_segments -> repos (repo_id));
 diesel::joinable!(repos -> orgs (org_id));
+diesel::joinable!(service_accounts -> orgs (org_id));
 diesel::joinable!(sessions -> identities (identity_id));
 diesel::joinable!(ssh_keys -> identities (identity_id));
 diesel::joinable!(statuses -> identities (reporter));
@@ -507,6 +595,11 @@ diesel::allow_tables_to_appear_in_same_query!(
     credentials,
     device_logins,
     events,
+    github_identities,
+    github_lanes,
+    github_link_attempts,
+    github_links,
+    github_rate_limits,
     hook_deliveries,
     hook_endpoints,
     identities,
@@ -528,6 +621,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     repo_refs,
     repo_segments,
     repos,
+    service_accounts,
     sessions,
     ssh_keys,
     statuses,

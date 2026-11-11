@@ -25,7 +25,7 @@ struct Cli {
 enum Command {
     /// Run migrations and serve the selected roles.
     Serve {
-        /// Comma-separated roles: api, dispatcher, sweeper, mirror-worker, hook-worker, ingest-worker, maintenance.
+        /// Comma-separated roles: api, git-ssh, dispatcher, sweeper, mirror-worker, hook-worker, ingest-worker, repack-worker.
         #[arg(long, default_value = "api")]
         roles: String,
     },
@@ -58,13 +58,7 @@ fn main() -> anyhow::Result<()> {
     // Several dependencies link rustls with different crypto features; pick
     // ring once for the whole process before any TLS connection.
     let _ = rustls::crypto::ring::default_provider().install_default();
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env().add_directive("info".parse()?),
-        )
-        .with_writer(std::io::stderr)
-        .json()
-        .init();
+    let _telemetry = telemetry::init()?;
     let cli = Cli::parse();
     if let Command::Hook { name } = &cli.command {
         std::process::exit(vcsstar_store::hook::client_main(name));
@@ -102,6 +96,66 @@ fn main() -> anyhow::Result<()> {
             let roles: Vec<String> = roles.split(',').map(|s| s.trim().to_string()).collect();
             serve(app, &roles)
         }
+    }
+}
+
+/// Logs always go to stderr as JSON. Traces go to an OTLP/HTTP endpoint
+/// when `VCSSTAR__OTLP_ENDPOINT` is set; the exporter runs on its own
+/// thread (no async runtime needed) and flushes on drop.
+mod telemetry {
+    use opentelemetry::trace::TracerProvider as _;
+    use opentelemetry_otlp::WithExportConfig as _;
+    use opentelemetry_sdk::trace::SdkTracerProvider;
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+
+    pub struct Guard(Option<SdkTracerProvider>);
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            if let Some(p) = self.0.take() {
+                let _ = p.shutdown();
+            }
+        }
+    }
+
+    pub fn init() -> anyhow::Result<Guard> {
+        let filter =
+            tracing_subscriber::EnvFilter::from_default_env().add_directive("info".parse()?);
+        let fmt = tracing_subscriber::fmt::layer()
+            .with_writer(std::io::stderr)
+            .json();
+        let endpoint = std::env::var("VCSSTAR__OTLP_ENDPOINT")
+            .ok()
+            .filter(|v| !v.trim().is_empty());
+        let Some(endpoint) = endpoint else {
+            tracing_subscriber::registry().with(filter).with(fmt).init();
+            return Ok(Guard(None));
+        };
+        let service = std::env::var("VCSSTAR__OTLP_SERVICE_NAME")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .unwrap_or_else(|| "vcsstard".into());
+        let exporter = opentelemetry_otlp::SpanExporter::builder()
+            .with_http()
+            .with_endpoint(format!("{}/v1/traces", endpoint.trim_end_matches('/')))
+            .build()?;
+        let provider = SdkTracerProvider::builder()
+            .with_batch_exporter(exporter)
+            .with_resource(
+                opentelemetry_sdk::Resource::builder()
+                    .with_service_name(service.clone())
+                    .build(),
+            )
+            .build();
+        let tracer = provider.tracer("vcsstard");
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(fmt)
+            .with(tracing_opentelemetry::layer().with_tracer(tracer))
+            .init();
+        tracing::info!(endpoint, service, "OTLP trace export enabled");
+        Ok(Guard(Some(provider)))
     }
 }
 
@@ -175,6 +229,17 @@ fn serve(app: App, roles: &[String]) -> anyhow::Result<()> {
         std::fs::create_dir_all(&app.config.repo_cache_dir)?;
         gitwire::install_hooks(&app)?;
         handles.push(gitwire::spawn_hook_socket(app.clone(), state.clone())?);
+        if app.config.cache_warm {
+            // A cold node downloads every repository's history now, in the
+            // background, so its first clone is served from disk.
+            let app_w = app.clone();
+            let state_w = state.clone();
+            handles.push(
+                std::thread::Builder::new()
+                    .name("cache-warm".into())
+                    .spawn(move || vcsstar_core::vcs::warm_loop(&app_w, || state_w.stopping()))?,
+            );
+        }
     }
     if roles.iter().any(|r| r == "git-ssh") {
         let app_ssh = app.clone();
@@ -253,7 +318,8 @@ fn serve(app: App, roles: &[String]) -> anyhow::Result<()> {
     for r in roles {
         match r.as_str() {
             "api" | "git-ssh" => {}
-            "dispatcher" | "sweeper" | "hook-worker" | "mirror-worker" | "ingest-worker" => {
+            "dispatcher" | "sweeper" | "hook-worker" | "mirror-worker" | "ingest-worker"
+            | "repack-worker" => {
                 let app_w = app.clone();
                 let state_w = state.clone();
                 let role = r.clone();

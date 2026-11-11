@@ -67,7 +67,14 @@ fn healthz() -> &'static str {
 
 /// Prometheus text exposition for this process.
 #[get("/metrics")]
-fn metrics() -> (ContentType, String) {
+fn metrics(app: &State<App>) -> (ContentType, String) {
+    // Backlog gauges come from Postgres at scrape time, so every node
+    // reports the same numbers and no worker has to be the one scraped.
+    if let Ok(mut conn) = app.conn() {
+        if let Err(e) = vcsstar_core::metrics::refresh_backlog(&mut conn) {
+            tracing::warn!(error = %e, "backlog gauges not refreshed");
+        }
+    }
     (
         ContentType::new("text", "plain; version=0.0.4"),
         vcsstar_core::metrics::render(),
@@ -94,7 +101,9 @@ fn github_hook(shared: &State<Shared>, req: GithubHeaders, body: Vec<u8>) -> (Ht
     use diesel::prelude::*;
     use vcsstar_db::schema::{credentials, mirror_state, repos};
     let app = &shared.app;
+    let metric = |outcome: &str| vcsstar_core::metrics::github_webhook(&req.event, outcome);
     let Some(sig) = req.signature.as_deref() else {
+        metric("unauthorized");
         return (
             HttpStatus::Unauthorized,
             "missing X-Hub-Signature-256\n".into(),
@@ -129,6 +138,7 @@ fn github_hook(shared: &State<Shared>, req: GithubHeaders, body: Vec<u8>) -> (Ht
         .optional()
         .unwrap_or(None);
     let Some((repo_id, org_id)) = target else {
+        metric("unknown_repo");
         return (
             HttpStatus::NotFound,
             "no mirror for this repository\n".into(),
@@ -159,6 +169,7 @@ fn github_hook(shared: &State<Shared>, req: GithubHeaders, body: Vec<u8>) -> (Ht
         }
     }
     if !matched {
+        metric("unauthorized");
         return (HttpStatus::Unauthorized, "signature mismatch\n".into());
     }
     let _ = credentials::table; // (schema import kept for clarity)
@@ -181,8 +192,22 @@ fn github_hook(shared: &State<Shared>, req: GithubHeaders, body: Vec<u8>) -> (Ht
         payload,
         5,
     ) {
-        Ok(()) => (HttpStatus::Accepted, "captured\n".into()),
-        Err(e) => (HttpStatus::ServiceUnavailable, format!("{}\n", e.message)),
+        Ok(()) => {
+            metric("captured");
+            (HttpStatus::Accepted, "captured\n".into())
+        }
+        // A GitHub App hook and a repository hook deliver one event with the
+        // same delivery id and different bodies (the App's carries the
+        // installation); the second is the same work and is acknowledged.
+        Err(e) if e.code == vcsstar_core::Code::AlreadyExists => {
+            metric("duplicate");
+            (HttpStatus::Accepted, "duplicate\n".into())
+        }
+        Err(e) => {
+            tracing::warn!(delivery = %item.delivery_id, event = %item.event, error = %e.message, "github webhook not captured");
+            metric("rejected");
+            (HttpStatus::ServiceUnavailable, format!("{}\n", e.message))
+        }
     }
 }
 

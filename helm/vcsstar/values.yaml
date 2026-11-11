@@ -33,15 +33,30 @@ linkkeys:
   existingSecret: ""
 
 postgresql:
-  # Zalando postgres-operator cluster named <fullname>-postgres.
+  # A Postgres cluster named <fullname>-postgres made by an operator.
+  # `cnpg` (CloudNativePG, the default) or `zalando` (kept for instances
+  # that have not moved yet; see plan/10-deployment.md for the cutover).
   enabled: true
-  teamId: vcsstar
+  operator: cnpg
   database: vcsstar
   user: vcsstar
   instances: 1
-  version: "17"
+  # cnpg: the image carries the major version. Two or more instances give
+  # a streaming replica with automatic failover.
+  imageName: "ghcr.io/cloudnative-pg/postgresql:17"
   storage:
     size: 5Gi
+    storageClass: ""
+  # cnpg: container resources of each instance.
+  resources: {}
+  # cnpg: postgresql.conf parameters (shared_buffers, work_mem, ...).
+  parameters: {}
+  # cnpg: the `backup` block of the Cluster spec verbatim (barmanObjectStore,
+  # retentionPolicy, target). Empty means no base backups or WAL archive.
+  backup: {}
+  # zalando only.
+  teamId: vcsstar
+  version: "17"
   # Used instead of the operator when set (secret key DATABASE_URL).
   existingUrlSecret: ""
 
@@ -54,6 +69,18 @@ corndogs:
 # Seals mirror credentials stored through the API. Make it once per
 # instance and never rotate it without re-entering the credentials.
 credentialKeySecret: ""
+
+# The GitHub App of this instance (optional). A Secret with
+# SECRET_VCSSTAR__GITHUB_APP_ID, SECRET_VCSSTAR__GITHUB_APP_CLIENT_ID,
+# SECRET_VCSSTAR__GITHUB_APP_CLIENT_SECRET, and
+# SECRET_VCSSTAR__GITHUB_APP_PRIVATE_KEY (the PEM). With it, users connect
+# their GitHub account on the Account page and vcsstar acts as them on
+# GitHub; a mirrored repository whose owner installed the App needs no
+# stored credential. The App's callback URL is <publicUrl>/auth/github/callback.
+githubApp:
+  existingSecret: ""
+  # Public slug of the App (github.com/apps/<slug>), shown on the account page.
+  slug: ""
 
 objectStore:
   endpoint: ""
@@ -118,7 +145,22 @@ podSecurityContext:
   runAsUser: 10001
   fsGroup: 10001
 
+# Telemetry is optional: the server runs the same with nothing collecting.
 # `vcsstard` serves Prometheus text at GET /metrics on the HTTP port. The
-# annotations let an annotation-driven scraper find it.
+# annotations let an annotation-driven scraper find it; the ServiceMonitor
+# serves the Prometheus Operator (it needs the monitoring.coreos.com CRDs).
 metrics:
   scrape: true
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: ""
+    # Extra labels, for example the `release` label a Prometheus selects on.
+    labels: {}
+
+# OpenTelemetry traces over OTLP/HTTP (protobuf). Empty: tracing stays off
+# and logs go to stderr only. Example: http://otel-collector.monitoring:4318
+otlp:
+  endpoint: ""
+  # Defaults to the release name.
+  serviceName: ""

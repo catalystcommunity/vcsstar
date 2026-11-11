@@ -5,7 +5,9 @@ export function MePage() {
   const [me] = createResource(() => api.auth.whoami({ ctx: ctx() }).catch(() => null));
   const [keys, { refetch: refetchKeys }] = createResource(() => api.auth.listKeys({ ctx: ctx() }).catch(() => null));
   const [tokens, { refetch: refetchTokens }] = createResource(() => api.auth.listTokens({ ctx: ctx() }).catch(() => null));
-  const [err, setErr] = createSignal("");
+  const [link, { refetch: refetchLink }] = createResource(() => api.auth.githubLinkStatus({ ctx: ctx() }).catch(() => null));
+  const [err, setErr] = createSignal(new URLSearchParams(location.search).get("github_error") ?? "");
+  const [pat, setPat] = createSignal("");
   const [newKey, setNewKey] = createSignal({ publicKey: "", usage: "auth" });
   const [newToken, setNewToken] = createSignal({ name: "", scopes: "repo:write,pr:write,pr:review,statuses:write,org:read" });
   const [minted, setMinted] = createSignal("");
@@ -37,6 +39,71 @@ export function MePage() {
       </Show>
       <Show when={err()}>
         <p class="err">{err()}</p>
+      </Show>
+
+      <Show when={link()}>
+        {(l) => (
+          <div>
+            <h2>GitHub</h2>
+            <p class="muted small">
+              With a connected GitHub account, what you do here on a mirrored repository (pull requests, comments, reviews, pushes) is sent to GitHub as you, and
+              what you do on GitHub is attributed to you here.
+            </p>
+            <Show
+              when={l().linked}
+              fallback={
+                <div class="panel">
+                  <p>Not connected.</p>
+                  <Show when={l().startUrl}>
+                    <p>
+                      <a class="btn" href={`${l().startUrl}?return_to=/me`} rel="external">
+                        Connect GitHub{l().appSlug ? ` (${l().appSlug})` : ""}
+                      </a>
+                    </p>
+                  </Show>
+                  <form
+                    class="inline"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      run(() => api.auth.setGithubToken({ ctx: ctx(), token: pat() }), () => {
+                        setPat("");
+                        refetchLink();
+                      });
+                    }}
+                  >
+                    <input type="password" placeholder="or paste a personal access token" size={40} value={pat()} onInput={(e) => setPat(e.currentTarget.value)} autocomplete="off" />
+                    <button disabled={!pat()}>Use token</button>
+                  </form>
+                </div>
+              }
+            >
+              <div class="panel">
+                <div>
+                  Connected as <strong>{l().login}</strong>{" "}
+                  <span class="muted small">
+                    ({l().kind}) since {when(l().linkedAt)}
+                    {l().expiresAt ? ` · token renews before ${new Date(l().expiresAt!).toISOString()}` : ""}
+                  </span>
+                </div>
+                <Show when={l().brokenReason}>
+                  <p class="err">
+                    GitHub refused the stored token: {l().brokenReason}. Connect again.
+                  </p>
+                </Show>
+                <p>
+                  <Show when={l().startUrl}>
+                    <a class="btn" href={`${l().startUrl}?return_to=/me`} rel="external">
+                      Connect again
+                    </a>{" "}
+                  </Show>
+                  <button class="link danger" onClick={() => run(() => api.auth.unlinkGithub({ ctx: ctx() }), refetchLink)}>
+                    disconnect
+                  </button>
+                </p>
+              </div>
+            </Show>
+          </div>
+        )}
       </Show>
 
       <Show when={keys()}>

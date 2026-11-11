@@ -8,9 +8,10 @@ use vcsstar_db::schema::{credentials, mirror_actions, mirror_state, repos};
 use vcsstar_store::refs::{self, RefUpdate};
 use vcsstar_types::{
     BlockedAction, ConfigureMirrorRequest, Credential, CredentialRef, EventPayload, GetRepoRequest,
-    ImportRequest, ListBlockedResponse, ListCredentialsRequest, ListCredentialsResponse,
-    MirrorStatus, Ok as WireOk, ReconcileReport, ReplayRequest, ReplayResult, Repo,
-    SetCredentialRequest, SettingsPayload,
+    GithubHealth, GithubRepoInfo, GithubRepoPage, ImportRequest, ListBlockedResponse,
+    ListCredentialsRequest, ListCredentialsResponse, ListGithubReposRequest, MirrorStatus,
+    Ok as WireOk, ReconcileReport, ReplayRequest, ReplayResult, Repo, SetCredentialRequest,
+    SettingsPayload,
 };
 use vcsstar_vcs::RevId;
 
@@ -48,6 +49,7 @@ fn status_wire(
         last_success_at: s.last_success_at.map(to_ms),
         last_error: s.last_error.clone(),
         last_full_reconcile_at: s.last_full_reconcile_at.map(to_ms),
+        last_pull_sync_at: s.last_pull_sync_at.map(to_ms),
     })
 }
 
@@ -84,6 +86,7 @@ pub fn status(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<MirrorStat
             last_success_at: None,
             last_error: Some("mirror not configured".into()),
             last_full_reconcile_at: None,
+            last_pull_sync_at: None,
         }),
     }
 }
@@ -467,7 +470,7 @@ pub fn reconcile(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<Reconci
         open_admin(app, ctx, &req.repo.org, &req.repo.name, RepoRole::Maintain)?;
     let started = now_ms();
     let outcome = mirror::reconcile(app, &mut conn, repo.id);
-    let (refs_checked, pushed, drift, error) = match outcome {
+    let (refs_checked, pushed, drift, mut error) = match outcome {
         Ok(o) => {
             for id in &o.scheduled {
                 if let Err(e) = mirror::submit_action(app, &org.name, &repo.name, *id, 0) {
@@ -478,6 +481,26 @@ pub fn reconcile(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<Reconci
         }
         Err(e) => (0, 0, vec![], Some(e.message)),
     };
+    // GitHub's pull requests, reviews, comments, and statuses, by asking.
+    let mut pulls = None;
+    if let Some(state) = mirror::state_for(&mut conn, repo.id)? {
+        match crate::github_sync::reconcile_pulls(
+            app,
+            &mut conn,
+            &org,
+            &repo,
+            &state,
+            crate::github_sync::PULL_SYNC_BUDGET,
+        ) {
+            Ok(o) => pulls = Some(o),
+            Err(e) => {
+                error = Some(match error {
+                    Some(prev) => format!("{prev}; pull sync: {}", e.message),
+                    None => format!("pull sync: {}", e.message),
+                })
+            }
+        }
+    }
     Ok(ReconcileReport {
         repo: vcs::repo_ref(&org, &repo),
         started_at: started,
@@ -486,6 +509,148 @@ pub fn reconcile(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<Reconci
         refs_pushed: pushed as u64,
         drift_refs: drift,
         error,
+        pulls_checked: pulls.as_ref().map(|p| p.checked as u64),
+        pulls_changed: pulls.as_ref().map(|p| p.changed as u64),
+        pulls_complete: pulls.as_ref().map(|p| p.complete),
+    })
+}
+
+/// This node's view of GitHub: lane breakers, rate limits, and the size of
+/// the mirror backlog across every repository.
+pub fn health(app: &App, ctx: &ReqCtx, _req: vcsstar_types::Empty) -> Result<GithubHealth, Error> {
+    ctx.require()?;
+    let mut conn = app.conn()?;
+    let (lanes, rate_limits) = crate::github_health::snapshot();
+    let pending: i64 = mirror_actions::table
+        .filter(mirror_actions::state.eq("pending"))
+        .count()
+        .get_result(&mut conn)?;
+    let blocked: i64 = mirror_actions::table
+        .filter(mirror_actions::state.eq("blocked"))
+        .count()
+        .get_result(&mut conn)?;
+    let oldest: Option<chrono::DateTime<Utc>> = mirror_actions::table
+        .filter(mirror_actions::state.eq("pending"))
+        .select(diesel::dsl::min(mirror_actions::created_at))
+        .first(&mut conn)?;
+    Ok(GithubHealth {
+        lanes,
+        rate_limits,
+        pending_actions: pending.max(0) as u64,
+        blocked_actions: blocked.max(0) as u64,
+        oldest_pending_at: oldest.map(to_ms),
+    })
+}
+
+/// The GitHub repositories under the organization's `github_owner`, as
+/// the instance App's installation (or the organization credential, or
+/// the caller's own link) sees them, with the vcsstar repository that
+/// already mirrors each one.
+pub fn list_github_repos(
+    app: &App,
+    ctx: &ReqCtx,
+    req: ListGithubReposRequest,
+) -> Result<GithubRepoPage, Error> {
+    let p = ctx.require()?;
+    p.require_scope("mirror:manage")?;
+    let mut conn = app.conn()?;
+    let org = authz::load_org(&mut conn, &req.org)?;
+    authz::require_org_role(app, &mut conn, &org, p, OrgRole::Admin)?;
+    let owner = org.github_owner.clone().ok_or_else(|| {
+        Error::new(
+            Code::PreconditionFailed,
+            "set github_owner on the organization first (Orgs/update)",
+        )
+    })?;
+    let page: u32 = req
+        .page
+        .as_ref()
+        .and_then(|p| p.cursor.as_deref())
+        .map(|c| c.parse::<u32>().map_err(|_| Error::invalid("cursor")))
+        .transpose()?
+        .unwrap_or(1)
+        .max(1);
+    let per_page = req
+        .page
+        .as_ref()
+        .and_then(|p| p.limit)
+        .unwrap_or(100)
+        .clamp(1, 100) as usize;
+    let (token, installation) =
+        cred::token_for_owner(app, &mut conn, org.id, &owner, Some(p.identity.id))?;
+    let gh = crate::github::Client::new(&app.config.github_api_base, &token.value)
+        .with_label(&token.label());
+    if let Some(wait) = gh.rate_hold() {
+        return Err(Error::new(
+            Code::ResourceExhausted,
+            format!(
+                "GitHub rate limit reserve reached for {}; try again in {} s",
+                token.label(),
+                wait.as_secs()
+            ),
+        )
+        .with_detail(format!("retry_after_s={}", wait.as_secs())));
+    }
+    let (items, more) = match &token.source {
+        cred::TokenSource::InstanceApp => gh.list_installation_repos(page, per_page)?,
+        _ => gh.list_owner_repos(&owner, page, per_page)?,
+    };
+    // Which GitHub repositories this organization already mirrors.
+    let mirrored: Vec<(String, String)> = mirror_state::table
+        .inner_join(repos::table)
+        .filter(repos::org_id.eq(org.id))
+        .select((mirror_state::github_repo, repos::name))
+        .load(&mut conn)?;
+    let mut out = Vec::with_capacity(items.len());
+    for j in &items {
+        let full = j
+            .get("full_name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        if full.is_empty() {
+            continue;
+        }
+        // An installation lists every repository it covers; keep the owner's.
+        if !full
+            .split('/')
+            .next()
+            .is_some_and(|o| o.eq_ignore_ascii_case(&owner))
+        {
+            continue;
+        }
+        let b = |k: &str| {
+            j.get(k)
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+        };
+        let t = |k: &str| {
+            j.get(k)
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        };
+        out.push(GithubRepoInfo {
+            mirrored_as: mirrored
+                .iter()
+                .find(|(g, _)| g.eq_ignore_ascii_case(&full))
+                .map(|(_, n)| n.clone()),
+            full_name: full,
+            description: t("description").filter(|d| !d.is_empty()),
+            private: b("private"),
+            archived: b("archived"),
+            fork: b("fork"),
+            default_branch: t("default_branch").unwrap_or_else(|| "main".into()),
+            html_url: t("html_url").unwrap_or_default(),
+            pushed_at: t("pushed_at")
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                .map(|d| to_ms(d.with_timezone(&Utc))),
+        });
+    }
+    Ok(GithubRepoPage {
+        repos: out,
+        next_cursor: more.then(|| (page + 1).to_string()),
+        source: token.label(),
+        installation_id: installation.map(|i| i.max(0) as u64),
     })
 }
 
@@ -514,20 +679,22 @@ pub fn import_repo(app: &App, ctx: &ReqCtx, req: ImportRequest) -> Result<Repo, 
     let mut conn = app.conn()?;
     let org = authz::load_org(&mut conn, &req.org)?;
     authz::require_org_role(app, &mut conn, &org, p, OrgRole::Admin)?;
-    let token = cred::find(&mut conn, org.id, uuid::Uuid::nil(), "import_fetch")?
-        .or(cred::find(
-            &mut conn,
-            org.id,
-            uuid::Uuid::nil(),
-            "mirror_git_push",
-        )?)
-        .map(|row| cred::value(app, &row))
-        .transpose()?;
+    // The instance App's installation, the organization's credential set,
+    // then the caller's own link; a public repository also reads anonymously.
+    let owner = req.github_repo.split('/').next().unwrap_or_default();
+    let token = match cred::token_for_owner(app, &mut conn, org.id, owner, Some(p.identity.id)) {
+        Ok((t, _)) => {
+            tracing::info!(repo = %req.github_repo, source = %t.label(), "import credential chosen");
+            Some(t.value)
+        }
+        Err(crate::github::Failure::Terminal(_)) => None,
+        Err(e) => return Err(e.into()),
+    };
     // Learn the default branch and the refs from GitHub before any row exists.
     let scratch = tempfile::tempdir().map_err(Error::internal)?;
     let scratch_dir = scratch.path().join("probe.git");
     app.store.backend().init(&scratch_dir)?;
-    let url = format!("https://github.com/{}.git", req.github_repo);
+    let url = mirror::github_url(app, &req.github_repo);
     let remote = mirror::ls_remote(&scratch_dir, &url, token.as_deref())?;
     let default_branch = token
         .as_deref()

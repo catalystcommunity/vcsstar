@@ -73,6 +73,17 @@ kubectl create secret generic vcsstar-linkkeys \
     --namespace "${K8S_NAMESPACE}" --save-config --dry-run=client \
     --from-literal=SECRET_VCSSTAR__LINKKEYS_API_KEY="${LINKKEYS_API_KEY}" \
     -o yaml | kubectl apply -f -
+# The instance's GitHub App, when the store has one (set githubApp.existingSecret
+# to vcsstar-github-app in the overlay).
+if [ -n "${GITHUB_APP_ID:-}" ]; then
+    kubectl create secret generic vcsstar-github-app \
+        --namespace "${K8S_NAMESPACE}" --save-config --dry-run=client \
+        --from-literal=SECRET_VCSSTAR__GITHUB_APP_ID="${GITHUB_APP_ID}" \
+        --from-literal=SECRET_VCSSTAR__GITHUB_APP_CLIENT_ID="${GITHUB_APP_CLIENT_ID}" \
+        --from-literal=SECRET_VCSSTAR__GITHUB_APP_CLIENT_SECRET="${GITHUB_APP_CLIENT_SECRET}" \
+        --from-literal=SECRET_VCSSTAR__GITHUB_APP_PRIVATE_KEY="${GITHUB_APP_PRIVATE_KEY}" \
+        -o yaml | kubectl apply -f -
+fi
 
 # Per-instance secrets that must survive redeploys: made once, never rotated
 # by this job. The credential key seals stored mirror credentials; the SSH

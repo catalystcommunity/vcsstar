@@ -44,7 +44,7 @@ function Layout(props: { children?: JSX.Element }) {
           <Show
             when={me()}
             fallback={
-              <a class="btn" href={loginHref()}>
+              <a class="btn" href={loginHref()} rel="external">
                 Sign in
               </a>
             }
