@@ -208,6 +208,29 @@ RegisterKeyRequest = {
 KeyRef = { ctx: Ctx, key_id: text }
 ListKeysResponse = { keys: [* SshKeyInfo] }
 
+;;; The caller's GitHub account link. vcsstar acts on GitHub as a linked
+;;; user (pull requests, comments, reviews, statuses, pushes) and attributes
+;;; what the user does on GitHub to the vcsstar identity.
+GithubLink = {
+    linked: bool,
+    ;;; "oauth" (GitHub App user token) | "pat"
+    ? kind: text,
+    ? login: text,
+    ? github_id: uint,
+    ? linked_at: Timestamp,
+    ;;; When the access token expires; absent for a token that does not.
+    ? expires_at: Timestamp,
+    ;;; Present when GitHub refused the token and the user has to connect again.
+    ? broken_reason: text,
+    ;;; Browser URL that starts the GitHub App authorization; absent when
+    ;;; the instance has no GitHub App.
+    ? start_url: text,
+    ;;; Public name of the instance's GitHub App, for display.
+    ? app_slug: text
+}
+;;; Link by a personal access token instead of the App authorization.
+SetGithubTokenRequest = { ctx: Ctx, token: text }
+
 @wire-id(1)
 service Auth {
     @wire-id(0)
@@ -240,7 +263,14 @@ service Auth {
     @wire-id(13)
     list-tokens: Empty -> ListTokensResponse / ServiceError,
     @wire-id(14)
-    logout: Empty -> Ok / ServiceError
+    logout: Empty -> Ok / ServiceError,
+    ;;; GitHub account link of the caller (see GithubLink).
+    @wire-id(15)
+    github-link-status: Empty -> GithubLink / ServiceError,
+    @wire-id(16)
+    set-github-token: SetGithubTokenRequest -> GithubLink / ServiceError,
+    @wire-id(17)
+    unlink-github: Empty -> Ok / ServiceError
 }
 
 ;; ---------------------------------------------------------------------
@@ -524,7 +554,12 @@ PullRequest = {
     ? merged_by: Identity,
     created_at: Timestamp,
     updated_at: Timestamp,
-    ? closed_at: Timestamp
+    ? closed_at: Timestamp,
+    ;;; The GitHub pull request this one is synced with, when the repository
+    ;;; is mirrored: opened here and created there, or opened there and
+    ;;; imported here.
+    ? github_number: uint,
+    ? github_url: text
 }
 PrRef = { ctx: Ctx, repo: RepoRef, number: uint }
 OpenPrRequest = {
@@ -740,7 +775,9 @@ MirrorStatus = {
     blocked: uint,
     ? last_success_at: Timestamp,
     ? last_error: text,
-    ? last_full_reconcile_at: Timestamp
+    ? last_full_reconcile_at: Timestamp,
+    ;;; Newest GitHub `updated_at` the pull request sync pass has processed.
+    ? last_pull_sync_at: Timestamp
 }
 BlockedAction = {
     id: text,
@@ -815,7 +852,12 @@ ReconcileReport = {
     refs_checked: uint,
     refs_pushed: uint,
     drift_refs: [* text],
-    ? error: text
+    ? error: text,
+    ;;; Pull requests the GitHub-side pass looked at and changed here.
+    ? pulls_checked: uint,
+    ? pulls_changed: uint,
+    ;;; False when the pass stopped at its call budget; the next pass continues.
+    ? pulls_complete: bool
 }
 ImportRequest = {
     ctx: Ctx,
@@ -824,6 +866,63 @@ ImportRequest = {
     github_repo: text,
     ? mode: text,
     ? visibility: text
+}
+
+;;; GitHub repositories the organization can see, for enabling mirrors.
+ListGithubReposRequest = { ctx: Ctx, org: text, ? page: Page }
+GithubRepoInfo = {
+    ;;; "owner/name"
+    full_name: text,
+    ? description: text,
+    private: bool,
+    archived: bool,
+    fork: bool,
+    default_branch: text,
+    html_url: text,
+    ? pushed_at: Timestamp,
+    ;;; Name of the vcsstar repository that mirrors it, when one does.
+    ? mirrored_as: text
+}
+GithubRepoPage = {
+    repos: [* GithubRepoInfo],
+    ? next_cursor: text,
+    ;;; Which credential listed them: "app" (the instance GitHub App's
+    ;;; installation on the owner), a credential purpose, or "user:<login>".
+    source: text,
+    ? installation_id: uint
+}
+
+;;; Health of this node's path to GitHub. The mirror holds calls on a lane
+;;; while it is open and drains parked work when it closes again.
+LaneHealth = {
+    ;;; "api" | "git"
+    lane: text,
+    ;;; "closed" (healthy) | "open" (failing; calls are held) | "half_open" (one probe allowed)
+    state: text,
+    consecutive_failures: uint,
+    ? open_until: Timestamp,
+    ? last_error: text,
+    ? last_failure_at: Timestamp,
+    ? last_success_at: Timestamp,
+    ? recovered_at: Timestamp
+}
+RateLimitInfo = {
+    ;;; Token label: "app", "user:<login>", a credential purpose, or "tok:<hash>".
+    token: text,
+    remaining: uint,
+    limit: uint,
+    reset_at: Timestamp,
+    ;;; True while vcsstar holds non-urgent calls for this token.
+    held: bool
+}
+GithubHealth = {
+    lanes: [* LaneHealth],
+    rate_limits: [* RateLimitInfo],
+    ;;; Across every mirrored repository on this instance.
+    pending_actions: uint,
+    blocked_actions: uint,
+    ;;; Oldest pending action not yet applied, when any.
+    ? oldest_pending_at: Timestamp
 }
 
 @wire-id(7)
@@ -849,7 +948,68 @@ service Mirror {
     @wire-id(9)
     list-credentials: ListCredentialsRequest -> ListCredentialsResponse / ServiceError,
     @wire-id(10)
-    remove-credential: CredentialRef -> Ok / ServiceError
+    remove-credential: CredentialRef -> Ok / ServiceError,
+    ;;; Repositories visible under the organization's `github_owner`, with
+    ;;; the vcsstar repository that mirrors each one when there is one.
+    ;;; Enable one with `import-repo`.
+    @wire-id(11)
+    list-github-repos: ListGithubReposRequest -> GithubRepoPage / ServiceError,
+    ;;; This node's view of GitHub availability and rate limits.
+    @wire-id(12)
+    health: Empty -> GithubHealth / ServiceError
+}
+
+;; ---------------------------------------------------------------------
+;; Service accounts (API tokens without a LinkKeys sign-in)
+;; ---------------------------------------------------------------------
+
+;;; An identity owned by an organization that never signs in. It holds API
+;;; tokens for integrations that do not come through LinkKeys. Its identity
+;;; key is `<user_id>@svc.<instance host>`; grant it roles like any identity.
+ServiceAccount = {
+    identity: Identity,
+    org: text,
+    name: text,
+    ? description: text,
+    created_at: Timestamp,
+    ? disabled_at: Timestamp,
+    ;;; Tokens that are neither revoked nor expired.
+    active_tokens: uint
+}
+CreateServiceAccountRequest = { ctx: Ctx, org: text, name: text, ? description: text }
+ServiceAccountRef = { ctx: Ctx, org: text, name: text }
+ListServiceAccountsResponse = { accounts: [* ServiceAccount] }
+;;; Mint a token for the service account. The token carries only scopes the
+;;; caller holds.
+CreateServiceAccountTokenRequest = {
+    ctx: Ctx,
+    org: text,
+    name: text,
+    token_name: text,
+    scopes: [* text],
+    ? client_label: text,
+    ? expires_at: Timestamp
+}
+RevokeServiceAccountTokenRequest = { ctx: Ctx, org: text, name: text, token_id: text }
+
+@wire-id(11)
+service ServiceAccounts {
+    @wire-id(0)
+    create: CreateServiceAccountRequest -> ServiceAccount / ServiceError,
+    @wire-id(1)
+    list: GetOrgRequest -> ListServiceAccountsResponse / ServiceError,
+    ;;; Disabling refuses every token of the account; enabling lets the
+    ;;; tokens that were not revoked work again.
+    @wire-id(2)
+    disable: ServiceAccountRef -> Ok / ServiceError,
+    @wire-id(3)
+    enable: ServiceAccountRef -> Ok / ServiceError,
+    @wire-id(4)
+    create-token: CreateServiceAccountTokenRequest -> ApiToken / ServiceError,
+    @wire-id(5)
+    list-tokens: ServiceAccountRef -> ListTokensResponse / ServiceError,
+    @wire-id(6)
+    revoke-token: RevokeServiceAccountTokenRequest -> Ok / ServiceError
 }
 
 ;; ---------------------------------------------------------------------
@@ -931,7 +1091,17 @@ PushPayload = {
     commits: [* CommitSummary]
 }
 RefPayload = { ref: text, ? before: text, ? after: text }
-PrPayload = { number: uint, ? head_sha: text, ? base_ref: text, ? state: text, ? merge_kind: text }
+;;; `comment_id` on `pr_comment`, `review_id` on `pr_review`: the row the
+;;; event is about, so a consumer (and the GitHub sync) can fetch exactly it.
+PrPayload = {
+    number: uint,
+    ? head_sha: text,
+    ? base_ref: text,
+    ? state: text,
+    ? merge_kind: text,
+    ? comment_id: text,
+    ? review_id: text
+}
 ReleasePayload = { tag: text, name: text, ? body: text, draft: bool, prerelease: bool }
 MirrorPayload = { object_key: text, ? error: text, action_kind: text }
 SettingsPayload = { changed: [* text] }

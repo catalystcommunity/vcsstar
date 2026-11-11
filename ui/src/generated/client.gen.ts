@@ -2,8 +2,8 @@
 // Source: <csil spec>
 // Target: typescript-client
 
-import type { ActAsExchangeRequest, ApiToken, BeginDeviceRequest, BeginLoginRequest, BeginLoginResponse, BlobRequest, BlobResponse, BranchProtection, CaptureReport, Comment, CommentRequest, Commit, CommitPage, CommitStatus, CompleteLoginRequest, ConfigureMirrorRequest, CreateEndpointRequest, CreateOrgRequest, CreateRepoRequest, CreateTeamRequest, CreateTokenRequest, Credential, CredentialRef, DeleteRepoRequest, DeliveryPage, DeliveryQuery, DeliveryRef, DeviceApproveRequest, DeviceCode, DevicePollRequest, DevicePollResponse, DiffRequest, DiffResponse, Empty, Endpoint, EndpointRef, FedHello, FedHelloAck, ForkRequest, GetCommitRequest, GetOrgRequest, GetRepoRequest, Grant, HeadInfo, HeadQuery, ImportRequest, KeyRef, ListBlockedResponse, ListCommentsResponse, ListCredentialsRequest, ListCredentialsResponse, ListEndpointsRequest, ListEndpointsResponse, ListGrantsResponse, ListKeysResponse, ListOrgMembersRequest, ListOrgsRequest, ListPrRequest, ListProtectionsResponse, ListRefsRequest, ListRefsResponse, ListReposRequest, ListReviewsResponse, ListStatusRequest, ListStatusResponse, ListTeamsResponse, ListTokensResponse, LogRequest, MergeRequest, MergeResult, MirrorStatus, Ok, OpenPrRequest, Org, OrgMember, OrgMemberPage, OrgPage, PrPage, PrRef, PullRequest, ReconcileReport, RefInfo, RegisterKeyRequest, RemoveGrantRequest, RemoveOrgMemberRequest, RemoveProtectionRequest, ReplayRequest, ReplayResult, Repo, RepoPage, RetargetRequest, Review, ReviewRequest, RevokeTokenRequest, ScopeSetRequest, ScopedBearer, ServerInfo, ServiceError, Session, SetCredentialRequest, SetGrantRequest, SetOrgMemberRequest, SetProtectionRequest, SetStatusRequest, SetTeamMemberRequest, SignedActAsScopeSet, SshKeyInfo, StreamControl, StreamMessage, Team, TeamRef, TreeRequest, TreeResponse, UpdateEndpointRequest, UpdateOrgRequest, UpdatePrRequest, UpdateRefRequest, UpdateRepoRequest, VerifyHeadRequest, WhoAmI } from "./types.gen.ts";
-import { fromApiTokenCbor, fromBeginLoginResponseCbor, fromBlobResponseCbor, fromBranchProtectionCbor, fromCaptureReportCbor, fromCommentCbor, fromCommitCbor, fromCommitPageCbor, fromCommitStatusCbor, fromCredentialCbor, fromDeliveryPageCbor, fromDeviceCodeCbor, fromDevicePollResponseCbor, fromDiffResponseCbor, fromEndpointCbor, fromFedHelloAckCbor, fromGrantCbor, fromHeadInfoCbor, fromListBlockedResponseCbor, fromListCommentsResponseCbor, fromListCredentialsResponseCbor, fromListEndpointsResponseCbor, fromListGrantsResponseCbor, fromListKeysResponseCbor, fromListProtectionsResponseCbor, fromListRefsResponseCbor, fromListReviewsResponseCbor, fromListStatusResponseCbor, fromListTeamsResponseCbor, fromListTokensResponseCbor, fromMergeResultCbor, fromMirrorStatusCbor, fromOkCbor, fromOrgCbor, fromOrgMemberCbor, fromOrgMemberPageCbor, fromOrgPageCbor, fromPrPageCbor, fromPullRequestCbor, fromReconcileReportCbor, fromRefInfoCbor, fromReplayResultCbor, fromRepoCbor, fromRepoPageCbor, fromReviewCbor, fromScopedBearerCbor, fromServerInfoCbor, fromSessionCbor, fromSignedActAsScopeSetCbor, fromSshKeyInfoCbor, fromTeamCbor, fromTreeResponseCbor, fromWhoAmICbor, toActAsExchangeRequestCbor, toBeginDeviceRequestCbor, toBeginLoginRequestCbor, toBlobRequestCbor, toCommentRequestCbor, toCompleteLoginRequestCbor, toConfigureMirrorRequestCbor, toCreateEndpointRequestCbor, toCreateOrgRequestCbor, toCreateRepoRequestCbor, toCreateTeamRequestCbor, toCreateTokenRequestCbor, toCredentialRefCbor, toDeleteRepoRequestCbor, toDeliveryQueryCbor, toDeliveryRefCbor, toDeviceApproveRequestCbor, toDevicePollRequestCbor, toDiffRequestCbor, toEmptyCbor, toEndpointRefCbor, toFedHelloCbor, toForkRequestCbor, toGetCommitRequestCbor, toGetOrgRequestCbor, toGetRepoRequestCbor, toHeadQueryCbor, toImportRequestCbor, toKeyRefCbor, toListCredentialsRequestCbor, toListEndpointsRequestCbor, toListOrgMembersRequestCbor, toListOrgsRequestCbor, toListPrRequestCbor, toListRefsRequestCbor, toListReposRequestCbor, toListStatusRequestCbor, toLogRequestCbor, toMergeRequestCbor, toOpenPrRequestCbor, toPrRefCbor, toRegisterKeyRequestCbor, toRemoveGrantRequestCbor, toRemoveOrgMemberRequestCbor, toRemoveProtectionRequestCbor, toReplayRequestCbor, toRetargetRequestCbor, toReviewRequestCbor, toRevokeTokenRequestCbor, toScopeSetRequestCbor, toSetCredentialRequestCbor, toSetGrantRequestCbor, toSetOrgMemberRequestCbor, toSetProtectionRequestCbor, toSetStatusRequestCbor, toSetTeamMemberRequestCbor, toTeamRefCbor, toTreeRequestCbor, toUpdateEndpointRequestCbor, toUpdateOrgRequestCbor, toUpdatePrRequestCbor, toUpdateRefRequestCbor, toUpdateRepoRequestCbor, toVerifyHeadRequestCbor } from "./codec.gen.ts";
+import type { ActAsExchangeRequest, ApiToken, BeginDeviceRequest, BeginLoginRequest, BeginLoginResponse, BlobRequest, BlobResponse, BranchProtection, CaptureReport, Comment, CommentRequest, Commit, CommitPage, CommitStatus, CompleteLoginRequest, ConfigureMirrorRequest, CreateEndpointRequest, CreateOrgRequest, CreateRepoRequest, CreateServiceAccountRequest, CreateServiceAccountTokenRequest, CreateTeamRequest, CreateTokenRequest, Credential, CredentialRef, DeleteRepoRequest, DeliveryPage, DeliveryQuery, DeliveryRef, DeviceApproveRequest, DeviceCode, DevicePollRequest, DevicePollResponse, DiffRequest, DiffResponse, Empty, Endpoint, EndpointRef, FedHello, FedHelloAck, ForkRequest, GetCommitRequest, GetOrgRequest, GetRepoRequest, GithubHealth, GithubLink, GithubRepoPage, Grant, HeadInfo, HeadQuery, ImportRequest, KeyRef, ListBlockedResponse, ListCommentsResponse, ListCredentialsRequest, ListCredentialsResponse, ListEndpointsRequest, ListEndpointsResponse, ListGithubReposRequest, ListGrantsResponse, ListKeysResponse, ListOrgMembersRequest, ListOrgsRequest, ListPrRequest, ListProtectionsResponse, ListRefsRequest, ListRefsResponse, ListReposRequest, ListReviewsResponse, ListServiceAccountsResponse, ListStatusRequest, ListStatusResponse, ListTeamsResponse, ListTokensResponse, LogRequest, MergeRequest, MergeResult, MirrorStatus, Ok, OpenPrRequest, Org, OrgMember, OrgMemberPage, OrgPage, PrPage, PrRef, PullRequest, ReconcileReport, RefInfo, RegisterKeyRequest, RemoveGrantRequest, RemoveOrgMemberRequest, RemoveProtectionRequest, ReplayRequest, ReplayResult, Repo, RepoPage, RetargetRequest, Review, ReviewRequest, RevokeServiceAccountTokenRequest, RevokeTokenRequest, ScopeSetRequest, ScopedBearer, ServerInfo, ServiceAccount, ServiceAccountRef, ServiceError, Session, SetCredentialRequest, SetGithubTokenRequest, SetGrantRequest, SetOrgMemberRequest, SetProtectionRequest, SetStatusRequest, SetTeamMemberRequest, SignedActAsScopeSet, SshKeyInfo, StreamControl, StreamMessage, Team, TeamRef, TreeRequest, TreeResponse, UpdateEndpointRequest, UpdateOrgRequest, UpdatePrRequest, UpdateRefRequest, UpdateRepoRequest, VerifyHeadRequest, WhoAmI } from "./types.gen.ts";
+import { fromApiTokenCbor, fromBeginLoginResponseCbor, fromBlobResponseCbor, fromBranchProtectionCbor, fromCaptureReportCbor, fromCommentCbor, fromCommitCbor, fromCommitPageCbor, fromCommitStatusCbor, fromCredentialCbor, fromDeliveryPageCbor, fromDeviceCodeCbor, fromDevicePollResponseCbor, fromDiffResponseCbor, fromEndpointCbor, fromFedHelloAckCbor, fromGithubHealthCbor, fromGithubLinkCbor, fromGithubRepoPageCbor, fromGrantCbor, fromHeadInfoCbor, fromListBlockedResponseCbor, fromListCommentsResponseCbor, fromListCredentialsResponseCbor, fromListEndpointsResponseCbor, fromListGrantsResponseCbor, fromListKeysResponseCbor, fromListProtectionsResponseCbor, fromListRefsResponseCbor, fromListReviewsResponseCbor, fromListServiceAccountsResponseCbor, fromListStatusResponseCbor, fromListTeamsResponseCbor, fromListTokensResponseCbor, fromMergeResultCbor, fromMirrorStatusCbor, fromOkCbor, fromOrgCbor, fromOrgMemberCbor, fromOrgMemberPageCbor, fromOrgPageCbor, fromPrPageCbor, fromPullRequestCbor, fromReconcileReportCbor, fromRefInfoCbor, fromReplayResultCbor, fromRepoCbor, fromRepoPageCbor, fromReviewCbor, fromScopedBearerCbor, fromServerInfoCbor, fromServiceAccountCbor, fromSessionCbor, fromSignedActAsScopeSetCbor, fromSshKeyInfoCbor, fromTeamCbor, fromTreeResponseCbor, fromWhoAmICbor, toActAsExchangeRequestCbor, toBeginDeviceRequestCbor, toBeginLoginRequestCbor, toBlobRequestCbor, toCommentRequestCbor, toCompleteLoginRequestCbor, toConfigureMirrorRequestCbor, toCreateEndpointRequestCbor, toCreateOrgRequestCbor, toCreateRepoRequestCbor, toCreateServiceAccountRequestCbor, toCreateServiceAccountTokenRequestCbor, toCreateTeamRequestCbor, toCreateTokenRequestCbor, toCredentialRefCbor, toDeleteRepoRequestCbor, toDeliveryQueryCbor, toDeliveryRefCbor, toDeviceApproveRequestCbor, toDevicePollRequestCbor, toDiffRequestCbor, toEmptyCbor, toEndpointRefCbor, toFedHelloCbor, toForkRequestCbor, toGetCommitRequestCbor, toGetOrgRequestCbor, toGetRepoRequestCbor, toHeadQueryCbor, toImportRequestCbor, toKeyRefCbor, toListCredentialsRequestCbor, toListEndpointsRequestCbor, toListGithubReposRequestCbor, toListOrgMembersRequestCbor, toListOrgsRequestCbor, toListPrRequestCbor, toListRefsRequestCbor, toListReposRequestCbor, toListStatusRequestCbor, toLogRequestCbor, toMergeRequestCbor, toOpenPrRequestCbor, toPrRefCbor, toRegisterKeyRequestCbor, toRemoveGrantRequestCbor, toRemoveOrgMemberRequestCbor, toRemoveProtectionRequestCbor, toReplayRequestCbor, toRetargetRequestCbor, toReviewRequestCbor, toRevokeServiceAccountTokenRequestCbor, toRevokeTokenRequestCbor, toScopeSetRequestCbor, toServiceAccountRefCbor, toSetCredentialRequestCbor, toSetGithubTokenRequestCbor, toSetGrantRequestCbor, toSetOrgMemberRequestCbor, toSetProtectionRequestCbor, toSetStatusRequestCbor, toSetTeamMemberRequestCbor, toTeamRefCbor, toTreeRequestCbor, toUpdateEndpointRequestCbor, toUpdateOrgRequestCbor, toUpdatePrRequestCbor, toUpdateRefRequestCbor, toUpdateRepoRequestCbor, toVerifyHeadRequestCbor } from "./codec.gen.ts";
 
 export interface ServiceTransport {
   call(service: string, op: string, req: Uint8Array): Uint8Array;
@@ -150,6 +150,34 @@ export class AuthClient {
    */
   logout(req: Empty): Ok {
     const csilResp = this.t.call("Auth", "logout", toEmptyCbor(req));
+    return fromOkCbor(csilResp);
+  }
+
+  /**
+   * GitHub account link of the caller (see GithubLink).
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  githubLinkStatus(req: Empty): GithubLink {
+    const csilResp = this.t.call("Auth", "github-link-status", toEmptyCbor(req));
+    return fromGithubLinkCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  setGithubToken(req: SetGithubTokenRequest): GithubLink {
+    const csilResp = this.t.call("Auth", "set-github-token", toSetGithubTokenRequestCbor(req));
+    return fromGithubLinkCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  unlinkGithub(req: Empty): Ok {
+    const csilResp = this.t.call("Auth", "unlink-github", toEmptyCbor(req));
     return fromOkCbor(csilResp);
   }
 }
@@ -398,6 +426,28 @@ export class MirrorClient {
   removeCredential(req: CredentialRef): Ok {
     const csilResp = this.t.call("Mirror", "remove-credential", toCredentialRefCbor(req));
     return fromOkCbor(csilResp);
+  }
+
+  /**
+   * Repositories visible under the organization's `github_owner`, with
+   * the vcsstar repository that mirrors each one when there is one.
+   * Enable one with `import-repo`.
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  listGithubRepos(req: ListGithubReposRequest): GithubRepoPage {
+    const csilResp = this.t.call("Mirror", "list-github-repos", toListGithubReposRequestCbor(req));
+    return fromGithubRepoPageCbor(csilResp);
+  }
+
+  /**
+   * This node's view of GitHub availability and rate limits.
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  health(req: Empty): GithubHealth {
+    const csilResp = this.t.call("Mirror", "health", toEmptyCbor(req));
+    return fromGithubHealthCbor(csilResp);
   }
 }
 
@@ -803,6 +853,75 @@ export class ReposClient {
   }
 }
 
+export class ServiceAccountsClient {
+  constructor(private readonly t: ServiceTransport) {}
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  create(req: CreateServiceAccountRequest): ServiceAccount {
+    const csilResp = this.t.call("ServiceAccounts", "create", toCreateServiceAccountRequestCbor(req));
+    return fromServiceAccountCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  list(req: GetOrgRequest): ListServiceAccountsResponse {
+    const csilResp = this.t.call("ServiceAccounts", "list", toGetOrgRequestCbor(req));
+    return fromListServiceAccountsResponseCbor(csilResp);
+  }
+
+  /**
+   * Disabling refuses every token of the account; enabling lets the
+   * tokens that were not revoked work again.
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  disable(req: ServiceAccountRef): Ok {
+    const csilResp = this.t.call("ServiceAccounts", "disable", toServiceAccountRefCbor(req));
+    return fromOkCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  enable(req: ServiceAccountRef): Ok {
+    const csilResp = this.t.call("ServiceAccounts", "enable", toServiceAccountRefCbor(req));
+    return fromOkCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  createToken(req: CreateServiceAccountTokenRequest): ApiToken {
+    const csilResp = this.t.call("ServiceAccounts", "create-token", toCreateServiceAccountTokenRequestCbor(req));
+    return fromApiTokenCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  listTokens(req: ServiceAccountRef): ListTokensResponse {
+    const csilResp = this.t.call("ServiceAccounts", "list-tokens", toServiceAccountRefCbor(req));
+    return fromListTokensResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  revokeToken(req: RevokeServiceAccountTokenRequest): Ok {
+    const csilResp = this.t.call("ServiceAccounts", "revoke-token", toRevokeServiceAccountTokenRequestCbor(req));
+    return fromOkCbor(csilResp);
+  }
+}
+
 export class StatusesClient {
   constructor(private readonly t: ServiceTransport) {}
 
@@ -834,6 +953,7 @@ export class ApiClient {
   readonly orgs: OrgsClient;
   readonly pullRequests: PullRequestsClient;
   readonly repos: ReposClient;
+  readonly serviceAccounts: ServiceAccountsClient;
   readonly statuses: StatusesClient;
   constructor(t: ServiceTransport) {
     this.auth = new AuthClient(t);
@@ -844,6 +964,7 @@ export class ApiClient {
     this.orgs = new OrgsClient(t);
     this.pullRequests = new PullRequestsClient(t);
     this.repos = new ReposClient(t);
+    this.serviceAccounts = new ServiceAccountsClient(t);
     this.statuses = new StatusesClient(t);
   }
 }

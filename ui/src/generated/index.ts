@@ -6,4 +6,4 @@ export * from "./types.gen.ts";
 export * from "./codec.gen.ts";
 export * from "./client.gen.ts";
 export * from "./client.async.gen.ts";
-export { RequestContext, AuthHandlers, AuthWireIds, EventStreamHandlers, EventStreamWireIds, routeEventStreamChannelCompact, FederationHandlers, FederationWireIds, HooksHandlers, HooksWireIds, MetaHandlers, MetaWireIds, MirrorHandlers, MirrorWireIds, OrgsHandlers, OrgsWireIds, PullRequestsHandlers, PullRequestsWireIds, ReposHandlers, ReposWireIds, StatusesHandlers, StatusesWireIds, ServerHandlers, dispatch, dispatchCompact } from "./server.gen.ts";
+export { RequestContext, AuthHandlers, AuthWireIds, EventStreamHandlers, EventStreamWireIds, routeEventStreamChannelCompact, FederationHandlers, FederationWireIds, HooksHandlers, HooksWireIds, MetaHandlers, MetaWireIds, MirrorHandlers, MirrorWireIds, OrgsHandlers, OrgsWireIds, PullRequestsHandlers, PullRequestsWireIds, ReposHandlers, ReposWireIds, ServiceAccountsHandlers, ServiceAccountsWireIds, StatusesHandlers, StatusesWireIds, ServerHandlers, dispatch, dispatchCompact } from "./server.gen.ts";

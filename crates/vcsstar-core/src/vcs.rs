@@ -47,6 +47,97 @@ pub fn hydrate(app: &App, conn: &mut DbConn, repo: &Repo) -> Result<PathBuf, Err
         .materialize(repo.id, &refs, &repo.default_branch, &manifest)?)
 }
 
+/// Hydrate every repository into this node's cache: the history segments
+/// the directory lacks and the refs. Repositories pushed most recently go
+/// first. Returns (hydrated, already current, errors).
+pub fn warm_pass(app: &App) -> Result<(usize, usize, usize), Error> {
+    use diesel::prelude::*;
+    use vcsstar_db::schema::repos;
+    let mut conn = app.conn()?;
+    let all: Vec<Repo> = repos::table
+        .order(repos::created_at.desc())
+        .select(Repo::as_select())
+        .load(&mut conn)?;
+    let (mut hydrated, mut current, mut errors) = (0, 0, 0);
+    for repo in &all {
+        let refs = match refs::load(&mut conn, repo.id) {
+            Ok(r) => r,
+            Err(e) => {
+                errors += 1;
+                tracing::warn!(repo = %repo.id, error = %e, "warm: refs not loaded");
+                continue;
+            }
+        };
+        let manifest = if app.store.has_segment_store() {
+            match vcsstar_store::segments::manifest(&mut conn, repo.id) {
+                Ok(m) => m,
+                Err(e) => {
+                    errors += 1;
+                    tracing::warn!(repo = %repo.id, error = %e, "warm: manifest not loaded");
+                    continue;
+                }
+            }
+        } else {
+            Vec::new()
+        };
+        let dir = match app.store.ensure(repo.id) {
+            Ok(d) => d,
+            Err(e) => {
+                errors += 1;
+                tracing::warn!(repo = %repo.id, error = %e, "warm: directory not made");
+                continue;
+            }
+        };
+        match app.store.hydrate_segments(&dir, &manifest) {
+            Ok(n) => {
+                if n > 0 {
+                    hydrated += 1;
+                    crate::metrics::cache_warm("hydrated");
+                } else {
+                    current += 1;
+                    crate::metrics::cache_warm("current");
+                }
+                if let Err(e) =
+                    app.store
+                        .materialize(repo.id, &refs, &repo.default_branch, &manifest)
+                {
+                    tracing::warn!(repo = %repo.id, error = %e, "warm: refs not written");
+                }
+            }
+            Err(e) => {
+                errors += 1;
+                crate::metrics::cache_warm("error");
+                tracing::warn!(repo = %repo.id, error = %e, "warm: segments not hydrated");
+            }
+        }
+    }
+    Ok((hydrated, current, errors))
+}
+
+/// Run `warm_pass` now and then every `cache_warm_interval` until
+/// `stopping` says so. Between passes a repository pushed on another node
+/// is hydrated on first use anyway; the pass only pre-pays that.
+pub fn warm_loop(app: &App, stopping: impl Fn() -> bool) {
+    let mut next = std::time::Instant::now();
+    while !stopping() {
+        if std::time::Instant::now() >= next {
+            let started = std::time::Instant::now();
+            match warm_pass(app) {
+                Ok((hydrated, current, errors)) => tracing::info!(
+                    hydrated,
+                    current,
+                    errors,
+                    took_ms = started.elapsed().as_millis() as u64,
+                    "cache warm pass"
+                ),
+                Err(e) => tracing::warn!(error = %e.message, "cache warm pass failed"),
+            }
+            next = std::time::Instant::now() + app.config.cache_warm_interval;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+}
+
 /// Record server-made objects (merges, imports) as a history segment.
 pub fn capture(
     app: &App,

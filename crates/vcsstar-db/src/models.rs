@@ -150,6 +150,7 @@ pub struct NewEvent<'a> {
     pub actor: Option<Uuid>,
     pub subject: Option<&'a str>,
     pub payload_cbor: Vec<u8>,
+    pub origin: Option<&'a str>,
 }
 
 #[derive(Debug, Insertable)]

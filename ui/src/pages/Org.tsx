@@ -1,17 +1,43 @@
 import { createResource, createSignal, For, Show } from "solid-js";
 import { A, useParams } from "@solidjs/router";
 import { api, ctx, errorText, who, when } from "../api";
+import type { GithubRepoInfo } from "../generated/types.gen.ts";
 import { HooksPanel } from "./Repo";
 
 export function OrgPage() {
   const params = useParams();
   const org = () => params.org!;
   const [info] = createResource(org, (o) => api.orgs.get({ ctx: ctx(), org: o }));
-  const [repos] = createResource(org, (o) => api.repos.list({ ctx: ctx(), org: o, page: { limit: 200 } }));
+  const [repos, { refetch: refetchRepos }] = createResource(org, (o) => api.repos.list({ ctx: ctx(), org: o, page: { limit: 200 } }));
   const [members, { refetch: refetchMembers }] = createResource(org, (o) => api.orgs.listMembers({ ctx: ctx(), org: o, page: { limit: 200 } }).catch(() => null));
   const [teams, { refetch: refetchTeams }] = createResource(org, (o) => api.orgs.listTeams({ ctx: ctx(), org: o }).catch(() => null));
   const [creds, { refetch: refetchCreds }] = createResource(org, (o) => api.mirror.listCredentials({ ctx: ctx(), target: { org: o } }).catch(() => null));
+  const [accounts, { refetch: refetchAccounts }] = createResource(org, (o) => api.serviceAccounts.list({ ctx: ctx(), org: o }).catch(() => null));
   const [err, setErr] = createSignal("");
+  const [ghPage, setGhPage] = createSignal<string | undefined>(undefined);
+  const [ghErr, setGhErr] = createSignal("");
+  const [gh, { refetch: refetchGh }] = createResource(
+    () => [org(), ghPage(), info()?.githubOwner] as const,
+    async ([o, cursor, owner]) => {
+      setGhErr("");
+      if (!owner) return null;
+      try {
+        return await api.mirror.listGithubRepos({ ctx: ctx(), org: o, page: { cursor, limit: 100 } });
+      } catch (e) {
+        setGhErr(errorText(e));
+        return null;
+      }
+    },
+  );
+  const [enabling, setEnabling] = createSignal<string | null>(null);
+  const [newAccount, setNewAccount] = createSignal({ name: "", description: "" });
+  const [tokenFor, setTokenFor] = createSignal<string | null>(null);
+  const [newToken, setNewToken] = createSignal({ name: "", scopes: "repo:read,pr:read" });
+  const [minted, setMinted] = createSignal<{ account: string; secret: string } | null>(null);
+  const [tokens, { refetch: refetchTokens }] = createResource(
+    () => [org(), tokenFor()] as const,
+    async ([o, name]) => (name ? api.serviceAccounts.listTokens({ ctx: ctx(), org: o, name }).catch(() => null) : null),
+  );
   const [member, setMember] = createSignal({ identity: "", role: "member" });
   const [team, setTeam] = createSignal("");
   const [cred, setCred] = createSignal({ purpose: "mirror_git_push", authMethod: "pat", secretRef: "stored", secret: "" });
@@ -48,6 +74,99 @@ export function OrgPage() {
           )}
         </For>
       </ul>
+
+      <Show when={info()?.githubOwner && (gh() || ghErr())}>
+        <h2>GitHub repositories</h2>
+        <p class="muted small">
+          Repositories under <code>{info()!.githubOwner}</code> on GitHub
+          <Show when={gh()}> as seen by <code>{gh()!.source}</code>{gh()!.installationId ? ` (installation ${gh()!.installationId})` : ""}</Show>. Enable one to
+          import it and keep both sides in sync (mode <code>import_drift</code>).
+        </p>
+        <Show when={ghErr()}>
+          <p class="err">{ghErr()}</p>
+        </Show>
+        <Show when={gh()}>
+          <table>
+            <thead>
+              <tr>
+                <th>Repository</th>
+                <th>Visibility</th>
+                <th>Default branch</th>
+                <th>Last push</th>
+                <th>Here</th>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={gh()!.repos}>
+                {(r: GithubRepoInfo) => (
+                  <tr>
+                    <td>
+                      <a href={r.htmlUrl} rel="external noreferrer" target="_blank">
+                        {r.fullName}
+                      </a>
+                      <Show when={r.description}>
+                        <div class="muted small">{r.description}</div>
+                      </Show>
+                    </td>
+                    <td class="small">
+                      {r.private ? "private" : "public"}
+                      {r.archived ? " · archived" : ""}
+                      {r.fork ? " · fork" : ""}
+                    </td>
+                    <td class="mono small">{r.defaultBranch}</td>
+                    <td class="muted small">{r.pushedAt ? when(r.pushedAt) : "—"}</td>
+                    <td>
+                      <Show
+                        when={r.mirroredAs}
+                        fallback={
+                          <button
+                            disabled={enabling() === r.fullName}
+                            onClick={() => {
+                              setEnabling(r.fullName);
+                              run(
+                                () =>
+                                  api.mirror.importRepo({
+                                    ctx: ctx(),
+                                    org: org(),
+                                    name: r.fullName.split("/")[1]!,
+                                    githubRepo: r.fullName,
+                                    mode: "import_drift",
+                                    visibility: r.private ? "private" : "public",
+                                  }),
+                                () => {
+                                  setEnabling(null);
+                                  refetchGh();
+                                  refetchRepos();
+                                },
+                              ).finally(() => setEnabling(null));
+                            }}
+                          >
+                            {enabling() === r.fullName ? "Importing…" : "Enable"}
+                          </button>
+                        }
+                      >
+                        <A href={`/${org()}/${r.mirroredAs}`}>{r.mirroredAs}</A>
+                      </Show>
+                    </td>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+          <p class="row">
+            <Show when={ghPage()}>
+              <button class="link" onClick={() => setGhPage(undefined)}>
+                first page
+              </button>
+            </Show>
+            <Show when={gh()!.nextCursor}>
+              <button class="link" onClick={() => setGhPage(gh()!.nextCursor!)}>
+                more
+              </button>
+            </Show>
+          </p>
+        </Show>
+      </Show>
 
       <Show when={members()}>
         <h2>Members</h2>
@@ -203,6 +322,149 @@ export function OrgPage() {
           A stored secret is sealed with the instance key and never shown again. A GitHub App credential is the App id, the
           installation id, and the App's private key; vcsstar mints one-hour installation tokens from it.
         </p>
+      </Show>
+
+      <Show when={accounts()}>
+        <h2>Service accounts</h2>
+        <p class="muted small">
+          A service account never signs in. It holds API tokens for integrations that do not come through LinkKeys. Grant it
+          roles like any identity (member, team, repository grant) by its identity key.
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Identity</th>
+              <th>Tokens</th>
+              <th>State</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <For each={accounts()!.accounts}>
+              {(a) => (
+                <tr>
+                  <td>
+                    <strong>{a.name}</strong>
+                    <Show when={a.description}>
+                      <div class="muted small">{a.description}</div>
+                    </Show>
+                  </td>
+                  <td class="mono small">
+                    {a.identity.userId}@{a.identity.domain}
+                  </td>
+                  <td>
+                    {a.activeTokens}{" "}
+                    <button class="link" onClick={() => setTokenFor(tokenFor() === a.name ? null : a.name)}>
+                      {tokenFor() === a.name ? "hide" : "manage"}
+                    </button>
+                  </td>
+                  <td>
+                    <span class={`badge ${a.disabledAt ? "bad" : "ok"}`}>{a.disabledAt ? "disabled" : "active"}</span>
+                  </td>
+                  <td>
+                    <Show
+                      when={a.disabledAt}
+                      fallback={
+                        <button class="link danger" onClick={() => run(() => api.serviceAccounts.disable({ ctx: ctx(), org: org(), name: a.name }), refetchAccounts)}>
+                          disable
+                        </button>
+                      }
+                    >
+                      <button class="link" onClick={() => run(() => api.serviceAccounts.enable({ ctx: ctx(), org: org(), name: a.name }), refetchAccounts)}>
+                        enable
+                      </button>
+                    </Show>
+                  </td>
+                </tr>
+              )}
+            </For>
+          </tbody>
+        </table>
+        <Show when={tokenFor()}>
+          {(name) => (
+            <div class="panel">
+              <strong>Tokens of {name()}</strong>
+              <table>
+                <tbody>
+                  <For each={tokens()?.tokens ?? []}>
+                    {(t) => (
+                      <tr>
+                        <td>{t.name}</td>
+                        <td class="small">{t.scopes.join(", ")}</td>
+                        <td class="muted">{when(t.createdAt)}</td>
+                        <td class="muted">{t.expiresAt ? when(t.expiresAt) : "never"}</td>
+                        <td>
+                          <button
+                            class="link danger"
+                            onClick={() =>
+                              run(() => api.serviceAccounts.revokeToken({ ctx: ctx(), org: org(), name: name(), tokenId: t.id }), () => {
+                                refetchTokens();
+                                refetchAccounts();
+                              })
+                            }
+                          >
+                            revoke
+                          </button>
+                        </td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+              <form
+                class="inline"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  run(
+                    async () => {
+                      const t = await api.serviceAccounts.createToken({
+                        ctx: ctx(),
+                        org: org(),
+                        name: name(),
+                        tokenName: newToken().name,
+                        scopes: newToken().scopes.split(",").map((s) => s.trim()).filter(Boolean),
+                      });
+                      setMinted({ account: name(), secret: t.secret ?? "" });
+                    },
+                    () => {
+                      setNewToken({ ...newToken(), name: "" });
+                      refetchTokens();
+                      refetchAccounts();
+                    },
+                  );
+                }}
+              >
+                <input placeholder="token name" value={newToken().name} onInput={(e) => setNewToken({ ...newToken(), name: e.currentTarget.value })} />
+                <input size={40} value={newToken().scopes} onInput={(e) => setNewToken({ ...newToken(), scopes: e.currentTarget.value })} />
+                <button disabled={!newToken().name}>Create token</button>
+              </form>
+              <Show when={minted()?.account === name()}>
+                <div class="panel">
+                  <strong>Copy this token now; it is not shown again.</strong>
+                  <pre class="code">{minted()!.secret}</pre>
+                  <p class="muted small">
+                    Send it as <code>Authorization: Bearer</code> on <code>/csil/v1/rpc</code>, or <code>vcsstar login {location.origin} --token-stdin</code>.
+                  </p>
+                </div>
+              </Show>
+            </div>
+          )}
+        </Show>
+        <form
+          class="inline"
+          onSubmit={(e) => {
+            e.preventDefault();
+            run(() => api.serviceAccounts.create({ ctx: ctx(), org: org(), name: newAccount().name, description: newAccount().description || undefined }), () => {
+              setNewAccount({ name: "", description: "" });
+              refetchAccounts();
+            });
+          }}
+        >
+          <input placeholder="account name" value={newAccount().name} onInput={(e) => setNewAccount({ ...newAccount(), name: e.currentTarget.value })} />
+          <input placeholder="description" size={40} value={newAccount().description} onInput={(e) => setNewAccount({ ...newAccount(), description: e.currentTarget.value })} />
+          <button disabled={!newAccount().name}>Create service account</button>
+        </form>
       </Show>
 
       <HooksPanel org={org()} />

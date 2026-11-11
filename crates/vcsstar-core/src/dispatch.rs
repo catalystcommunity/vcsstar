@@ -8,7 +8,8 @@ use vcsstar_types as t;
 
 use crate::principal::{self, ReqCtx};
 use crate::services::{
-    actas, auth, hooks, keys, login, meta, mirror, orgs, prs, repos, statuses, vcs_ops,
+    actas, auth, hooks, keys, login, meta, mirror, orgs, prs, repos, service_accounts, statuses,
+    vcs_ops,
 };
 use crate::{App, Error};
 
@@ -99,6 +100,9 @@ pub const IMPLEMENTED: &[(&str, &str)] = &[
     ("Auth", "whoami"),
     ("Auth", "list-tokens"),
     ("Auth", "logout"),
+    ("Auth", "github-link-status"),
+    ("Auth", "set-github-token"),
+    ("Auth", "unlink-github"),
     ("Orgs", "create"),
     ("Orgs", "get"),
     ("Orgs", "list"),
@@ -152,6 +156,15 @@ pub const IMPLEMENTED: &[(&str, &str)] = &[
     ("Mirror", "configure"),
     ("Mirror", "list-credentials"),
     ("Mirror", "remove-credential"),
+    ("Mirror", "list-github-repos"),
+    ("Mirror", "health"),
+    ("ServiceAccounts", "create"),
+    ("ServiceAccounts", "list"),
+    ("ServiceAccounts", "disable"),
+    ("ServiceAccounts", "enable"),
+    ("ServiceAccounts", "create-token"),
+    ("ServiceAccounts", "list-tokens"),
+    ("ServiceAccounts", "revoke-token"),
     ("PullRequests", "open"),
     ("PullRequests", "get"),
     ("PullRequests", "list"),
@@ -290,6 +303,33 @@ impl Dispatcher for AppDispatcher {
                 encode_ok,
                 "Ok",
                 auth::logout
+            ),
+            ("Auth", "github-link-status") => op!(
+                app,
+                peer,
+                payload,
+                decode_empty,
+                encode_github_link,
+                "GithubLink",
+                auth::github_link_status
+            ),
+            ("Auth", "set-github-token") => op!(
+                app,
+                peer,
+                payload,
+                decode_set_github_token_request,
+                encode_github_link,
+                "GithubLink",
+                auth::set_github_token
+            ),
+            ("Auth", "unlink-github") => op!(
+                app,
+                peer,
+                payload,
+                decode_empty,
+                encode_ok,
+                "Ok",
+                auth::unlink_github
             ),
 
             ("Orgs", "create") => op!(
@@ -772,6 +812,88 @@ impl Dispatcher for AppDispatcher {
                 encode_ok,
                 "Ok",
                 mirror::remove_credential
+            ),
+            ("Mirror", "list-github-repos") => op!(
+                app,
+                peer,
+                payload,
+                decode_list_github_repos_request,
+                encode_github_repo_page,
+                "GithubRepoPage",
+                mirror::list_github_repos
+            ),
+            ("Mirror", "health") => op!(
+                app,
+                peer,
+                payload,
+                decode_empty,
+                encode_github_health,
+                "GithubHealth",
+                mirror::health
+            ),
+
+            ("ServiceAccounts", "create") => op!(
+                app,
+                peer,
+                payload,
+                decode_create_service_account_request,
+                encode_service_account,
+                "ServiceAccount",
+                service_accounts::create
+            ),
+            ("ServiceAccounts", "list") => op!(
+                app,
+                peer,
+                payload,
+                decode_get_org_request,
+                encode_list_service_accounts_response,
+                "ListServiceAccountsResponse",
+                service_accounts::list
+            ),
+            ("ServiceAccounts", "disable") => op!(
+                app,
+                peer,
+                payload,
+                decode_service_account_ref,
+                encode_ok,
+                "Ok",
+                service_accounts::disable
+            ),
+            ("ServiceAccounts", "enable") => op!(
+                app,
+                peer,
+                payload,
+                decode_service_account_ref,
+                encode_ok,
+                "Ok",
+                service_accounts::enable
+            ),
+            ("ServiceAccounts", "create-token") => op!(
+                app,
+                peer,
+                payload,
+                decode_create_service_account_token_request,
+                encode_api_token,
+                "ApiToken",
+                service_accounts::create_token
+            ),
+            ("ServiceAccounts", "list-tokens") => op!(
+                app,
+                peer,
+                payload,
+                decode_service_account_ref,
+                encode_list_tokens_response,
+                "ListTokensResponse",
+                service_accounts::list_tokens
+            ),
+            ("ServiceAccounts", "revoke-token") => op!(
+                app,
+                peer,
+                payload,
+                decode_revoke_service_account_token_request,
+                encode_ok,
+                "Ok",
+                service_accounts::revoke_token
             ),
 
             ("PullRequests", "open") => op!(

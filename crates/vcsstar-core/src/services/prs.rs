@@ -1,7 +1,8 @@
-//! Pull requests: vcsstar-native, never mirrored. A PR proposes moving a
-//! base ref to include the history of a head ref. Internal refs
-//! `refs/vcsstar/pr/{n}/head` and `/merge` live in `repo_refs` like any
-//! ref and are excluded from listings and mirroring.
+//! Pull requests. A PR proposes moving a base ref to include the history
+//! of a head ref. Internal refs `refs/vcsstar/pr/{n}/head` and `/merge`
+//! live in `repo_refs` like any ref and are excluded from listings and
+//! mirroring. On a mirrored repository the PR is synced with a GitHub pull
+//! request both ways (`github_sync`).
 
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
@@ -46,6 +47,9 @@ pub struct PrRow {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub closed_at: Option<DateTime<Utc>>,
+    pub github_number: Option<i32>,
+    /// GitHub's `updated_at` of the pull request as last applied here.
+    pub github_updated_at: Option<DateTime<Utc>>,
 }
 
 pub fn head_ref_name(n: i32) -> String {
@@ -55,7 +59,7 @@ pub fn merge_ref_name(n: i32) -> String {
     format!("refs/vcsstar/pr/{n}/merge")
 }
 
-fn full_ref(s: &str) -> String {
+pub(crate) fn full_ref(s: &str) -> String {
     if s.starts_with("refs/") {
         s.to_string()
     } else {
@@ -63,7 +67,10 @@ fn full_ref(s: &str) -> String {
     }
 }
 
-fn identity(conn: &mut PgConnection, id: uuid::Uuid) -> Result<vcsstar_types::Identity, Error> {
+pub(crate) fn identity(
+    conn: &mut PgConnection,
+    id: uuid::Uuid,
+) -> Result<vcsstar_types::Identity, Error> {
     let i: Option<Identity> = identities::table
         .find(id)
         .select(Identity::as_select())
@@ -78,7 +85,7 @@ fn identity(conn: &mut PgConnection, id: uuid::Uuid) -> Result<vcsstar_types::Id
         }))
 }
 
-fn to_wire(
+pub(crate) fn to_wire(
     conn: &mut PgConnection,
     org: &OrgRow,
     repo: &RepoRow,
@@ -125,10 +132,20 @@ fn to_wire(
         created_at: to_ms(pr.created_at),
         updated_at: to_ms(pr.updated_at),
         closed_at: pr.closed_at.map(to_ms),
+        github_number: pr.github_number.map(|n| n.max(0) as u64),
+        github_url: match pr.github_number {
+            Some(n) => crate::mirror::state_for(conn, repo.id)?
+                .map(|s| format!("https://github.com/{}/pull/{n}", s.github_repo)),
+            None => None,
+        },
     })
 }
 
-fn load_pr(conn: &mut PgConnection, repo_id: uuid::Uuid, number: u64) -> Result<PrRow, Error> {
+pub(crate) fn load_pr(
+    conn: &mut PgConnection,
+    repo_id: uuid::Uuid,
+    number: u64,
+) -> Result<PrRow, Error> {
     pull_requests::table
         .filter(pull_requests::repo_id.eq(repo_id))
         .filter(pull_requests::number.eq(number.min(i32::MAX as u64) as i32))
@@ -138,12 +155,25 @@ fn load_pr(conn: &mut PgConnection, repo_id: uuid::Uuid, number: u64) -> Result<
         .ok_or_else(|| Error::not_found("pull request"))
 }
 
-fn pr_event<'a>(
+pub(crate) fn pr_event<'a>(
     org: &OrgRow,
     repo: &RepoRow,
     actor: Option<&Principal>,
     kind: &'a str,
     pr: &PrRow,
+) -> Emit<'a> {
+    pr_event_about(org, repo, actor, kind, pr, None, None)
+}
+
+/// A PR event that names the comment or review row it is about.
+pub(crate) fn pr_event_about<'a>(
+    org: &OrgRow,
+    repo: &RepoRow,
+    actor: Option<&Principal>,
+    kind: &'a str,
+    pr: &PrRow,
+    comment_id: Option<uuid::Uuid>,
+    review_id: Option<uuid::Uuid>,
 ) -> Emit<'a> {
     Emit {
         lane: outbox::lane_for_repo(&org.name, &repo.name),
@@ -161,13 +191,15 @@ fn pr_event<'a>(
             base_ref: Some(pr.base_ref.clone()),
             state: Some(pr.state.clone()),
             merge_kind: pr.merge_kind.clone(),
+            comment_id: comment_id.map(|id| id.to_string()),
+            review_id: review_id.map(|id| id.to_string()),
         }),
     }
 }
 
 /// Bring the head commit into the base repo's cache (fork PRs) and record
 /// the objects as a base-repo segment.
-fn snapshot_head(
+pub(crate) fn snapshot_head(
     app: &App,
     conn: &mut PgConnection,
     base_repo: &RepoRow,
@@ -220,7 +252,7 @@ fn snapshot_head(
 
 /// Trial merge: records `mergeable`, `merge_base_sha`, and the `/merge`
 /// internal ref. Nothing is written to the base ref.
-fn trial_merge(
+pub(crate) fn trial_merge(
     app: &App,
     conn: &mut PgConnection,
     repo: &RepoRow,
@@ -537,7 +569,7 @@ pub fn reopen(app: &App, ctx: &ReqCtx, req: PrRef) -> Result<PullRequest, Error>
     set_state(app, ctx, req, "closed", "open", "pr_reopened")
 }
 
-fn drop_internal_refs(
+pub(crate) fn drop_internal_refs(
     conn: &mut PgConnection,
     repo_id: uuid::Uuid,
     number: i32,
@@ -595,18 +627,22 @@ pub fn retarget(app: &App, ctx: &ReqCtx, req: RetargetRequest) -> Result<PullReq
 
 #[derive(Debug, Clone, Queryable, Selectable)]
 #[diesel(table_name = pr_reviews)]
-struct ReviewRow {
-    id: uuid::Uuid,
-    pr_id: uuid::Uuid,
-    reviewer: uuid::Uuid,
-    state: String,
-    head_sha_at_review: String,
-    body: Option<String>,
-    created_at: DateTime<Utc>,
+pub(crate) struct ReviewRow {
+    pub id: uuid::Uuid,
+    pub pr_id: uuid::Uuid,
+    pub reviewer: uuid::Uuid,
+    pub state: String,
+    pub head_sha_at_review: String,
+    pub body: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub github_id: Option<i64>,
 }
 
-fn review_wire(conn: &mut PgConnection, pr: &PrRow, r: &ReviewRow) -> Result<Review, Error> {
-    let _ = r.id;
+pub(crate) fn review_wire(
+    conn: &mut PgConnection,
+    pr: &PrRow,
+    r: &ReviewRow,
+) -> Result<Review, Error> {
     let _ = r.pr_id;
     Ok(Review {
         number: pr.number.max(0) as u64,
@@ -663,7 +699,10 @@ pub fn review(app: &App, ctx: &ReqCtx, req: ReviewRequest) -> Result<Review, Err
         diesel::update(pull_requests::table.find(pr.id))
             .set(pull_requests::updated_at.eq(Utc::now()))
             .execute(conn)?;
-        outbox::emit(conn, pr_event(&org, &repo, Some(p), "pr_review", &pr))?;
+        outbox::emit(
+            conn,
+            pr_event_about(&org, &repo, Some(p), "pr_review", &pr, None, Some(row.id)),
+        )?;
         Ok(row)
     })?;
     review_wire(&mut conn, &pr, &row)
@@ -685,19 +724,27 @@ pub fn list_reviews(app: &App, ctx: &ReqCtx, req: PrRef) -> Result<ListReviewsRe
 
 #[derive(Debug, Clone, Queryable, Selectable)]
 #[diesel(table_name = pr_comments)]
-struct CommentRow {
-    id: uuid::Uuid,
-    pr_id: uuid::Uuid,
-    author: uuid::Uuid,
-    body: String,
-    path: Option<String>,
-    line: Option<i32>,
-    commit_sha: Option<String>,
-    created_at: DateTime<Utc>,
-    edited_at: Option<DateTime<Utc>>,
+pub(crate) struct CommentRow {
+    pub id: uuid::Uuid,
+    pub pr_id: uuid::Uuid,
+    pub author: uuid::Uuid,
+    pub body: String,
+    pub path: Option<String>,
+    pub line: Option<i32>,
+    pub commit_sha: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub edited_at: Option<DateTime<Utc>>,
+    pub github_id: Option<i64>,
+    pub github_kind: Option<String>,
+    /// GitHub's `updated_at` of the comment as last applied here.
+    pub github_updated_at: Option<DateTime<Utc>>,
 }
 
-fn comment_wire(conn: &mut PgConnection, pr: &PrRow, c: &CommentRow) -> Result<Comment, Error> {
+pub(crate) fn comment_wire(
+    conn: &mut PgConnection,
+    pr: &PrRow,
+    c: &CommentRow,
+) -> Result<Comment, Error> {
     let _ = c.pr_id;
     Ok(Comment {
         id: c.id.to_string(),
@@ -735,7 +782,10 @@ pub fn comment(app: &App, ctx: &ReqCtx, req: CommentRequest) -> Result<Comment, 
         diesel::update(pull_requests::table.find(pr.id))
             .set(pull_requests::updated_at.eq(Utc::now()))
             .execute(conn)?;
-        outbox::emit(conn, pr_event(&org, &repo, Some(p), "pr_comment", &pr))?;
+        outbox::emit(
+            conn,
+            pr_event_about(&org, &repo, Some(p), "pr_comment", &pr, Some(row.id), None),
+        )?;
         Ok(row)
     })?;
     comment_wire(&mut conn, &pr, &row)
@@ -1066,6 +1116,7 @@ pub fn on_push(
     conn: &mut DbConn,
     org: &OrgRow,
     repo: &RepoRow,
+    actor: Option<&Principal>,
     updates: &[RefUpdate],
 ) -> Result<(), Error> {
     for u in updates {
@@ -1077,6 +1128,7 @@ pub fn on_push(
             .inner_join(repos::table.on(repos::id.eq(pull_requests::repo_id)))
             .filter(pull_requests::state.eq("open"))
             .filter(pull_requests::head_ref.eq(&u.name))
+            .filter(pull_requests::head_remote.is_null())
             .filter(
                 pull_requests::head_repo_id
                     .eq(repo.id)
@@ -1097,7 +1149,15 @@ pub fn on_push(
                     continue;
                 }
                 Some(new) => {
-                    let base_dir = vcs::hydrate(app, conn, &base_repo)?;
+                    // Inside a push the pushed repository's directory is
+                    // already hydrated, and a materialize here would race
+                    // git's own ref update (it deletes refs that are gone
+                    // from Postgres before receive-pack writes them).
+                    let base_dir = if base_repo.id == repo.id {
+                        app.store.repo_dir(repo.id)
+                    } else {
+                        vcs::hydrate(app, conn, &base_repo)?
+                    };
                     snapshot_head(app, conn, &base_repo, &base_dir, repo, new)?;
                     let cur = refs::get(conn, base_repo.id, &head_ref_name(pr.number))?;
                     refs::apply(
@@ -1120,26 +1180,75 @@ pub fn on_push(
                         .get_result(conn)?;
                     outbox::emit(
                         conn,
-                        pr_event(&base_org, &base_repo, None, "pr_head_moved", &moved),
+                        pr_event(&base_org, &base_repo, actor, "pr_head_moved", &moved),
                     )?;
                 }
             }
         }
         // Bases: PRs targeting this ref in this repo.
-        if let Some(new) = &u.new {
-            diesel::update(
-                pull_requests::table
-                    .filter(pull_requests::repo_id.eq(repo.id))
-                    .filter(pull_requests::state.eq("open"))
-                    .filter(pull_requests::base_ref.eq(&u.name)),
-            )
-            .set((
-                pull_requests::base_sha.eq(&new.0),
-                pull_requests::mergeable.eq("unknown"),
-            ))
-            .execute(conn)?;
+        match &u.new {
+            Some(new) => {
+                diesel::update(
+                    pull_requests::table
+                        .filter(pull_requests::repo_id.eq(repo.id))
+                        .filter(pull_requests::state.eq("open"))
+                        .filter(pull_requests::base_ref.eq(&u.name)),
+                )
+                .set((
+                    pull_requests::base_sha.eq(&new.0),
+                    pull_requests::mergeable.eq("unknown"),
+                ))
+                .execute(conn)?;
+            }
+            None => retarget_on_base_delete(app, conn, org, repo, actor, &u.name)?,
         }
     }
-    let _ = org;
+    Ok(())
+}
+
+/// A deleted base branch (the usual end of a stacked branch once it is
+/// merged) moves the open PRs that targeted it onto the default branch,
+/// the way GitHub does. Each one gets a fresh trial merge and a
+/// `pr_retargeted` event.
+fn retarget_on_base_delete(
+    app: &App,
+    conn: &mut DbConn,
+    org: &OrgRow,
+    repo: &RepoRow,
+    actor: Option<&Principal>,
+    deleted: &str,
+) -> Result<(), Error> {
+    let default_ref = format!("refs/heads/{}", repo.default_branch);
+    if deleted == default_ref {
+        return Ok(());
+    }
+    let open: Vec<PrRow> = pull_requests::table
+        .filter(pull_requests::repo_id.eq(repo.id))
+        .filter(pull_requests::state.eq("open"))
+        .filter(pull_requests::base_ref.eq(deleted))
+        .select(PrRow::as_select())
+        .load(conn)?;
+    if open.is_empty() {
+        return Ok(());
+    }
+    let Some(base_sha) = refs::get(conn, repo.id, &default_ref)? else {
+        return Ok(());
+    };
+    // The caller (push hook, drift import, PR import) hydrated the
+    // directory already; see the note in `on_push`.
+    let dir = app.store.repo_dir(repo.id);
+    for pr in open {
+        let u: PrRow = diesel::update(pull_requests::table.find(pr.id))
+            .set((
+                pull_requests::base_ref.eq(&default_ref),
+                pull_requests::base_sha.eq(&base_sha.0),
+                pull_requests::mergeable.eq("unknown"),
+                pull_requests::updated_at.eq(Utc::now()),
+            ))
+            .returning(PrRow::as_returning())
+            .get_result(conn)?;
+        let u = trial_merge(app, conn, repo, &dir, &u)?;
+        outbox::emit(conn, pr_event(org, repo, actor, "pr_retargeted", &u))?;
+    }
     Ok(())
 }

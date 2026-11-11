@@ -240,6 +240,25 @@ pub struct ListKeysResponse {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct GithubLink {
+    pub linked: bool,
+    pub kind: Option<String>,
+    pub login: Option<String>,
+    pub github_id: Option<u64>,
+    pub linked_at: Option<Timestamp>,
+    pub expires_at: Option<Timestamp>,
+    pub broken_reason: Option<String>,
+    pub start_url: Option<String>,
+    pub app_slug: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetGithubTokenRequest {
+    pub ctx: Ctx,
+    pub token: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Org {
     pub name: String,
     pub display_name: Option<String>,
@@ -657,6 +676,8 @@ pub struct PullRequest {
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
     pub closed_at: Option<Timestamp>,
+    pub github_number: Option<u64>,
+    pub github_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -915,6 +936,7 @@ pub struct MirrorStatus {
     pub last_success_at: Option<Timestamp>,
     pub last_error: Option<String>,
     pub last_full_reconcile_at: Option<Timestamp>,
+    pub last_pull_sync_at: Option<Timestamp>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1007,6 +1029,9 @@ pub struct ReconcileReport {
     pub refs_pushed: u64,
     pub drift_refs: Vec<String>,
     pub error: Option<String>,
+    pub pulls_checked: Option<u64>,
+    pub pulls_changed: Option<u64>,
+    pub pulls_complete: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1017,6 +1042,114 @@ pub struct ImportRequest {
     pub github_repo: String,
     pub mode: Option<String>,
     pub visibility: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ListGithubReposRequest {
+    pub ctx: Ctx,
+    pub org: String,
+    pub page: Option<Page>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GithubRepoInfo {
+    pub full_name: String,
+    pub description: Option<String>,
+    pub private: bool,
+    pub archived: bool,
+    pub fork: bool,
+    pub default_branch: String,
+    pub html_url: String,
+    pub pushed_at: Option<Timestamp>,
+    pub mirrored_as: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GithubRepoPage {
+    pub repos: Vec<GithubRepoInfo>,
+    pub next_cursor: Option<String>,
+    pub source: String,
+    pub installation_id: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LaneHealth {
+    pub lane: String,
+    pub state: String,
+    pub consecutive_failures: u64,
+    pub open_until: Option<Timestamp>,
+    pub last_error: Option<String>,
+    pub last_failure_at: Option<Timestamp>,
+    pub last_success_at: Option<Timestamp>,
+    pub recovered_at: Option<Timestamp>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RateLimitInfo {
+    pub token: String,
+    pub remaining: u64,
+    pub limit: u64,
+    pub reset_at: Timestamp,
+    pub held: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GithubHealth {
+    pub lanes: Vec<LaneHealth>,
+    pub rate_limits: Vec<RateLimitInfo>,
+    pub pending_actions: u64,
+    pub blocked_actions: u64,
+    pub oldest_pending_at: Option<Timestamp>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ServiceAccount {
+    pub identity: Identity,
+    pub org: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub created_at: Timestamp,
+    pub disabled_at: Option<Timestamp>,
+    pub active_tokens: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CreateServiceAccountRequest {
+    pub ctx: Ctx,
+    pub org: String,
+    pub name: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ServiceAccountRef {
+    pub ctx: Ctx,
+    pub org: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ListServiceAccountsResponse {
+    pub accounts: Vec<ServiceAccount>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CreateServiceAccountTokenRequest {
+    pub ctx: Ctx,
+    pub org: String,
+    pub name: String,
+    pub token_name: String,
+    pub scopes: Vec<String>,
+    pub client_label: Option<String>,
+    pub expires_at: Option<Timestamp>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RevokeServiceAccountTokenRequest {
+    pub ctx: Ctx,
+    pub org: String,
+    pub name: String,
+    pub token_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1112,6 +1245,8 @@ pub struct PrPayload {
     pub base_ref: Option<String>,
     pub state: Option<String>,
     pub merge_kind: Option<String>,
+    pub comment_id: Option<String>,
+    pub review_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

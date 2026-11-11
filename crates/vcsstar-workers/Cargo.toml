@@ -9,9 +9,11 @@ description = "corndogs-backed worker loops: dispatcher, sweeper, hook delivery,
 [dependencies]
 vcsstar-core.workspace = true
 vcsstar-db.workspace = true
+vcsstar-store.workspace = true
 vcsstar-types.workspace = true
 diesel.workspace = true
 uuid.workspace = true
+rand.workspace = true
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true

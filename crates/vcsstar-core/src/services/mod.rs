@@ -11,6 +11,7 @@ pub mod mirror;
 pub mod orgs;
 pub mod prs;
 pub mod repos;
+pub mod service_accounts;
 pub mod statuses;
 pub mod vcs_ops;
 

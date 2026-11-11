@@ -437,7 +437,14 @@ fn pre_receive(app: &App, ctx: &PushCtx, req: &HookRequest) -> Result<Vec<String
         Ok(())
     })?;
     // PR snapshots follow the push; a failure here must not undo the push.
-    if let Err(e) = crate::services::prs::on_push(app, &mut conn, &ctx.org, &ctx.repo, &updates) {
+    if let Err(e) = crate::services::prs::on_push(
+        app,
+        &mut conn,
+        &ctx.org,
+        &ctx.repo,
+        Some(&ctx.principal),
+        &updates,
+    ) {
         tracing::warn!(error = %e.message, "pull request snapshot update failed after push");
         messages.push(format!(
             "vcsstar: note: pull request snapshots were not updated ({})",

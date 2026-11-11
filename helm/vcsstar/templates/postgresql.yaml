@@ -1,4 +1,53 @@
 {{- if .Values.postgresql.enabled }}
+{{- if eq .Values.postgresql.operator "cnpg" }}
+# CloudNativePG cluster. The operator makes Secret <name>-app (keys
+# username, password, uri, ...) and Services <name>-rw / <name>-ro.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "vcsstar.fullname" . }}-postgres
+  labels:
+    {{- include "vcsstar.labels" . | nindent 4 }}
+spec:
+  instances: {{ .Values.postgresql.instances }}
+  imageName: {{ .Values.postgresql.imageName | quote }}
+  enableSuperuserAccess: false
+  bootstrap:
+    initdb:
+      database: {{ .Values.postgresql.database }}
+      owner: {{ .Values.postgresql.user }}
+      encoding: UTF8
+      localeCollate: C
+      localeCType: C
+  storage:
+    size: {{ .Values.postgresql.storage.size }}
+    {{- with .Values.postgresql.storage.storageClass }}
+    storageClass: {{ . }}
+    {{- end }}
+  {{- with .Values.postgresql.resources }}
+  resources:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.postgresql.parameters }}
+  postgresql:
+    parameters:
+      {{- toYaml . | nindent 6 }}
+  {{- end }}
+  {{- with .Values.postgresql.backup }}
+  backup:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- if or .Values.nodeSelector (gt (int .Values.postgresql.instances) 1) }}
+  affinity:
+    {{- with .Values.nodeSelector }}
+    nodeSelector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- if gt (int .Values.postgresql.instances) 1 }}
+    podAntiAffinityType: preferred
+    {{- end }}
+  {{- end }}
+{{- else if eq .Values.postgresql.operator "zalando" }}
 apiVersion: acid.zalan.do/v1
 kind: postgresql
 metadata:
@@ -29,4 +78,7 @@ spec:
               values: [{{ $v | quote }}]
             {{- end }}
   {{- end }}
+{{- else }}
+{{- fail "postgresql.operator must be cnpg or zalando" }}
+{{- end }}
 {{- end }}

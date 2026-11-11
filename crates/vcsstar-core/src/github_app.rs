@@ -91,21 +91,56 @@ impl AppCredential {
     }
 }
 
-/// Installation tokens in hand, keyed by credential id.
+/// An App JWT for the instance's own App (no installation needed).
+pub fn sign_jwt(app_id: &str, private_key: &str) -> Result<String, Error> {
+    AppCredential {
+        app_id: app_id.to_string(),
+        installation_id: "0".into(),
+        private_key: private_key.to_string(),
+    }
+    .jwt()
+}
+
+/// How long a "not installed" answer is believed before GitHub is asked
+/// again.
+const NOT_INSTALLED_TTL_MINUTES: i64 = 2;
+
+/// Installation tokens in hand, keyed by credential id (or, for the
+/// instance App, by a key derived from the repository name), plus the
+/// repositories the instance App turned out not to be installed for.
 #[derive(Default)]
 pub struct TokenCache {
     tokens: Mutex<HashMap<Uuid, (String, DateTime<Utc>)>>,
+    not_installed: Mutex<HashMap<String, DateTime<Utc>>>,
 }
 
 impl TokenCache {
-    fn get(&self, id: Uuid) -> Option<String> {
+    pub fn not_installed(&self, full_name: &str) -> bool {
+        let map = self.not_installed.lock().unwrap_or_else(|p| p.into_inner());
+        map.get(full_name).is_some_and(|until| *until > Utc::now())
+    }
+
+    pub fn remember_not_installed(&self, full_name: &str) {
+        let mut map = self.not_installed.lock().unwrap_or_else(|p| p.into_inner());
+        map.insert(
+            full_name.to_string(),
+            Utc::now() + Duration::minutes(NOT_INSTALLED_TTL_MINUTES),
+        );
+    }
+
+    pub fn forget_not_installed(&self, full_name: &str) {
+        let mut map = self.not_installed.lock().unwrap_or_else(|p| p.into_inner());
+        map.remove(full_name);
+    }
+
+    pub(crate) fn get(&self, id: Uuid) -> Option<String> {
         let map = self.tokens.lock().unwrap_or_else(|p| p.into_inner());
         map.get(&id)
             .filter(|(_, exp)| *exp - Duration::minutes(5) > Utc::now())
             .map(|(t, _)| t.clone())
     }
 
-    fn put(&self, id: Uuid, token: String, expires_at: DateTime<Utc>) {
+    pub(crate) fn put(&self, id: Uuid, token: String, expires_at: DateTime<Utc>) {
         let mut map = self.tokens.lock().unwrap_or_else(|p| p.into_inner());
         map.insert(id, (token, expires_at));
     }

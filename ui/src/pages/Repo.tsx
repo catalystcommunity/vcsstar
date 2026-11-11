@@ -456,7 +456,8 @@ function MirrorTab(p: { org: string; name: string; version: number }) {
               <span class={`badge ${s().blocked ? "bad" : "muted"}`}>blocked {s().blocked}</span>
             </div>
             <p class="small muted">
-              last success {when(s().lastSuccessAt)} · last full reconcile {when(s().lastFullReconcileAt)}
+              last success {when(s().lastSuccessAt)} · last full reconcile {when(s().lastFullReconcileAt)} · pull requests synced from GitHub up to{" "}
+              {s().lastPullSyncAt ? new Date(s().lastPullSyncAt!).toISOString() : "never"}
               <Show when={s().lastError}>
                 <div class="err">{s().lastError}</div>
               </Show>

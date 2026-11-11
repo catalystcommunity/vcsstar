@@ -35,6 +35,13 @@ data:
   VCSSTAR__CORNDOGS_ADDR: {{ . | quote }}
   VCSSTAR__CORNDOGS_TLS: {{ $.Values.corndogs.tls | quote }}
   {{- end }}
+  {{- with .Values.githubApp.slug }}
+  VCSSTAR__GITHUB_APP_SLUG: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.otlp.endpoint }}
+  VCSSTAR__OTLP_ENDPOINT: {{ . | quote }}
+  VCSSTAR__OTLP_SERVICE_NAME: {{ $.Values.otlp.serviceName | default (include "vcsstar.fullname" $) | quote }}
+  {{- end }}
   {{- with .Values.objectStore.endpoint }}
   VCSSTAR__OBJECT_STORE_ENDPOINT: {{ . | quote }}
   VCSSTAR__OBJECT_STORE_BUCKET: {{ $.Values.objectStore.bucket | quote }}

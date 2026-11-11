@@ -317,6 +317,94 @@ fn device_submit(
     }
 }
 
+fn account_target(return_to: Option<&str>) -> String {
+    return_to
+        .filter(|r| r.starts_with('/') && !r.starts_with("//"))
+        .unwrap_or("/me")
+        .to_string()
+}
+
+fn link_error(return_to: Option<&str>, message: &str) -> Redirect {
+    let target = account_target(return_to);
+    let sep = if target.contains('?') { '&' } else { '?' };
+    Redirect::to(format!(
+        "{target}{sep}github_error={}",
+        vcsstar_core::linkkeys::urlencode(message)
+    ))
+}
+
+/// Start linking the signed-in account to GitHub through the instance's
+/// GitHub App: remember the attempt and send the browser to GitHub.
+#[get("/auth/github/start?<return_to>")]
+fn github_start(
+    app: &State<App>,
+    cookies: &CookieJar<'_>,
+    peer: HttpPeer,
+    return_to: Option<String>,
+) -> Redirect {
+    let ctx = session_ctx(app, cookies, &peer.0.remote);
+    let Some(p) = ctx.principal.as_ref() else {
+        return Redirect::to(format!(
+            "/auth/login?return_to={}",
+            vcsstar_core::linkkeys::urlencode(&format!(
+                "/auth/github/start?return_to={}",
+                account_target(return_to.as_deref())
+            ))
+        ));
+    };
+    let mut conn = match app.conn() {
+        Ok(c) => c,
+        Err(e) => return link_error(return_to.as_deref(), &e.message),
+    };
+    match vcsstar_core::github_link::begin(app, &mut conn, p.identity.id, return_to.as_deref()) {
+        Ok(url) => Redirect::to(url),
+        Err(e) => link_error(return_to.as_deref(), &e.message),
+    }
+}
+
+/// GitHub sends the browser back here with the authorization code. A
+/// visit without our `state` (for example right after installing the App
+/// with "request user authorization during installation") is sent through
+/// `/auth/github/start`, so a link is only ever made for an attempt this
+/// account started.
+#[get("/auth/github/callback?<code>&<state>&<error>&<error_description>&<setup_action>&<installation_id>")]
+#[allow(clippy::too_many_arguments)]
+fn github_callback(
+    app: &State<App>,
+    cookies: &CookieJar<'_>,
+    peer: HttpPeer,
+    code: Option<String>,
+    state: Option<String>,
+    error: Option<String>,
+    error_description: Option<String>,
+    setup_action: Option<String>,
+    installation_id: Option<String>,
+) -> Redirect {
+    let _ = (setup_action, installation_id);
+    if let Some(e) = error {
+        let d = error_description.unwrap_or_default();
+        return link_error(None, &format!("GitHub: {e} {d}"));
+    }
+    let ctx = session_ctx(app, cookies, &peer.0.remote);
+    let Some(p) = ctx.principal.as_ref() else {
+        return Redirect::to("/auth/login?return_to=%2Fauth%2Fgithub%2Fstart");
+    };
+    let (Some(code), Some(state)) = (code, state) else {
+        return Redirect::to("/auth/github/start");
+    };
+    let mut conn = match app.conn() {
+        Ok(c) => c,
+        Err(e) => return link_error(None, &e.message),
+    };
+    match vcsstar_core::github_link::complete(app, &mut conn, p.identity.id, &state, &code) {
+        Ok((row, return_to)) => {
+            tracing::info!(identity = %p.key(), login = %row.login, "GitHub account linked");
+            Redirect::to(account_target(return_to.as_deref()))
+        }
+        Err(e) => link_error(None, &e.message),
+    }
+}
+
 /// Without a built UI, the root shows the session page. The SPA file
 /// server (rank 30) wins when `VCSSTAR__UI_DIR` is set.
 #[get("/", rank = 50)]
@@ -333,7 +421,9 @@ pub fn routes() -> Vec<Route> {
         me,
         logout,
         device_form,
-        device_submit
+        device_submit,
+        github_start,
+        github_callback
     ]
 }
 

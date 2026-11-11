@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use vcsstar_db::models::{Org, Repo};
 use vcsstar_db::schema::{
-    credentials, mirror_actions, mirror_attempts, mirror_refs, mirror_state, orgs, repos,
+    credentials, events, mirror_actions, mirror_attempts, mirror_refs, mirror_state, orgs, repos,
 };
 use vcsstar_db::DbConn;
 use vcsstar_store::refs::{self, RefUpdate};
@@ -41,6 +41,8 @@ pub struct StateRow {
     pub last_error: Option<String>,
     pub last_full_reconcile_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
+    pub last_pull_sync_at: Option<DateTime<Utc>>,
+    pub last_pull_pass_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Queryable, Selectable)]
@@ -83,8 +85,42 @@ pub struct CredentialRow {
 /// execution time, so the payload names the object, not the event.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ActionPayload {
-    Push { r#ref: String },
+    Push {
+        r#ref: String,
+    },
     RepoSettings,
+    /// Converge the GitHub pull request that shadows vcsstar PR `number`
+    /// (create, title, body, base, state).
+    PrSync {
+        number: i32,
+    },
+    /// Post or edit one vcsstar comment on the GitHub pull request.
+    PrComment {
+        id: Uuid,
+    },
+    /// Submit one vcsstar review on the GitHub pull request.
+    PrReview {
+        id: Uuid,
+    },
+    /// Report one commit status to GitHub.
+    Status {
+        sha: String,
+        context: String,
+    },
+}
+
+impl ActionPayload {
+    /// Object kind for metrics and logs.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            ActionPayload::Push { .. } => "ref",
+            ActionPayload::RepoSettings => "repo-settings",
+            ActionPayload::PrSync { .. } => "pr",
+            ActionPayload::PrComment { .. } => "pr-comment",
+            ActionPayload::PrReview { .. } => "pr-review",
+            ActionPayload::Status { .. } => "status",
+        }
+    }
 }
 
 pub fn encode_payload(p: &ActionPayload) -> Vec<u8> {
@@ -99,6 +135,11 @@ pub fn decode_payload(b: &[u8]) -> Option<ActionPayload> {
 
 pub fn queue_name(org: &str, repo: &str) -> String {
     format!("mirror:{org}/{repo}")
+}
+
+/// The `mirror_state` table, for modules that update one column of it.
+pub fn mirror_state_table() -> mirror_state::table {
+    mirror_state::table
 }
 
 pub fn state_for(conn: &mut PgConnection, repo_id: Uuid) -> Result<Option<StateRow>, Error> {
@@ -214,6 +255,269 @@ pub mod cred {
         Ok(set.choose(&mut rand::thread_rng()).cloned())
     }
 
+    /// Where a token came from. The mirror tells GitHub nothing about
+    /// it, but the executors word what they post by it (a user's own
+    /// token needs no attribution line) and settle refusals by it.
+    #[derive(Debug, Clone)]
+    pub enum TokenSource {
+        /// A linked user's own token: GitHub attributes the change to them.
+        User { identity_id: Uuid, login: String },
+        /// The instance's GitHub App, installed on the repository's owner.
+        InstanceApp,
+        /// A credential row of the organization or repository.
+        Credential { purpose: String, id: Uuid },
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct Token {
+        pub value: String,
+        pub source: TokenSource,
+    }
+
+    impl Token {
+        pub fn is_user(&self) -> bool {
+            matches!(self.source, TokenSource::User { .. })
+        }
+
+        /// A short label for logs: `user:<login>`, `app`, or the purpose.
+        pub fn label(&self) -> String {
+            match &self.source {
+                TokenSource::User { login, .. } => format!("user:{login}"),
+                TokenSource::InstanceApp => "app".into(),
+                TokenSource::Credential { purpose, .. } => purpose.clone(),
+            }
+        }
+    }
+
+    /// Sealing needs the instance key; say so before a token is fetched.
+    pub fn require_key(app: &App) -> Result<(), Error> {
+        if app.config.credential_key.is_none() {
+            return Err(Error::new(
+                Code::PreconditionFailed,
+                "this instance has no SECRET_VCSSTAR__CREDENTIAL_KEY, so it cannot keep a token",
+            ));
+        }
+        Ok(())
+    }
+
+    fn instance_app_key(full_name: &str) -> Uuid {
+        Uuid::new_v5(
+            &Uuid::NAMESPACE_URL,
+            format!("vcsstar:github-app:{full_name}").as_bytes(),
+        )
+    }
+
+    /// The GitHub repository a mirrored repository shadows.
+    fn github_repo_of(conn: &mut PgConnection, repo_id: Uuid) -> Result<Option<String>, Failure> {
+        mirror_state::table
+            .filter(mirror_state::repo_id.eq(repo_id))
+            .select(mirror_state::github_repo)
+            .first::<String>(conn)
+            .optional()
+            .map_err(|e| Failure::Transient(format!("database: {e}")))
+    }
+
+    /// An installation token of the instance's GitHub App for the
+    /// repository, when the App is configured and installed on its owner
+    /// for that repository. Cached per repository for the token's life;
+    /// a missing installation is remembered for a while.
+    pub fn instance_app_token(
+        app: &App,
+        conn: &mut PgConnection,
+        repo_id: Uuid,
+    ) -> Result<Option<String>, Failure> {
+        let Some(full) = github_repo_of(conn, repo_id)? else {
+            return Ok(None);
+        };
+        instance_app_token_for(app, &full)
+    }
+
+    /// `instance_app_token` by GitHub repository name, for operations that
+    /// run before a vcsstar repository exists (import, discovery).
+    pub fn instance_app_token_for(app: &App, full: &str) -> Result<Option<String>, Failure> {
+        let Some(cfg) = app.config.github_app.as_ref() else {
+            return Ok(None);
+        };
+        let key = instance_app_key(full);
+        if let Some(t) = app.github_app_tokens.get(key) {
+            return Ok(Some(t));
+        }
+        if app.github_app_tokens.not_installed(full) {
+            return Ok(None);
+        }
+        let jwt = crate::github_app::sign_jwt(&cfg.app_id, &cfg.private_key)
+            .map_err(|e| Failure::Terminal(e.message))?;
+        let Some(installation) =
+            github::installation_for_repo(&app.config.github_api_base, &jwt, full)?
+        else {
+            // GitHub answers 404 for a while after an installation is
+            // made, so this is remembered only briefly.
+            tracing::info!(repo = %full, "the instance GitHub App is not installed for this repository (or GitHub does not show it yet)");
+            app.github_app_tokens.remember_not_installed(full);
+            return Ok(None);
+        };
+        let (token, expires_at) = github::installation_token(
+            &app.config.github_api_base,
+            &jwt,
+            &installation.to_string(),
+        )?;
+        app.github_app_tokens.put(key, token.clone(), expires_at);
+        Ok(Some(token))
+    }
+
+    /// An installation token of the instance App on an owner (every
+    /// repository the installation covers), with the installation id.
+    pub fn owner_app_token(app: &App, owner: &str) -> Result<Option<(i64, String)>, Failure> {
+        let Some(cfg) = app.config.github_app.as_ref() else {
+            return Ok(None);
+        };
+        let cache_name = format!("owner:{owner}");
+        let key = instance_app_key(&cache_name);
+        let id_key = instance_app_key(&format!("{cache_name}:id"));
+        if let (Some(t), Some(id)) = (
+            app.github_app_tokens.get(key),
+            app.github_app_tokens.get(id_key),
+        ) {
+            if let Ok(id) = id.parse::<i64>() {
+                return Ok(Some((id, t)));
+            }
+        }
+        if app.github_app_tokens.not_installed(&cache_name) {
+            return Ok(None);
+        }
+        let jwt = crate::github_app::sign_jwt(&cfg.app_id, &cfg.private_key)
+            .map_err(|e| Failure::Terminal(e.message))?;
+        let Some(installation) =
+            github::installation_for_owner(&app.config.github_api_base, &jwt, owner)?
+        else {
+            tracing::info!(
+                owner,
+                "the instance GitHub App is not installed on this owner"
+            );
+            app.github_app_tokens.remember_not_installed(&cache_name);
+            return Ok(None);
+        };
+        let (token, expires_at) = github::installation_token(
+            &app.config.github_api_base,
+            &jwt,
+            &installation.to_string(),
+        )?;
+        app.github_app_tokens.put(key, token.clone(), expires_at);
+        app.github_app_tokens
+            .put(id_key, installation.to_string(), expires_at);
+        Ok(Some((installation, token)))
+    }
+
+    /// The token for reading an owner's repositories or importing one of
+    /// them, in order: the instance App's installation on the owner, the
+    /// organization's credential set, then the caller's own linked token.
+    /// Returns the installation id when the App was used.
+    pub fn token_for_owner(
+        app: &App,
+        conn: &mut PgConnection,
+        org_id: Uuid,
+        owner: &str,
+        caller: Option<Uuid>,
+    ) -> Result<(Token, Option<i64>), Failure> {
+        if let Some((installation, value)) = owner_app_token(app, owner)? {
+            return Ok((
+                Token {
+                    value,
+                    source: TokenSource::InstanceApp,
+                },
+                Some(installation),
+            ));
+        }
+        for p in purpose_order("import_fetch") {
+            if let Some(row) =
+                find(conn, org_id, Uuid::nil(), p).map_err(|e| Failure::Transient(e.message))?
+            {
+                let v = value(app, &row).map_err(|e| Failure::Terminal(e.message))?;
+                let value = if row.auth_method == "github_app" {
+                    crate::github_app::installation_token(app, row.id, &v)?
+                } else {
+                    v
+                };
+                return Ok((
+                    Token {
+                        value,
+                        source: TokenSource::Credential {
+                            purpose: p.to_string(),
+                            id: row.id,
+                        },
+                    },
+                    None,
+                ));
+            }
+        }
+        if let Some(identity_id) = caller {
+            if let Some((login, value)) = crate::github_link::user_token(app, conn, identity_id)? {
+                return Ok((
+                    Token {
+                        value,
+                        source: TokenSource::User { identity_id, login },
+                    },
+                    None,
+                ));
+            }
+        }
+        Err(Failure::Terminal(format!(
+            "no way to read {owner} on GitHub: the instance GitHub App is not installed there, the organization has no credential, and your account is not linked to GitHub"
+        )))
+    }
+
+    /// The token to act with, in order: the actor's own token when the
+    /// actor is linked to GitHub (so GitHub shows the change under their
+    /// login), the instance's GitHub App when it is installed on the
+    /// owner, then the credential set for the purpose.
+    pub fn token_for_actor(
+        app: &App,
+        conn: &mut PgConnection,
+        org_id: Uuid,
+        repo_id: Uuid,
+        purpose: &str,
+        actor: Option<Uuid>,
+    ) -> Result<Token, Failure> {
+        if let Some(identity_id) = actor {
+            if let Some((login, value)) = crate::github_link::user_token(app, conn, identity_id)? {
+                return Ok(Token {
+                    value,
+                    source: TokenSource::User { identity_id, login },
+                });
+            }
+        }
+        if purpose != "webhook_inbound" {
+            if let Some(value) = instance_app_token(app, conn, repo_id)? {
+                return Ok(Token {
+                    value,
+                    source: TokenSource::InstanceApp,
+                });
+            }
+        }
+        for p in purpose_order(purpose) {
+            if let Some(row) =
+                find(conn, org_id, repo_id, p).map_err(|e| Failure::Transient(e.message))?
+            {
+                let v = value(app, &row).map_err(|e| Failure::Terminal(e.message))?;
+                let value = if row.auth_method == "github_app" {
+                    crate::github_app::installation_token(app, row.id, &v)?
+                } else {
+                    v
+                };
+                return Ok(Token {
+                    value,
+                    source: TokenSource::Credential {
+                        purpose: p.to_string(),
+                        id: row.id,
+                    },
+                });
+            }
+        }
+        Err(Failure::Terminal(format!(
+            "no enabled credential with purpose {purpose} for this repository or its organization, and the instance GitHub App is not installed on it"
+        )))
+    }
+
     /// Purposes tried for a request, in order: api <-> git_push share
     /// credentials, and an import may use either.
     fn purpose_order(purpose: &str) -> Vec<&str> {
@@ -235,6 +539,10 @@ pub mod cred {
         repo_id: Uuid,
         purpose: &str,
     ) {
+        if let Ok(Some(full)) = github_repo_of(conn, repo_id) {
+            app.github_app_tokens.forget(instance_app_key(&full));
+            app.github_app_tokens.forget_not_installed(&full);
+        }
         for p in purpose_order(purpose) {
             if let Ok(set) = candidates(conn, org_id, repo_id, p) {
                 if set.is_empty() {
@@ -248,7 +556,8 @@ pub mod cred {
         }
     }
 
-    /// Token for a purpose, with fallbacks: api <-> git_push share PATs.
+    /// Token for a purpose without an actor: the instance App, then the
+    /// credential set (`token_for_actor`). Returns `(label, token)`.
     pub fn token_for(
         app: &App,
         conn: &mut PgConnection,
@@ -256,21 +565,7 @@ pub mod cred {
         repo_id: Uuid,
         purpose: &str,
     ) -> Result<(String, String), Failure> {
-        for p in purpose_order(purpose) {
-            if let Some(row) =
-                find(conn, org_id, repo_id, p).map_err(|e| Failure::Transient(e.message))?
-            {
-                let v = value(app, &row).map_err(|e| Failure::Terminal(e.message))?;
-                if row.auth_method == "github_app" {
-                    let token = crate::github_app::installation_token(app, row.id, &v)?;
-                    return Ok((p.to_string(), token));
-                }
-                return Ok((p.to_string(), v));
-            }
-        }
-        Err(Failure::Terminal(format!(
-            "no enabled credential with purpose {purpose} for this repository or its organization"
-        )))
+        token_for_actor(app, conn, org_id, repo_id, purpose, None).map(|t| (t.label(), t.value))
     }
 }
 
@@ -294,6 +589,8 @@ pub struct ActionSpec {
 }
 
 /// Which actions an event implies. Empty for events the mirror ignores.
+/// Events caused by GitHub itself (shadow actors, see `github_sync`) are
+/// filtered by the dispatcher before this is called.
 pub fn expand_event(ev: &EventRef<'_>) -> Vec<ActionSpec> {
     let decoded = decode_event(ev.payload_cbor).ok();
     let ref_name = decoded.as_ref().and_then(|e| match &e.payload {
@@ -301,7 +598,49 @@ pub fn expand_event(ev: &EventRef<'_>) -> Vec<ActionSpec> {
         EventPayload::Variant1(p) => Some(p.r#ref.clone()),
         _ => None,
     });
+    let pr = decoded.as_ref().and_then(|e| match &e.payload {
+        EventPayload::Variant2(p) => Some(p.clone()),
+        _ => None,
+    });
+    let api = |object_key: String, payload: ActionPayload| {
+        vec![ActionSpec {
+            kind: "api_call",
+            object_key,
+            purpose: "mirror_api",
+            payload,
+        }]
+    };
     match ev.kind {
+        "pr_opened" | "pr_updated" | "pr_closed" | "pr_reopened" | "pr_retargeted"
+        | "pr_merged" | "pr_head_moved" => pr
+            .map(|p| {
+                let number = p.number.min(i32::MAX as u64) as i32;
+                api(format!("pr:{number}"), ActionPayload::PrSync { number })
+            })
+            .unwrap_or_default(),
+        "pr_comment" | "pr_comment_edited" => pr
+            .and_then(|p| p.comment_id)
+            .and_then(|id| Uuid::parse_str(&id).ok())
+            .map(|id| api(format!("pr-comment:{id}"), ActionPayload::PrComment { id }))
+            .unwrap_or_default(),
+        "pr_review" => pr
+            .and_then(|p| p.review_id)
+            .and_then(|id| Uuid::parse_str(&id).ok())
+            .map(|id| api(format!("pr-review:{id}"), ActionPayload::PrReview { id }))
+            .unwrap_or_default(),
+        "status_set" => decoded
+            .as_ref()
+            .and_then(|e| match &e.payload {
+                EventPayload::Variant6(p) => Some(api(
+                    format!("status:{}:{}", p.sha, p.context),
+                    ActionPayload::Status {
+                        sha: p.sha.clone(),
+                        context: p.context.clone(),
+                    },
+                )),
+                _ => None,
+            })
+            .unwrap_or_default(),
         "push" | "ref_create" | "ref_delete" | "tag_create" | "tag_delete" => ref_name
             .filter(|r| r.starts_with("refs/heads/") || r.starts_with("refs/tags/"))
             .map(|r| {
@@ -380,6 +719,10 @@ pub enum Exec {
     Skipped(String),
     Blocked(String),
     Transient(String),
+    /// Not attempted: this node holds calls on the GitHub lane the action
+    /// needs (see `github_health`). The worker parks the task for about
+    /// this long; no attempt is recorded.
+    Held(std::time::Duration),
 }
 
 fn load_repo(conn: &mut PgConnection, repo_id: Uuid) -> Result<(Org, Repo), Error> {
@@ -396,12 +739,26 @@ fn load_repo(conn: &mut PgConnection, repo_id: Uuid) -> Result<(Org, Repo), Erro
     Ok((org, repo))
 }
 
-fn github_url(full_name: &str) -> String {
-    format!("https://github.com/{full_name}.git")
+/// The actor of the event an action was made for, when it had one.
+pub fn event_actor(conn: &mut PgConnection, action: &ActionRow) -> Result<Option<Uuid>, Error> {
+    if action.event_seq <= 0 {
+        return Ok(None);
+    }
+    Ok(events::table
+        .filter(events::lane.eq(&action.event_lane))
+        .filter(events::seq.eq(action.event_seq))
+        .select(events::actor)
+        .first::<Option<Uuid>>(conn)
+        .optional()?
+        .flatten())
+}
+
+pub fn github_url(app: &App, full_name: &str) -> String {
+    format!("{}/{full_name}.git", app.config.github_git_base)
 }
 
 /// git config through the environment: the token never appears in argv.
-fn auth_env(token: &str) -> Env {
+pub(crate) fn auth_env(token: &str) -> Env {
     use base64::Engine;
     let basic = base64::engine::general_purpose::STANDARD.encode(format!("x-access-token:{token}"));
     vec![
@@ -415,7 +772,7 @@ fn auth_env(token: &str) -> Env {
     ]
 }
 
-fn git_cmd(dir: &std::path::Path, env: &Env) -> std::process::Command {
+pub(crate) fn git_cmd(dir: &std::path::Path, env: &Env) -> std::process::Command {
     let mut c = std::process::Command::new("git");
     c.arg("-C")
         .arg(dir)
@@ -443,6 +800,7 @@ pub fn ls_remote(
             &String::from_utf8_lossy(&out.stdout),
         ));
     }
+    crate::github_health::record_success(crate::github_health::Lane::Git);
     Ok(String::from_utf8_lossy(&out.stdout)
         .lines()
         .filter_map(|l| {
@@ -477,6 +835,7 @@ pub fn fetch_ref(
             &String::from_utf8_lossy(&out.stdout),
         ));
     }
+    crate::github_health::record_success(crate::github_health::Lane::Git);
     Ok(())
 }
 
@@ -518,9 +877,11 @@ pub fn push_ref(
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     if out.status.success() {
+        crate::github_health::record_success(crate::github_health::Lane::Git);
         return PushResult::Ok;
     }
     if stdout.contains("stale info") || stderr.contains("stale info") {
+        crate::github_health::record_success(crate::github_health::Lane::Git);
         return PushResult::StaleLease;
     }
     PushResult::Failed(github::classify_git(&stderr, &stdout))
@@ -552,7 +913,7 @@ fn record_attempt(
     Ok(())
 }
 
-fn mirror_event(
+pub(crate) fn mirror_event(
     conn: &mut PgConnection,
     org: &Org,
     repo: &Repo,
@@ -630,7 +991,7 @@ fn set_applied(conn: &mut PgConnection, repo_id: Uuid, action: &ActionRow) -> Re
     Ok(())
 }
 
-fn set_mirrored(
+pub(crate) fn set_mirrored(
     conn: &mut PgConnection,
     repo_id: Uuid,
     r#ref: &str,
@@ -701,10 +1062,42 @@ pub fn execute(app: &App, conn: &mut DbConn, action_id: Uuid) -> Result<Exec, Er
     }
     let payload = decode_payload(&action.payload_cbor)
         .ok_or_else(|| Error::internal("undecodable action payload"))?;
-    let outcome = match payload {
-        ActionPayload::Push { r#ref } => exec_push(app, conn, &org, &repo, &state, &action, &r#ref),
-        ActionPayload::RepoSettings => exec_settings(app, conn, &org, &repo, &state, &action),
+    let kind = payload.kind();
+    let lane = match &payload {
+        ActionPayload::Push { .. } => crate::github_health::Lane::Git,
+        _ => crate::github_health::Lane::Api,
     };
+    if let Some(wait) = crate::github_health::hold(lane) {
+        crate::metrics::mirror_action(kind, "held");
+        return Ok(Exec::Held(wait));
+    }
+    let outcome = match &payload {
+        ActionPayload::Push { r#ref } => exec_push(app, conn, &org, &repo, &state, &action, r#ref),
+        ActionPayload::RepoSettings => exec_settings(app, conn, &org, &repo, &state, &action),
+        ActionPayload::PrSync { number } => {
+            crate::github_sync::exec_pr_sync(app, conn, &org, &repo, &state, &action, *number)
+        }
+        ActionPayload::PrComment { id } => {
+            crate::github_sync::exec_pr_comment(app, conn, &org, &repo, &state, &action, *id)
+        }
+        ActionPayload::PrReview { id } => {
+            crate::github_sync::exec_pr_review(app, conn, &org, &repo, &state, &action, *id)
+        }
+        ActionPayload::Status { sha, context } => {
+            crate::github_sync::exec_status(app, conn, &org, &repo, &state, &action, sha, context)
+        }
+    };
+    crate::metrics::mirror_action(
+        kind,
+        match &outcome {
+            Ok(Exec::Applied) => "applied",
+            Ok(Exec::Skipped(_)) => "skipped",
+            Ok(Exec::Blocked(_)) => "blocked",
+            Ok(Exec::Transient(_)) => "transient",
+            Ok(Exec::Held(_)) => "held",
+            Err(_) => "error",
+        },
+    );
     match outcome {
         Ok(Exec::Applied) => {
             record_attempt(conn, action.id, true, None, None)?;
@@ -751,14 +1144,36 @@ fn exec_push(
             )));
         }
     }
-    let (_purpose, token) =
-        match cred::token_for(app, conn, org.id, repo.id, &action.credential_purpose) {
-            Ok(v) => v,
-            Err(Failure::Terminal(m)) => return Ok(Exec::Blocked(m)),
-            Err(Failure::Transient(m)) => return Ok(Exec::Transient(m)),
-        };
-    let url = github_url(&state.github_repo);
+    let actor = event_actor(conn, action)?;
+    let used = match cred::token_for_actor(
+        app,
+        conn,
+        org.id,
+        repo.id,
+        &action.credential_purpose,
+        actor,
+    ) {
+        Ok(v) => v,
+        Err(Failure::Terminal(m)) => return Ok(Exec::Blocked(m)),
+        Err(Failure::Transient(m)) => return Ok(Exec::Transient(m)),
+    };
+    tracing::info!(action = %action.object_key, source = %used.label(), "GitHub credential chosen");
+    let token = used.value.clone();
+    let url = github_url(app, &state.github_repo);
     let target_str = target.as_ref().map(|t| t.0.as_str());
+    if target.is_none() && lease.is_some() {
+        if let Some(branch) = r#ref.strip_prefix("refs/heads/") {
+            let gh = github::Client::new(&app.config.github_api_base, &token);
+            match crate::github_sync::prepare_branch_delete(conn, repo, state, &gh, branch) {
+                Ok(n) if n > 0 => {
+                    tracing::info!(repo = %state.github_repo, branch, moved = n, "retargeted GitHub pull requests before the branch delete")
+                }
+                Ok(_) => {}
+                Err(Failure::Terminal(m)) => return Ok(Exec::Blocked(m)),
+                Err(Failure::Transient(m)) => return Ok(Exec::Transient(m)),
+            }
+        }
+    }
     match push_ref(
         &dir,
         &url,
@@ -786,7 +1201,11 @@ fn exec_push(
             target_str,
             lease.as_deref(),
         ),
-        PushResult::Failed(Failure::Terminal(m)) => Ok(Exec::Blocked(m)),
+        PushResult::Failed(Failure::Terminal(m)) => Ok(crate::github_sync::settle_refusal(
+            conn,
+            &used,
+            Exec::Blocked(m),
+        )),
         PushResult::Failed(Failure::Transient(m)) => Ok(Exec::Transient(m)),
     }
 }
@@ -920,6 +1339,14 @@ fn handle_drift(
                     )
                 })?;
                 set_mirrored(conn, repo.id, r#ref, Some(&remote_sha))?;
+                crate::services::prs::on_push(
+                    app,
+                    conn,
+                    org,
+                    repo,
+                    None,
+                    std::slice::from_ref(&update),
+                )?;
                 Ok(Exec::Applied)
             } else {
                 mirror_event(
@@ -970,7 +1397,7 @@ pub fn note_drift(
     if lease.as_deref() == observed {
         return Ok(false);
     }
-    let url = github_url(&state.github_repo);
+    let url = github_url(app, &state.github_repo);
     let mut kept = None;
     if let Some(sha) = observed {
         let short = r#ref.trim_start_matches("refs/");
@@ -1053,6 +1480,14 @@ pub fn note_drift(
                                 Some(format!("{note}; imported")),
                             )
                         })?;
+                        crate::services::prs::on_push(
+                            app,
+                            conn,
+                            org,
+                            repo,
+                            None,
+                            std::slice::from_ref(&update),
+                        )?;
                         Ok(false)
                     } else {
                         mirror_event(
@@ -1068,6 +1503,40 @@ pub fn note_drift(
                     }
                 }
                 None => {
+                    // Deleted on GitHub. When vcsstar did not move the ref
+                    // since it was mirrored, the deletion is imported (a
+                    // merged PR branch cleaned up there); otherwise vcsstar's
+                    // newer state is pushed back.
+                    let ours = refs::get(conn, repo.id, r#ref)?;
+                    let unchanged = ours.as_ref().map(|r| r.0.as_str()) == lease.as_deref();
+                    if let (Some(current), true) = (ours.clone(), unchanged) {
+                        let update = RefUpdate {
+                            name: r#ref.to_string(),
+                            old: Some(current),
+                            new: None,
+                        };
+                        conn.transaction::<(), Error, _>(|conn| {
+                            push::apply_ref_change(conn, org, repo, None, &update, false, vec![])?;
+                            mirror_event(
+                                conn,
+                                org,
+                                repo,
+                                "mirror_drift",
+                                r#ref,
+                                "git_push",
+                                Some(format!("{note}; deletion imported")),
+                            )
+                        })?;
+                        crate::services::prs::on_push(
+                            app,
+                            conn,
+                            org,
+                            repo,
+                            None,
+                            std::slice::from_ref(&update),
+                        )?;
+                        return Ok(false);
+                    }
                     mirror_event(
                         conn,
                         org,
@@ -1167,7 +1636,7 @@ pub fn reconcile(app: &App, conn: &mut DbConn, repo_id: Uuid) -> Result<Reconcil
     let token = cred::token_for(app, conn, org.id, repo.id, "mirror_git_push")
         .ok()
         .map(|(_, t)| t);
-    let remote = ls_remote(&dir, &github_url(&state.github_repo), token.as_deref())?;
+    let remote = ls_remote(&dir, &github_url(app, &state.github_repo), token.as_deref())?;
     let ours: Vec<(String, RevId)> = refs::load(conn, repo_id)?
         .into_iter()
         .filter(|(n, _)| n.starts_with("refs/heads/") || n.starts_with("refs/tags/"))

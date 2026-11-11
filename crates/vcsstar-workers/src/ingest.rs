@@ -1,6 +1,9 @@
 //! The ingest worker role: process raw inbound items that receivers captured
 //! into corndogs (`ingest:github`). A GitHub push webhook is a hint to
-//! verify one ref now; nothing in its payload is applied directly.
+//! verify one ref now; nothing in its payload is applied directly. Pull
+//! request, review, comment, status, and check events are mirrored into
+//! vcsstar rows by `github_sync` (the payload is the source there, as the
+//! REST object it carries is what GitHub would answer).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -73,25 +76,90 @@ fn handle(app: &App, q: &Queue, claimed: &Claimed) -> anyhow::Result<()> {
         q.complete(claimed)?;
         return Ok(());
     };
-    match process(app, &item) {
+    // Everything a delivery changes came from GitHub: stamp its events so
+    // the dispatcher never mirrors them back.
+    match vcsstar_core::outbox::with_origin("github", || process(app, &item)) {
         Ok(note) => {
+            let outcome = if note.starts_with("ignored") || note.starts_with("no mirror") {
+                "ignored"
+            } else {
+                "applied"
+            };
+            vcsstar_core::metrics::github_ingest(&item.event, outcome);
             tracing::info!(delivery = %item.delivery_id, event = %item.event, note, "github webhook processed");
             q.complete(claimed)?;
         }
         Err(e) => {
-            tracing::warn!(delivery = %item.delivery_id, error = %e, "github webhook processing failed; retry");
+            vcsstar_core::metrics::github_ingest(&item.event, "retry");
+            tracing::warn!(delivery = %item.delivery_id, event = %item.event, error = %e, "github webhook processing failed; retry");
             q.park(claimed, Duration::from_secs(60))?;
         }
     }
     Ok(())
 }
 
-/// Targeted verification of the hinted ref against the mirrored state.
+/// Route one delivery: `push` is a targeted verification of the hinted
+/// ref against the mirrored state; the pull request family is mirrored
+/// into vcsstar rows.
 pub fn process(app: &App, item: &GithubInbound) -> anyhow::Result<String> {
-    if item.event != "push" {
-        return Ok(format!("ignored event {}", item.event));
-    }
     let body: serde_json::Value = serde_json::from_slice(&item.body)?;
+    match item.event.as_str() {
+        "push" => process_push(app, &body),
+        "pull_request"
+        | "pull_request_review"
+        | "pull_request_review_comment"
+        | "issue_comment"
+        | "status"
+        | "check_run" => {
+            let full_name = body
+                .pointer("/repository/full_name")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("payload without repository.full_name"))?;
+            let mut conn = app.conn()?;
+            let Some((org, repo, state)) = mirror_target(&mut conn, full_name)? else {
+                return Ok(format!("no mirror for {full_name}"));
+            };
+            vcsstar_core::github_sync::ingest(
+                app,
+                &mut conn,
+                &org,
+                &repo,
+                &state,
+                &item.event,
+                &body,
+            )
+            .map_err(|e| anyhow::anyhow!("{}: {}", e.code as u32, e.message))
+        }
+        other => Ok(format!("ignored event {other}")),
+    }
+}
+
+/// The mirrored repository a GitHub `owner/name` belongs to.
+fn mirror_target(
+    conn: &mut PgConnection,
+    full_name: &str,
+) -> anyhow::Result<
+    Option<(
+        vcsstar_db::models::Org,
+        vcsstar_db::models::Repo,
+        mirror::StateRow,
+    )>,
+> {
+    use vcsstar_db::models::{Org, Repo};
+    let found: Option<(Repo, Org, mirror::StateRow)> = mirror_state::table
+        .inner_join(repos::table.inner_join(orgs::table))
+        .filter(mirror_state::github_repo.eq(full_name))
+        .select((
+            Repo::as_select(),
+            Org::as_select(),
+            mirror::StateRow::as_select(),
+        ))
+        .first(conn)
+        .optional()?;
+    Ok(found.map(|(r, o, s)| (o, r, s)))
+}
+
+fn process_push(app: &App, body: &serde_json::Value) -> anyhow::Result<String> {
     let full_name = body
         .pointer("/repository/full_name")
         .and_then(|v| v.as_str())

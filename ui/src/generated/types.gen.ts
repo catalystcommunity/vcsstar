@@ -298,6 +298,47 @@ export interface ListKeysResponse {
   keys: SshKeyInfo[];
 }
 
+/**
+ * The caller's GitHub account link. vcsstar acts on GitHub as a linked
+ * user (pull requests, comments, reviews, statuses, pushes) and attributes
+ * what the user does on GitHub to the vcsstar identity.
+ */
+export interface GithubLink {
+  linked: boolean;
+  /**
+   * "oauth" (GitHub App user token) | "pat"
+   */
+  kind?: string;
+  login?: string;
+  githubId?: number;
+  linkedAt?: Timestamp;
+  /**
+   * When the access token expires; absent for a token that does not.
+   */
+  expiresAt?: Timestamp;
+  /**
+   * Present when GitHub refused the token and the user has to connect again.
+   */
+  brokenReason?: string;
+  /**
+   * Browser URL that starts the GitHub App authorization; absent when
+   * the instance has no GitHub App.
+   */
+  startUrl?: string;
+  /**
+   * Public name of the instance's GitHub App, for display.
+   */
+  appSlug?: string;
+}
+
+/**
+ * Link by a personal access token instead of the App authorization.
+ */
+export interface SetGithubTokenRequest {
+  ctx: Ctx;
+  token: string;
+}
+
 export interface Org {
   name: string;
   displayName?: string;
@@ -731,6 +772,13 @@ export interface PullRequest {
   createdAt: Timestamp;
   updatedAt: Timestamp;
   closedAt?: Timestamp;
+  /**
+   * The GitHub pull request this one is synced with, when the repository
+   * is mirrored: opened here and created there, or opened there and
+   * imported here.
+   */
+  githubNumber?: number;
+  githubUrl?: string;
 }
 
 export interface PrRef {
@@ -987,6 +1035,10 @@ export interface MirrorStatus {
   lastSuccessAt?: Timestamp;
   lastError?: string;
   lastFullReconcileAt?: Timestamp;
+  /**
+   * Newest GitHub `updated_at` the pull request sync pass has processed.
+   */
+  lastPullSyncAt?: Timestamp;
 }
 
 export interface BlockedAction {
@@ -1105,6 +1157,15 @@ export interface ReconcileReport {
   refsPushed: number;
   driftRefs: string[];
   error?: string;
+  /**
+   * Pull requests the GitHub-side pass looked at and changed here.
+   */
+  pullsChecked?: number;
+  pullsChanged?: number;
+  /**
+   * False when the pass stopped at its call budget; the next pass continues.
+   */
+  pullsComplete?: boolean;
 }
 
 export interface ImportRequest {
@@ -1114,6 +1175,149 @@ export interface ImportRequest {
   githubRepo: string;
   mode?: string;
   visibility?: string;
+}
+
+/**
+ * GitHub repositories the organization can see, for enabling mirrors.
+ */
+export interface ListGithubReposRequest {
+  ctx: Ctx;
+  org: string;
+  page?: Page;
+}
+
+export interface GithubRepoInfo {
+  /**
+   * "owner/name"
+   */
+  fullName: string;
+  description?: string;
+  private: boolean;
+  archived: boolean;
+  fork: boolean;
+  defaultBranch: string;
+  htmlUrl: string;
+  pushedAt?: Timestamp;
+  /**
+   * Name of the vcsstar repository that mirrors it, when one does.
+   */
+  mirroredAs?: string;
+}
+
+export interface GithubRepoPage {
+  repos: GithubRepoInfo[];
+  nextCursor?: string;
+  /**
+   * Which credential listed them: "app" (the instance GitHub App's
+   * installation on the owner), a credential purpose, or "user:<login>".
+   */
+  source: string;
+  installationId?: number;
+}
+
+/**
+ * Health of this node's path to GitHub. The mirror holds calls on a lane
+ * while it is open and drains parked work when it closes again.
+ */
+export interface LaneHealth {
+  /**
+   * "api" | "git"
+   */
+  lane: string;
+  /**
+   * "closed" (healthy) | "open" (failing; calls are held) | "half_open" (one probe allowed)
+   */
+  state: string;
+  consecutiveFailures: number;
+  openUntil?: Timestamp;
+  lastError?: string;
+  lastFailureAt?: Timestamp;
+  lastSuccessAt?: Timestamp;
+  recoveredAt?: Timestamp;
+}
+
+export interface RateLimitInfo {
+  /**
+   * Token label: "app", "user:<login>", a credential purpose, or "tok:<hash>".
+   */
+  token: string;
+  remaining: number;
+  limit: number;
+  resetAt: Timestamp;
+  /**
+   * True while vcsstar holds non-urgent calls for this token.
+   */
+  held: boolean;
+}
+
+export interface GithubHealth {
+  lanes: LaneHealth[];
+  rateLimits: RateLimitInfo[];
+  /**
+   * Across every mirrored repository on this instance.
+   */
+  pendingActions: number;
+  blockedActions: number;
+  /**
+   * Oldest pending action not yet applied, when any.
+   */
+  oldestPendingAt?: Timestamp;
+}
+
+/**
+ * An identity owned by an organization that never signs in. It holds API
+ * tokens for integrations that do not come through LinkKeys. Its identity
+ * key is `<user_id>@svc.<instance host>`; grant it roles like any identity.
+ */
+export interface ServiceAccount {
+  identity: Identity;
+  org: string;
+  name: string;
+  description?: string;
+  createdAt: Timestamp;
+  disabledAt?: Timestamp;
+  /**
+   * Tokens that are neither revoked nor expired.
+   */
+  activeTokens: number;
+}
+
+export interface CreateServiceAccountRequest {
+  ctx: Ctx;
+  org: string;
+  name: string;
+  description?: string;
+}
+
+export interface ServiceAccountRef {
+  ctx: Ctx;
+  org: string;
+  name: string;
+}
+
+export interface ListServiceAccountsResponse {
+  accounts: ServiceAccount[];
+}
+
+/**
+ * Mint a token for the service account. The token carries only scopes the
+ * caller holds.
+ */
+export interface CreateServiceAccountTokenRequest {
+  ctx: Ctx;
+  org: string;
+  name: string;
+  tokenName: string;
+  scopes: string[];
+  clientLabel?: string;
+  expiresAt?: Timestamp;
+}
+
+export interface RevokeServiceAccountTokenRequest {
+  ctx: Ctx;
+  org: string;
+  name: string;
+  tokenId: string;
 }
 
 export interface FedHello {
@@ -1208,12 +1412,18 @@ export interface RefPayload {
   after?: string;
 }
 
+/**
+ * `comment_id` on `pr_comment`, `review_id` on `pr_review`: the row the
+ * event is about, so a consumer (and the GitHub sync) can fetch exactly it.
+ */
 export interface PrPayload {
   number: number;
   headSha?: string;
   baseRef?: string;
   state?: string;
   mergeKind?: string;
+  commentId?: string;
+  reviewId?: string;
 }
 
 export interface ReleasePayload {

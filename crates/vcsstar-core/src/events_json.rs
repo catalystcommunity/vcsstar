@@ -20,6 +20,7 @@ pub fn event_to_json(e: &Event) -> Json {
         EventPayload::Variant2(p) => json!({
             "type": "pull_request", "number": p.number, "head_sha": p.head_sha,
             "base_ref": p.base_ref, "state": p.state, "merge_kind": p.merge_kind,
+            "comment_id": p.comment_id, "review_id": p.review_id,
         }),
         EventPayload::Variant3(p) => json!({
             "type": "release", "tag": p.tag, "name": p.name, "body": p.body,

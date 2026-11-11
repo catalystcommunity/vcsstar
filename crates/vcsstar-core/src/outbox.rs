@@ -8,6 +8,33 @@ use vcsstar_types::{encode_event, Event, EventPayload, Identity, RepoRef};
 
 use crate::{now_ms, Error};
 
+thread_local! {
+    static ORIGIN: std::cell::RefCell<Option<&'static str>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Run `f` with every event it emits on this thread stamped with
+/// `origin`. The ingest worker wraps the application of one GitHub
+/// delivery in `with_origin("github", ..)`: whatever rows and events that
+/// produces came from GitHub, whoever the actor is, and the dispatcher
+/// must not mirror them back.
+pub fn with_origin<T>(origin: &'static str, f: impl FnOnce() -> T) -> T {
+    let previous = ORIGIN.with(|o| o.replace(Some(origin)));
+    struct Reset(Option<&'static str>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            let p = self.0;
+            ORIGIN.with(|o| *o.borrow_mut() = p);
+        }
+    }
+    let _reset = Reset(previous);
+    f()
+}
+
+/// The origin events emitted on this thread carry right now.
+pub fn current_origin() -> Option<&'static str> {
+    ORIGIN.with(|o| *o.borrow())
+}
+
 pub struct Emit<'a> {
     pub lane: String,
     pub kind: &'a str,
@@ -52,9 +79,26 @@ pub fn emit(conn: &mut PgConnection, e: Emit<'_>) -> Result<i64, Error> {
         actor: e.actor_id,
         subject: e.subject.as_deref(),
         payload_cbor: encode_event(&event),
+        origin: current_origin(),
     };
     diesel::insert_into(events::table)
         .values(&row)
         .execute(conn)?;
     Ok(seq)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{current_origin, with_origin};
+
+    #[test]
+    fn origin_is_scoped_to_the_closure() {
+        assert_eq!(current_origin(), None);
+        let inner = with_origin("github", || {
+            assert_eq!(current_origin(), Some("github"));
+            with_origin("peer", current_origin)
+        });
+        assert_eq!(inner, Some("peer"));
+        assert_eq!(current_origin(), None);
+    }
 }

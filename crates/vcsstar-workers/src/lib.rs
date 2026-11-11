@@ -6,6 +6,7 @@ pub mod dispatcher;
 pub mod hooks;
 pub mod ingest;
 pub mod mirror;
+pub mod repack;
 pub mod sweeper;
 
 pub use vcsstar_core::queue;
@@ -26,6 +27,7 @@ pub fn run_role(app: App, role: &str, stop: Arc<AtomicBool>) -> anyhow::Result<(
         "hook-worker" => hooks::run(app, stop),
         "mirror-worker" => mirror::run(app, stop),
         "ingest-worker" => ingest::run(app, stop),
+        "repack-worker" => repack::run(app, stop),
         other => anyhow::bail!("unknown role {other}"),
     }
 }

@@ -17,7 +17,9 @@ RUN npm ci --ignore-scripts && npm rebuild esbuild
 COPY ui/ ./
 RUN npm run build
 
-FROM debian:bookworm-slim AS runtime
+# trixie, not bookworm: `git merge-tree --merge-base` (rebase merges) needs
+# git 2.40 or newer, and bookworm ships 2.39 with no backport.
+FROM debian:trixie-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libpq5 git openssh-client \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home /var/lib/vcsstar --create-home vcsstar
@@ -32,7 +34,7 @@ ENTRYPOINT ["/usr/local/bin/vcsstard"]
 CMD ["serve", "--roles", "api"]
 
 # CLI-only image for CI jobs: `vcsstar` on PATH and nothing else.
-FROM debian:bookworm-slim AS cli
+FROM debian:trixie-slim AS cli
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home /home/vcsstar --create-home vcsstar

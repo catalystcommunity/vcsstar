@@ -25,3 +25,8 @@ environment:
   HELM_RELEASE: "vcsstar"
   # The instance overlay (see deploy/values-example.yaml) lives in the secret store.
   DEPLOY_VALUES: "${secret:catalystcommunity/vcsstar:values-catalystsquad}"
+  # The instance's GitHub App (user authorization and installation tokens).
+  GITHUB_APP_ID: "${secret:catalystcommunity/vcsstar:github-app-app-id}"
+  GITHUB_APP_CLIENT_ID: "${secret:catalystcommunity/vcsstar:github-app-client-id}"
+  GITHUB_APP_CLIENT_SECRET: "${secret:catalystcommunity/vcsstar:github-app-client-secret}"
+  GITHUB_APP_PRIVATE_KEY: "${secret:catalystcommunity/vcsstar:github-app-private-key}"

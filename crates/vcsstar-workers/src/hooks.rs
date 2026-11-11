@@ -192,6 +192,7 @@ fn attempt(conn: &mut PgConnection, ep: &EndpointRow, d: &DeliveryRow) -> anyhow
                     hook_deliveries::delivered_at.eq(Utc::now()),
                 ))
                 .execute(conn)?;
+            vcsstar_core::metrics::hook_delivery("delivered");
             Ok(true)
         }
         other => {
@@ -222,6 +223,7 @@ fn attempt(conn: &mut PgConnection, ep: &EndpointRow, d: &DeliveryRow) -> anyhow
                     hook_deliveries::next_attempt_at.eq(Utc::now() + backoff(attempts)),
                 ))
                 .execute(conn)?;
+            vcsstar_core::metrics::hook_delivery(if dead { "dead" } else { "retry" });
             tracing::info!(endpoint = %ep.id, delivery = %d.id, attempts, dead, error = %error, "hook delivery failed");
             Ok(false)
         }

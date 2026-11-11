@@ -6,8 +6,8 @@ use diesel::prelude::*;
 use vcsstar_db::models::{ApiToken as ApiTokenRow, NewApiToken};
 use vcsstar_db::schema::{api_tokens, sessions};
 use vcsstar_types::{
-    ApiToken, CreateTokenRequest, Empty, ListTokensResponse, Ok as WireOk, RevokeTokenRequest,
-    WhoAmI,
+    ApiToken, CreateTokenRequest, Empty, GithubLink, ListTokensResponse, Ok as WireOk,
+    RevokeTokenRequest, SetGithubTokenRequest, WhoAmI,
 };
 
 use crate::principal::{CredentialKind, ReqCtx};
@@ -156,5 +156,52 @@ pub fn logout(app: &App, ctx: &ReqCtx, _req: Empty) -> Result<WireOk, Error> {
         }
         _ => return Err(Error::invalid("this credential cannot be revoked here")),
     }
+    Ok(WireOk { ok: true })
+}
+
+// ---- GitHub account link -----------------------------------------------
+
+/// The caller's GitHub link, and where to start one.
+pub fn github_link_status(app: &App, ctx: &ReqCtx, _req: Empty) -> Result<GithubLink, Error> {
+    let p = ctx.require()?;
+    let mut conn = app.conn()?;
+    crate::github_link::status(app, &mut conn, p.identity.id)
+}
+
+/// Link the caller to the GitHub account behind a personal access token.
+/// Only a web session or a token-managing credential may do it: the
+/// pasted token lets vcsstar act as the user on GitHub.
+pub fn set_github_token(
+    app: &App,
+    ctx: &ReqCtx,
+    req: SetGithubTokenRequest,
+) -> Result<GithubLink, Error> {
+    let p = ctx.require()?;
+    if p.kind == CredentialKind::ActAs {
+        return Err(Error::forbidden(
+            "an act-as bearer cannot link a GitHub account",
+        ));
+    }
+    if p.kind == CredentialKind::ApiToken {
+        p.require_scope("tokens:manage")?;
+    }
+    let mut conn = app.conn()?;
+    crate::mirror::cred::require_key(app)?;
+    let row = crate::github_link::set_token(app, &mut conn, p.identity.id, &req.token)?;
+    Ok(crate::github_link::to_wire(app, Some(&row)))
+}
+
+pub fn unlink_github(app: &App, ctx: &ReqCtx, _req: Empty) -> Result<WireOk, Error> {
+    let p = ctx.require()?;
+    if p.kind == CredentialKind::ActAs {
+        return Err(Error::forbidden(
+            "an act-as bearer cannot unlink a GitHub account",
+        ));
+    }
+    if p.kind == CredentialKind::ApiToken {
+        p.require_scope("tokens:manage")?;
+    }
+    let mut conn = app.conn()?;
+    crate::github_link::unlink(app, &mut conn, p.identity.id)?;
     Ok(WireOk { ok: true })
 }

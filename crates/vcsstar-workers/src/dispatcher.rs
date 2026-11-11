@@ -37,8 +37,10 @@ struct EventRow {
     repo_id: Option<uuid::Uuid>,
     org_id: Option<uuid::Uuid>,
     kind: String,
+    actor: Option<uuid::Uuid>,
     payload_cbor: Vec<u8>,
     created_at: DateTime<Utc>,
+    origin: Option<String>,
 }
 
 pub fn run(app: App, stop: Arc<AtomicBool>) -> anyhow::Result<()> {
@@ -161,6 +163,7 @@ fn dispatch_one(
                         hook_deliveries::state.eq("pending"),
                         hook_deliveries::payload_cbor.eq(&ev.payload_cbor),
                     ))
+                    .on_conflict_do_nothing()
                     .execute(conn)?;
                 q.submit(
                     &hook_queue(ep.id),
@@ -194,6 +197,7 @@ fn dispatch_one(
                         hook_deliveries::delivered_at.eq(Utc::now()),
                         hook_deliveries::payload_cbor.eq(&ev.payload_cbor),
                     ))
+                    .on_conflict_do_nothing()
                     .execute(conn)?;
             }
             _ => {}
@@ -201,6 +205,14 @@ fn dispatch_one(
     }
     let _ = decoded;
     // Mirror: one pending action per object key, newest desired state wins.
+    // What GitHub itself caused is never sent back: events written while
+    // a GitHub delivery was applied carry origin `github`, whoever the
+    // actor is, and a shadow actor can only have come from GitHub.
+    if ev.origin.as_deref() == Some("github")
+        || vcsstar_core::github_sync::is_shadow_actor(conn, ev.actor)?
+    {
+        return Ok(());
+    }
     if let Some(repo_id) = ev.repo_id {
         let mirrored: Option<(bool, bool, String, String)> = mirror_state::table
             .inner_join(repos::table.inner_join(orgs::table))

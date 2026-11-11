@@ -99,6 +99,10 @@ export function PullPage() {
               </Show>
               <span class="muted small">
                 head {short(p().headSha)} · base {short(p().baseSha)} · updated {when(p().updatedAt)}
+                <Show when={p().githubUrl}>
+                  {" "}
+                  · <a href={p().githubUrl} target="_blank" rel="noreferrer">GitHub #{p().githubNumber}</a>
+                </Show>
               </span>
             </p>
             <div class="tabs">

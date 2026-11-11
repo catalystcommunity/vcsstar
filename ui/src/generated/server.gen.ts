@@ -2,7 +2,7 @@
 // Source: <csil spec>
 // Target: typescript-server
 
-import type { ActAsExchangeRequest, ApiToken, BeginDeviceRequest, BeginLoginRequest, BeginLoginResponse, BlobRequest, BlobResponse, BranchProtection, CaptureReport, Comment, CommentRequest, Commit, CommitPage, CommitStatus, CompleteLoginRequest, ConfigureMirrorRequest, CreateEndpointRequest, CreateOrgRequest, CreateRepoRequest, CreateTeamRequest, CreateTokenRequest, Credential, CredentialRef, DeleteRepoRequest, DeliveryPage, DeliveryQuery, DeliveryRef, DeviceApproveRequest, DeviceCode, DevicePollRequest, DevicePollResponse, DiffRequest, DiffResponse, Empty, Endpoint, EndpointRef, FedHello, FedHelloAck, ForkRequest, GetCommitRequest, GetOrgRequest, GetRepoRequest, Grant, HeadInfo, HeadQuery, ImportRequest, KeyRef, ListBlockedResponse, ListCommentsResponse, ListCredentialsRequest, ListCredentialsResponse, ListEndpointsRequest, ListEndpointsResponse, ListGrantsResponse, ListKeysResponse, ListOrgMembersRequest, ListOrgsRequest, ListPrRequest, ListProtectionsResponse, ListRefsRequest, ListRefsResponse, ListReposRequest, ListReviewsResponse, ListStatusRequest, ListStatusResponse, ListTeamsResponse, ListTokensResponse, LogRequest, MergeRequest, MergeResult, MirrorStatus, Ok, OpenPrRequest, Org, OrgMember, OrgMemberPage, OrgPage, PrPage, PrRef, PullRequest, ReconcileReport, RefInfo, RegisterKeyRequest, RemoveGrantRequest, RemoveOrgMemberRequest, RemoveProtectionRequest, ReplayRequest, ReplayResult, Repo, RepoPage, RetargetRequest, Review, ReviewRequest, RevokeTokenRequest, ScopeSetRequest, ScopedBearer, ServerInfo, ServiceError, Session, SetCredentialRequest, SetGrantRequest, SetOrgMemberRequest, SetProtectionRequest, SetStatusRequest, SetTeamMemberRequest, SignedActAsScopeSet, SshKeyInfo, StreamControl, StreamMessage, Team, TeamRef, TreeRequest, TreeResponse, UpdateEndpointRequest, UpdateOrgRequest, UpdatePrRequest, UpdateRefRequest, UpdateRepoRequest, VerifyHeadRequest, WhoAmI } from "./types.gen.ts";
+import type { ActAsExchangeRequest, ApiToken, BeginDeviceRequest, BeginLoginRequest, BeginLoginResponse, BlobRequest, BlobResponse, BranchProtection, CaptureReport, Comment, CommentRequest, Commit, CommitPage, CommitStatus, CompleteLoginRequest, ConfigureMirrorRequest, CreateEndpointRequest, CreateOrgRequest, CreateRepoRequest, CreateServiceAccountRequest, CreateServiceAccountTokenRequest, CreateTeamRequest, CreateTokenRequest, Credential, CredentialRef, DeleteRepoRequest, DeliveryPage, DeliveryQuery, DeliveryRef, DeviceApproveRequest, DeviceCode, DevicePollRequest, DevicePollResponse, DiffRequest, DiffResponse, Empty, Endpoint, EndpointRef, FedHello, FedHelloAck, ForkRequest, GetCommitRequest, GetOrgRequest, GetRepoRequest, GithubHealth, GithubLink, GithubRepoPage, Grant, HeadInfo, HeadQuery, ImportRequest, KeyRef, ListBlockedResponse, ListCommentsResponse, ListCredentialsRequest, ListCredentialsResponse, ListEndpointsRequest, ListEndpointsResponse, ListGithubReposRequest, ListGrantsResponse, ListKeysResponse, ListOrgMembersRequest, ListOrgsRequest, ListPrRequest, ListProtectionsResponse, ListRefsRequest, ListRefsResponse, ListReposRequest, ListReviewsResponse, ListServiceAccountsResponse, ListStatusRequest, ListStatusResponse, ListTeamsResponse, ListTokensResponse, LogRequest, MergeRequest, MergeResult, MirrorStatus, Ok, OpenPrRequest, Org, OrgMember, OrgMemberPage, OrgPage, PrPage, PrRef, PullRequest, ReconcileReport, RefInfo, RegisterKeyRequest, RemoveGrantRequest, RemoveOrgMemberRequest, RemoveProtectionRequest, ReplayRequest, ReplayResult, Repo, RepoPage, RetargetRequest, Review, ReviewRequest, RevokeServiceAccountTokenRequest, RevokeTokenRequest, ScopeSetRequest, ScopedBearer, ServerInfo, ServiceAccount, ServiceAccountRef, ServiceError, Session, SetCredentialRequest, SetGithubTokenRequest, SetGrantRequest, SetOrgMemberRequest, SetProtectionRequest, SetStatusRequest, SetTeamMemberRequest, SignedActAsScopeSet, SshKeyInfo, StreamControl, StreamMessage, Team, TeamRef, TreeRequest, TreeResponse, UpdateEndpointRequest, UpdateOrgRequest, UpdatePrRequest, UpdateRefRequest, UpdateRepoRequest, VerifyHeadRequest, WhoAmI } from "./types.gen.ts";
 
 // The consumer-defined context carries auth, request id, etc. It is opaque to
 // generated code; the adapter defines its shape.
@@ -34,6 +34,12 @@ export interface AuthHandlers {
   revokeKey(req: KeyRef, ctx: RequestContext): Promise<Ok>;
   listTokens(req: Empty, ctx: RequestContext): Promise<ListTokensResponse>;
   logout(req: Empty, ctx: RequestContext): Promise<Ok>;
+  /**
+   * GitHub account link of the caller (see GithubLink).
+   */
+  githubLinkStatus(req: Empty, ctx: RequestContext): Promise<GithubLink>;
+  setGithubToken(req: SetGithubTokenRequest, ctx: RequestContext): Promise<GithubLink>;
+  unlinkGithub(req: Empty, ctx: RequestContext): Promise<Ok>;
 }
 
 export const AuthWireIds = {
@@ -54,6 +60,9 @@ export const AuthWireIds = {
     revokeKey: 12,
     listTokens: 13,
     logout: 14,
+    githubLinkStatus: 15,
+    setGithubToken: 16,
+    unlinkGithub: 17,
   },
 } as const;
 
@@ -182,6 +191,16 @@ export interface MirrorHandlers {
   configure(req: ConfigureMirrorRequest, ctx: RequestContext): Promise<MirrorStatus>;
   listCredentials(req: ListCredentialsRequest, ctx: RequestContext): Promise<ListCredentialsResponse>;
   removeCredential(req: CredentialRef, ctx: RequestContext): Promise<Ok>;
+  /**
+   * Repositories visible under the organization's `github_owner`, with
+   * the vcsstar repository that mirrors each one when there is one.
+   * Enable one with `import-repo`.
+   */
+  listGithubRepos(req: ListGithubReposRequest, ctx: RequestContext): Promise<GithubRepoPage>;
+  /**
+   * This node's view of GitHub availability and rate limits.
+   */
+  health(req: Empty, ctx: RequestContext): Promise<GithubHealth>;
 }
 
 export const MirrorWireIds = {
@@ -198,6 +217,8 @@ export const MirrorWireIds = {
     configure: 8,
     listCredentials: 9,
     removeCredential: 10,
+    listGithubRepos: 11,
+    health: 12,
   },
 } as const;
 
@@ -319,6 +340,33 @@ export const ReposWireIds = {
   },
 } as const;
 
+export interface ServiceAccountsHandlers {
+  create(req: CreateServiceAccountRequest, ctx: RequestContext): Promise<ServiceAccount>;
+  list(req: GetOrgRequest, ctx: RequestContext): Promise<ListServiceAccountsResponse>;
+  /**
+   * Disabling refuses every token of the account; enabling lets the
+   * tokens that were not revoked work again.
+   */
+  disable(req: ServiceAccountRef, ctx: RequestContext): Promise<Ok>;
+  enable(req: ServiceAccountRef, ctx: RequestContext): Promise<Ok>;
+  createToken(req: CreateServiceAccountTokenRequest, ctx: RequestContext): Promise<ApiToken>;
+  listTokens(req: ServiceAccountRef, ctx: RequestContext): Promise<ListTokensResponse>;
+  revokeToken(req: RevokeServiceAccountTokenRequest, ctx: RequestContext): Promise<Ok>;
+}
+
+export const ServiceAccountsWireIds = {
+  service: 11,
+  ops: {
+    create: 0,
+    list: 1,
+    disable: 2,
+    enable: 3,
+    createToken: 4,
+    listTokens: 5,
+    revokeToken: 6,
+  },
+} as const;
+
 export interface StatusesHandlers {
   set(req: SetStatusRequest, ctx: RequestContext): Promise<CommitStatus>;
   list(req: ListStatusRequest, ctx: RequestContext): Promise<ListStatusResponse>;
@@ -342,6 +390,7 @@ export interface ServerHandlers {
   orgs: OrgsHandlers;
   pullRequests: PullRequestsHandlers;
   repos: ReposHandlers;
+  serviceAccounts: ServiceAccountsHandlers;
   statuses: StatusesHandlers;
 }
 
@@ -434,6 +483,21 @@ export async function dispatch(
         case "logout": {
           const req = codec.decode<Empty>(reqBytes);
           const res = await handlers.auth.logout(req, ctx);
+          return codec.encode(res);
+        }
+        case "github-link-status": {
+          const req = codec.decode<Empty>(reqBytes);
+          const res = await handlers.auth.githubLinkStatus(req, ctx);
+          return codec.encode(res);
+        }
+        case "set-github-token": {
+          const req = codec.decode<SetGithubTokenRequest>(reqBytes);
+          const res = await handlers.auth.setGithubToken(req, ctx);
+          return codec.encode(res);
+        }
+        case "unlink-github": {
+          const req = codec.decode<Empty>(reqBytes);
+          const res = await handlers.auth.unlinkGithub(req, ctx);
           return codec.encode(res);
         }
         default:
@@ -574,6 +638,16 @@ export async function dispatch(
         case "remove-credential": {
           const req = codec.decode<CredentialRef>(reqBytes);
           const res = await handlers.mirror.removeCredential(req, ctx);
+          return codec.encode(res);
+        }
+        case "list-github-repos": {
+          const req = codec.decode<ListGithubReposRequest>(reqBytes);
+          const res = await handlers.mirror.listGithubRepos(req, ctx);
+          return codec.encode(res);
+        }
+        case "health": {
+          const req = codec.decode<Empty>(reqBytes);
+          const res = await handlers.mirror.health(req, ctx);
           return codec.encode(res);
         }
         default:
@@ -813,6 +887,47 @@ export async function dispatch(
           throw { code: 404, message: `unknown method ${service}.${method}` } satisfies ServiceError;
       }
     }
+    case "ServiceAccounts": {
+      switch (method) {
+        case "create": {
+          const req = codec.decode<CreateServiceAccountRequest>(reqBytes);
+          const res = await handlers.serviceAccounts.create(req, ctx);
+          return codec.encode(res);
+        }
+        case "list": {
+          const req = codec.decode<GetOrgRequest>(reqBytes);
+          const res = await handlers.serviceAccounts.list(req, ctx);
+          return codec.encode(res);
+        }
+        case "disable": {
+          const req = codec.decode<ServiceAccountRef>(reqBytes);
+          const res = await handlers.serviceAccounts.disable(req, ctx);
+          return codec.encode(res);
+        }
+        case "enable": {
+          const req = codec.decode<ServiceAccountRef>(reqBytes);
+          const res = await handlers.serviceAccounts.enable(req, ctx);
+          return codec.encode(res);
+        }
+        case "create-token": {
+          const req = codec.decode<CreateServiceAccountTokenRequest>(reqBytes);
+          const res = await handlers.serviceAccounts.createToken(req, ctx);
+          return codec.encode(res);
+        }
+        case "list-tokens": {
+          const req = codec.decode<ServiceAccountRef>(reqBytes);
+          const res = await handlers.serviceAccounts.listTokens(req, ctx);
+          return codec.encode(res);
+        }
+        case "revoke-token": {
+          const req = codec.decode<RevokeServiceAccountTokenRequest>(reqBytes);
+          const res = await handlers.serviceAccounts.revokeToken(req, ctx);
+          return codec.encode(res);
+        }
+        default:
+          throw { code: 404, message: `unknown method ${service}.${method}` } satisfies ServiceError;
+      }
+    }
     case "Statuses": {
       switch (method) {
         case "set": {
@@ -925,6 +1040,21 @@ export async function dispatchCompact(
         case 14: {
           const req = codec.decode<Empty>(reqBytes);
           const res = await handlers.auth.logout(req, ctx);
+          return codec.encode(res);
+        }
+        case 15: {
+          const req = codec.decode<Empty>(reqBytes);
+          const res = await handlers.auth.githubLinkStatus(req, ctx);
+          return codec.encode(res);
+        }
+        case 16: {
+          const req = codec.decode<SetGithubTokenRequest>(reqBytes);
+          const res = await handlers.auth.setGithubToken(req, ctx);
+          return codec.encode(res);
+        }
+        case 17: {
+          const req = codec.decode<Empty>(reqBytes);
+          const res = await handlers.auth.unlinkGithub(req, ctx);
           return codec.encode(res);
         }
         default:
@@ -1065,6 +1195,16 @@ export async function dispatchCompact(
         case 10: {
           const req = codec.decode<CredentialRef>(reqBytes);
           const res = await handlers.mirror.removeCredential(req, ctx);
+          return codec.encode(res);
+        }
+        case 11: {
+          const req = codec.decode<ListGithubReposRequest>(reqBytes);
+          const res = await handlers.mirror.listGithubRepos(req, ctx);
+          return codec.encode(res);
+        }
+        case 12: {
+          const req = codec.decode<Empty>(reqBytes);
+          const res = await handlers.mirror.health(req, ctx);
           return codec.encode(res);
         }
         default:
@@ -1298,6 +1438,47 @@ export async function dispatchCompact(
         case 19: {
           const req = codec.decode<GetRepoRequest>(reqBytes);
           const res = await handlers.repos.captureHistory(req, ctx);
+          return codec.encode(res);
+        }
+        default:
+          throw { code: 404, message: `unknown ordinal ${service}.${method}` } satisfies ServiceError;
+      }
+    }
+    case 11: {
+      switch (method) {
+        case 0: {
+          const req = codec.decode<CreateServiceAccountRequest>(reqBytes);
+          const res = await handlers.serviceAccounts.create(req, ctx);
+          return codec.encode(res);
+        }
+        case 1: {
+          const req = codec.decode<GetOrgRequest>(reqBytes);
+          const res = await handlers.serviceAccounts.list(req, ctx);
+          return codec.encode(res);
+        }
+        case 2: {
+          const req = codec.decode<ServiceAccountRef>(reqBytes);
+          const res = await handlers.serviceAccounts.disable(req, ctx);
+          return codec.encode(res);
+        }
+        case 3: {
+          const req = codec.decode<ServiceAccountRef>(reqBytes);
+          const res = await handlers.serviceAccounts.enable(req, ctx);
+          return codec.encode(res);
+        }
+        case 4: {
+          const req = codec.decode<CreateServiceAccountTokenRequest>(reqBytes);
+          const res = await handlers.serviceAccounts.createToken(req, ctx);
+          return codec.encode(res);
+        }
+        case 5: {
+          const req = codec.decode<ServiceAccountRef>(reqBytes);
+          const res = await handlers.serviceAccounts.listTokens(req, ctx);
+          return codec.encode(res);
+        }
+        case 6: {
+          const req = codec.decode<RevokeServiceAccountTokenRequest>(reqBytes);
+          const res = await handlers.serviceAccounts.revokeToken(req, ctx);
           return codec.encode(res);
         }
         default:
