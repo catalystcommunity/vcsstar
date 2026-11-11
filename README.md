@@ -77,7 +77,7 @@ crates/vcsstar-workers   corndogs loops: dispatcher, sweeper, mirror, hooks, ing
 crates/vcsstard          server binary with role flags
 crates/vcsstar-cli       the vcsstar CLI
 migrations/              Diesel migrations (raw SQL)
-ui/                      SolidJS web UI
+ui/                      web UI: TypeScript on Zest web components
 helm/                    chart; .reactorcide/ CI and deploy jobs
 ```
 

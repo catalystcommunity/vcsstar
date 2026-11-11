@@ -368,10 +368,37 @@ helm/                    chart for the catalyst cluster
 
 ## Web UI (phase 5)
 
-- `ui/` is a SolidJS + Vite app. `npm ci && npm run build` writes `ui/dist`;
-  `vcsstard` serves it when `VCSSTAR__UI_DIR` points there (the image sets
-  it). `npm run dev` proxies `/csil`, `/auth`, and `/hooks` to
-  `127.0.0.1:8080`.
+- `ui/` is plain TypeScript on Zest web components (`@catalystcommunity/*`:
+  base-components, controls, containers, menus, simple-router,
+  design-tokens) built with Vite. No application framework. `npm ci && npm
+  run build` writes `ui/dist`; `vcsstard` serves it when `VCSSTAR__UI_DIR`
+  points there (the image sets it). `npm run dev` proxies `/csil`, `/auth`,
+  and `/hooks` to `127.0.0.1:8080`.
+- Structure: `src/main.ts` defines the Zest elements and starts the shell;
+  `src/app.ts` is the shell (header, account menu, routing with
+  `SimpleRouter`, session); `src/page.ts` is the page base class (a light
+  DOM `BaseComponent` that builds one time in `build()`, loads in
+  `start()`, subscribes in `connected()` with `this.own(...)`, and may
+  accept a route change through `setPath()`); `src/dom.ts` is the `h()`
+  builder and the control helpers; `src/ui.ts` holds badges, tables,
+  sections, notices, `act()`, `confirmDanger()`, and the one-shot secret
+  dialog; `src/pages/` holds the pages. After each `await`, stop when
+  `this.isActive()` is false. Change the parts that changed; do not build a
+  page again for a small change.
+- Rules: Zest controls for every form control (`text-field`, `text-area`,
+  `combo-box`, `check-box`, `spin-box`, `push-button`); `askConfirm` with
+  `danger` before every action that cannot be undone; `showNotice` for the
+  result of an action (an error notice stays until dismissed; a load error
+  goes in the section's `Feedback`); a secret shown one time goes through
+  `showSecretOnce` (a `dialog-window` with a Copy button); in-page tabs that
+  are not routes use `tab-view`; routed tabs (the repository page) are
+  links with `aria-current`. Empty a field after a submit with `clear()`,
+  not `value = ""`, or the field shows "fill this out".
+- Look: `src/styles.css` is the theme (dark blue, one gold accent, IBM Plex
+  Sans and Mono from `@fontsource`), and it maps the palette to the
+  `--zest-*` tokens, so a control follows the theme. Page rules live in
+  `@layer page` before `zest`. The mark is `public/logo.svg` (the git tile
+  with a star where the main node was) and `public/favicon.svg`.
 - The browser speaks CSIL only: `ui/src/api.ts` wraps the generated async
   client with a fetch carrier (`POST /csil/v1/rpc`, `X-Vcsstar-Csrf`
   header, same-origin cookie). `ui/src/csil/` is the csilgen TypeScript
@@ -381,10 +408,11 @@ helm/                    chart for the catalyst cluster
   polls the outbox for the subscribed lanes every second.
 - Every button calls a contract op. Nothing in the UI reaches the server
   by another path.
-- Solid Router intercepts every same-origin `<a>` click and routes it in
-  the SPA. A link to a server-rendered page (`/auth/login`,
-  `/auth/github/start`) needs `rel="external"`, or the user lands on an
-  empty SPA shell.
+- The shell routes only links made with `link()` (`data-nav`). A link to a
+  server-rendered page (`/auth/login`, `/auth/github/start`) is a plain
+  `<a rel="external">`. The router also fires on window load, before the
+  session is known: the shell ignores that call and renders after
+  `whoami`, and it rebuilds the page when the session identity changes.
 
 ## Deployment
 
