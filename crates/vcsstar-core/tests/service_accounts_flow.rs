@@ -57,6 +57,7 @@ fn admin(app: &App) -> Principal {
         acting_via: None,
         credential_id: None,
         expires_at: None,
+        instance_role: None,
     }
 }
 

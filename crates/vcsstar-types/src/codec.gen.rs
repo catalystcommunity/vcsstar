@@ -1316,9 +1316,79 @@ pub fn decode_list_tokens_response(csil_data: &[u8]) -> Result<ListTokensRespons
     csil_dec_list_tokens_response(&csil_root)
 }
 
+/// Build the canonical CBOR value tree for a Preferences.
+fn csil_enc_preferences(csil_v: &Preferences) -> CsilCborValue {
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(1);
+    csil_entries.push((cbor_text("diff_layout"), cbor_text(&csil_v.diff_layout)));
+    CsilCborValue::Map(csil_entries)
+}
+
+/// Reconstruct a Preferences from a decoded CBOR value tree.
+fn csil_dec_preferences(csil_root: &CsilCborValue) -> Result<Preferences, CsilCborError> {
+    let diff_layout = {
+        let csil_field = cbor_require(csil_root, "diff_layout")?;
+        let csil_decode = cbor_as_text;
+        csil_decode(csil_field)?
+    };
+    Ok(Preferences { diff_layout })
+}
+
+/// Encode a Preferences to canonical CSIL CBOR bytes.
+pub fn encode_preferences(csil_v: &Preferences) -> Vec<u8> {
+    cbor_encode(&csil_enc_preferences(csil_v))
+}
+
+/// Decode canonical CSIL CBOR bytes into a Preferences.
+pub fn decode_preferences(csil_data: &[u8]) -> Result<Preferences, CsilCborError> {
+    let csil_root = cbor_decode(csil_data)?;
+    csil_dec_preferences(&csil_root)
+}
+
+/// Build the canonical CBOR value tree for a SetPreferencesRequest.
+fn csil_enc_set_preferences_request(csil_v: &SetPreferencesRequest) -> CsilCborValue {
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(2);
+    csil_entries.push((cbor_text("ctx"), csil_enc_ctx(&csil_v.ctx)));
+    if let Some(csil_inner) = &csil_v.diff_layout {
+        csil_entries.push((cbor_text("diff_layout"), cbor_text(csil_inner)));
+    }
+    CsilCborValue::Map(csil_entries)
+}
+
+/// Reconstruct a SetPreferencesRequest from a decoded CBOR value tree.
+fn csil_dec_set_preferences_request(
+    csil_root: &CsilCborValue,
+) -> Result<SetPreferencesRequest, CsilCborError> {
+    let ctx = {
+        let csil_field = cbor_require(csil_root, "ctx")?;
+        let csil_decode = csil_dec_ctx;
+        csil_decode(csil_field)?
+    };
+    let diff_layout = match cbor_map_get(csil_root, "diff_layout") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    Ok(SetPreferencesRequest { ctx, diff_layout })
+}
+
+/// Encode a SetPreferencesRequest to canonical CSIL CBOR bytes.
+pub fn encode_set_preferences_request(csil_v: &SetPreferencesRequest) -> Vec<u8> {
+    cbor_encode(&csil_enc_set_preferences_request(csil_v))
+}
+
+/// Decode canonical CSIL CBOR bytes into a SetPreferencesRequest.
+pub fn decode_set_preferences_request(
+    csil_data: &[u8],
+) -> Result<SetPreferencesRequest, CsilCborError> {
+    let csil_root = cbor_decode(csil_data)?;
+    csil_dec_set_preferences_request(&csil_root)
+}
+
 /// Build the canonical CBOR value tree for a WhoAmI.
 fn csil_enc_who_am_i(csil_v: &WhoAmI) -> CsilCborValue {
-    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(5);
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(6);
     csil_entries.push((
         cbor_text("scopes"),
         cbor_enc_array(&csil_v.scopes, |csil_elem| cbor_text(csil_elem)),
@@ -1329,6 +1399,9 @@ fn csil_enc_who_am_i(csil_v: &WhoAmI) -> CsilCborValue {
     }
     if let Some(csil_inner) = &csil_v.expires_at {
         csil_entries.push((cbor_text("expires_at"), cbor_int(*csil_inner)));
+    }
+    if let Some(csil_inner) = &csil_v.instance_role {
+        csil_entries.push((cbor_text("instance_role"), cbor_text(csil_inner)));
     }
     csil_entries.push((
         cbor_text("credential_kind"),
@@ -1368,12 +1441,20 @@ fn csil_dec_who_am_i(csil_root: &CsilCborValue) -> Result<WhoAmI, CsilCborError>
         }
         None => None,
     };
+    let instance_role = match cbor_map_get(csil_root, "instance_role") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
     Ok(WhoAmI {
         identity,
         scopes,
         credential_kind,
         acting_via,
         expires_at,
+        instance_role,
     })
 }
 
@@ -2236,9 +2317,12 @@ pub fn decode_set_github_token_request(
 
 /// Build the canonical CBOR value tree for a Org.
 fn csil_enc_org(csil_v: &Org) -> CsilCborValue {
-    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(4);
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(5);
     csil_entries.push((cbor_text("name"), cbor_text(&csil_v.name)));
     csil_entries.push((cbor_text("created_at"), cbor_int(csil_v.created_at)));
+    if let Some(csil_inner) = &csil_v.viewer_role {
+        csil_entries.push((cbor_text("viewer_role"), cbor_text(csil_inner)));
+    }
     if let Some(csil_inner) = &csil_v.display_name {
         csil_entries.push((cbor_text("display_name"), cbor_text(csil_inner)));
     }
@@ -2274,11 +2358,19 @@ fn csil_dec_org(csil_root: &CsilCborValue) -> Result<Org, CsilCborError> {
         let csil_decode = cbor_as_i64;
         csil_decode(csil_field)?
     };
+    let viewer_role = match cbor_map_get(csil_root, "viewer_role") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
     Ok(Org {
         name,
         display_name,
         github_owner,
         created_at,
+        viewer_role,
     })
 }
 
@@ -2975,7 +3067,7 @@ pub fn decode_list_teams_response(csil_data: &[u8]) -> Result<ListTeamsResponse,
 
 /// Build the canonical CBOR value tree for a Repo.
 fn csil_enc_repo(csil_v: &Repo) -> CsilCborValue {
-    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(12);
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(13);
     csil_entries.push((cbor_text("org"), cbor_text(&csil_v.org)));
     csil_entries.push((cbor_text("name"), cbor_text(&csil_v.name)));
     if let Some(csil_inner) = &csil_v.fork_of {
@@ -2991,6 +3083,9 @@ fn csil_enc_repo(csil_v: &Repo) -> CsilCborValue {
     csil_entries.push((cbor_text("visibility"), cbor_text(&csil_v.visibility)));
     if let Some(csil_inner) = &csil_v.description {
         csil_entries.push((cbor_text("description"), cbor_text(csil_inner)));
+    }
+    if let Some(csil_inner) = &csil_v.viewer_role {
+        csil_entries.push((cbor_text("viewer_role"), cbor_text(csil_inner)));
     }
     csil_entries.push((
         cbor_text("default_branch"),
@@ -3071,6 +3166,13 @@ fn csil_dec_repo(csil_root: &CsilCborValue) -> Result<Repo, CsilCborError> {
         }
         None => None,
     };
+    let viewer_role = match cbor_map_get(csil_root, "viewer_role") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
     Ok(Repo {
         org,
         name,
@@ -3084,6 +3186,7 @@ fn csil_dec_repo(csil_root: &CsilCborValue) -> Result<Repo, CsilCborError> {
         created_at,
         https_url,
         ssh_url,
+        viewer_role,
     })
 }
 
@@ -6971,7 +7074,7 @@ pub fn decode_delivery_ref(csil_data: &[u8]) -> Result<DeliveryRef, CsilCborErro
 
 /// Build the canonical CBOR value tree for a MirrorStatus.
 fn csil_enc_mirror_status(csil_v: &MirrorStatus) -> CsilCborValue {
-    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(11);
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(18);
     csil_entries.push((cbor_text("mode"), cbor_text(&csil_v.mode)));
     csil_entries.push((cbor_text("repo"), csil_enc_repo_ref(&csil_v.repo)));
     csil_entries.push((cbor_text("paused"), cbor_bool(csil_v.paused)));
@@ -6984,15 +7087,38 @@ fn csil_enc_mirror_status(csil_v: &MirrorStatus) -> CsilCborValue {
     if let Some(csil_inner) = &csil_v.github_repo {
         csil_entries.push((cbor_text("github_repo"), cbor_text(csil_inner)));
     }
+    if let Some(csil_inner) = &csil_v.import_state {
+        csil_entries.push((cbor_text("import_state"), cbor_text(csil_inner)));
+    }
+    if let Some(csil_inner) = &csil_v.backfill_pulls {
+        csil_entries.push((cbor_text("backfill_pulls"), cbor_uint(*csil_inner)));
+    }
+    if let Some(csil_inner) = &csil_v.backfill_state {
+        csil_entries.push((cbor_text("backfill_state"), cbor_text(csil_inner)));
+    }
     if let Some(csil_inner) = &csil_v.last_success_at {
         csil_entries.push((cbor_text("last_success_at"), cbor_int(*csil_inner)));
+    }
+    if let Some(csil_inner) = &csil_v.backfill_done_at {
+        csil_entries.push((cbor_text("backfill_done_at"), cbor_int(*csil_inner)));
     }
     if let Some(csil_inner) = &csil_v.last_pull_sync_at {
         csil_entries.push((cbor_text("last_pull_sync_at"), cbor_int(*csil_inner)));
     }
+    if let Some(csil_inner) = &csil_v.backfill_started_at {
+        csil_entries.push((cbor_text("backfill_started_at"), cbor_int(*csil_inner)));
+    }
+    csil_entries.push((
+        cbor_text("pull_sync_interval_s"),
+        cbor_uint(csil_v.pull_sync_interval_s),
+    ));
     if let Some(csil_inner) = &csil_v.last_full_reconcile_at {
         csil_entries.push((cbor_text("last_full_reconcile_at"), cbor_int(*csil_inner)));
     }
+    csil_entries.push((
+        cbor_text("ref_reconcile_interval_s"),
+        cbor_uint(csil_v.ref_reconcile_interval_s),
+    ));
     CsilCborValue::Map(csil_entries)
 }
 
@@ -7063,6 +7189,51 @@ fn csil_dec_mirror_status(csil_root: &CsilCborValue) -> Result<MirrorStatus, Csi
         }
         None => None,
     };
+    let backfill_state = match cbor_map_get(csil_root, "backfill_state") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let backfill_pulls = match cbor_map_get(csil_root, "backfill_pulls") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_u64;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let backfill_started_at = match cbor_map_get(csil_root, "backfill_started_at") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_i64;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let backfill_done_at = match cbor_map_get(csil_root, "backfill_done_at") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_i64;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let import_state = match cbor_map_get(csil_root, "import_state") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let pull_sync_interval_s = {
+        let csil_field = cbor_require(csil_root, "pull_sync_interval_s")?;
+        let csil_decode = cbor_as_u64;
+        csil_decode(csil_field)?
+    };
+    let ref_reconcile_interval_s = {
+        let csil_field = cbor_require(csil_root, "ref_reconcile_interval_s")?;
+        let csil_decode = cbor_as_u64;
+        csil_decode(csil_field)?
+    };
     Ok(MirrorStatus {
         repo,
         github_repo,
@@ -7075,6 +7246,13 @@ fn csil_dec_mirror_status(csil_root: &CsilCborValue) -> Result<MirrorStatus, Csi
         last_error,
         last_full_reconcile_at,
         last_pull_sync_at,
+        backfill_state,
+        backfill_pulls,
+        backfill_started_at,
+        backfill_done_at,
+        import_state,
+        pull_sync_interval_s,
+        ref_reconcile_interval_s,
     })
 }
 
@@ -7087,6 +7265,173 @@ pub fn encode_mirror_status(csil_v: &MirrorStatus) -> Vec<u8> {
 pub fn decode_mirror_status(csil_data: &[u8]) -> Result<MirrorStatus, CsilCborError> {
     let csil_root = cbor_decode(csil_data)?;
     csil_dec_mirror_status(&csil_root)
+}
+
+/// Build the canonical CBOR value tree for a SetMirrorScheduleRequest.
+fn csil_enc_set_mirror_schedule_request(csil_v: &SetMirrorScheduleRequest) -> CsilCborValue {
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(4);
+    csil_entries.push((cbor_text("ctx"), csil_enc_ctx(&csil_v.ctx)));
+    csil_entries.push((cbor_text("repo"), csil_enc_repo_ref(&csil_v.repo)));
+    if let Some(csil_inner) = &csil_v.pull_sync_interval_s {
+        csil_entries.push((cbor_text("pull_sync_interval_s"), cbor_uint(*csil_inner)));
+    }
+    if let Some(csil_inner) = &csil_v.ref_reconcile_interval_s {
+        csil_entries.push((
+            cbor_text("ref_reconcile_interval_s"),
+            cbor_uint(*csil_inner),
+        ));
+    }
+    CsilCborValue::Map(csil_entries)
+}
+
+/// Reconstruct a SetMirrorScheduleRequest from a decoded CBOR value tree.
+fn csil_dec_set_mirror_schedule_request(
+    csil_root: &CsilCborValue,
+) -> Result<SetMirrorScheduleRequest, CsilCborError> {
+    let ctx = {
+        let csil_field = cbor_require(csil_root, "ctx")?;
+        let csil_decode = csil_dec_ctx;
+        csil_decode(csil_field)?
+    };
+    let repo = {
+        let csil_field = cbor_require(csil_root, "repo")?;
+        let csil_decode = csil_dec_repo_ref;
+        csil_decode(csil_field)?
+    };
+    let pull_sync_interval_s = match cbor_map_get(csil_root, "pull_sync_interval_s") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_u64;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let ref_reconcile_interval_s = match cbor_map_get(csil_root, "ref_reconcile_interval_s") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_u64;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    Ok(SetMirrorScheduleRequest {
+        ctx,
+        repo,
+        pull_sync_interval_s,
+        ref_reconcile_interval_s,
+    })
+}
+
+/// Encode a SetMirrorScheduleRequest to canonical CSIL CBOR bytes.
+pub fn encode_set_mirror_schedule_request(csil_v: &SetMirrorScheduleRequest) -> Vec<u8> {
+    cbor_encode(&csil_enc_set_mirror_schedule_request(csil_v))
+}
+
+/// Decode canonical CSIL CBOR bytes into a SetMirrorScheduleRequest.
+pub fn decode_set_mirror_schedule_request(
+    csil_data: &[u8],
+) -> Result<SetMirrorScheduleRequest, CsilCborError> {
+    let csil_root = cbor_decode(csil_data)?;
+    csil_dec_set_mirror_schedule_request(&csil_root)
+}
+
+/// Build the canonical CBOR value tree for a ImportAllRequest.
+fn csil_enc_import_all_request(csil_v: &ImportAllRequest) -> CsilCborValue {
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(4);
+    csil_entries.push((cbor_text("ctx"), csil_enc_ctx(&csil_v.ctx)));
+    csil_entries.push((cbor_text("org"), cbor_text(&csil_v.org)));
+    if let Some(csil_inner) = &csil_v.mode {
+        csil_entries.push((cbor_text("mode"), cbor_text(csil_inner)));
+    }
+    if let Some(csil_inner) = &csil_v.skip_archived {
+        csil_entries.push((cbor_text("skip_archived"), cbor_bool(*csil_inner)));
+    }
+    CsilCborValue::Map(csil_entries)
+}
+
+/// Reconstruct a ImportAllRequest from a decoded CBOR value tree.
+fn csil_dec_import_all_request(
+    csil_root: &CsilCborValue,
+) -> Result<ImportAllRequest, CsilCborError> {
+    let ctx = {
+        let csil_field = cbor_require(csil_root, "ctx")?;
+        let csil_decode = csil_dec_ctx;
+        csil_decode(csil_field)?
+    };
+    let org = {
+        let csil_field = cbor_require(csil_root, "org")?;
+        let csil_decode = cbor_as_text;
+        csil_decode(csil_field)?
+    };
+    let mode = match cbor_map_get(csil_root, "mode") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let skip_archived = match cbor_map_get(csil_root, "skip_archived") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_bool;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    Ok(ImportAllRequest {
+        ctx,
+        org,
+        mode,
+        skip_archived,
+    })
+}
+
+/// Encode a ImportAllRequest to canonical CSIL CBOR bytes.
+pub fn encode_import_all_request(csil_v: &ImportAllRequest) -> Vec<u8> {
+    cbor_encode(&csil_enc_import_all_request(csil_v))
+}
+
+/// Decode canonical CSIL CBOR bytes into a ImportAllRequest.
+pub fn decode_import_all_request(csil_data: &[u8]) -> Result<ImportAllRequest, CsilCborError> {
+    let csil_root = cbor_decode(csil_data)?;
+    csil_dec_import_all_request(&csil_root)
+}
+
+/// Build the canonical CBOR value tree for a ImportAllResult.
+fn csil_enc_import_all_result(csil_v: &ImportAllResult) -> CsilCborValue {
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(2);
+    csil_entries.push((
+        cbor_text("queued"),
+        cbor_enc_array(&csil_v.queued, |csil_elem| cbor_text(csil_elem)),
+    ));
+    csil_entries.push((
+        cbor_text("skipped"),
+        cbor_enc_array(&csil_v.skipped, |csil_elem| cbor_text(csil_elem)),
+    ));
+    CsilCborValue::Map(csil_entries)
+}
+
+/// Reconstruct a ImportAllResult from a decoded CBOR value tree.
+fn csil_dec_import_all_result(csil_root: &CsilCborValue) -> Result<ImportAllResult, CsilCborError> {
+    let queued = {
+        let csil_field = cbor_require(csil_root, "queued")?;
+        let csil_decode = |csil_v| cbor_dec_array(csil_v, cbor_as_text);
+        csil_decode(csil_field)?
+    };
+    let skipped = {
+        let csil_field = cbor_require(csil_root, "skipped")?;
+        let csil_decode = |csil_v| cbor_dec_array(csil_v, cbor_as_text);
+        csil_decode(csil_field)?
+    };
+    Ok(ImportAllResult { queued, skipped })
+}
+
+/// Encode a ImportAllResult to canonical CSIL CBOR bytes.
+pub fn encode_import_all_result(csil_v: &ImportAllResult) -> Vec<u8> {
+    cbor_encode(&csil_enc_import_all_result(csil_v))
+}
+
+/// Decode canonical CSIL CBOR bytes into a ImportAllResult.
+pub fn decode_import_all_result(csil_data: &[u8]) -> Result<ImportAllResult, CsilCborError> {
+    let csil_root = cbor_decode(csil_data)?;
+    csil_dec_import_all_result(&csil_root)
 }
 
 /// Build the canonical CBOR value tree for a BlockedAction.
@@ -7885,7 +8230,7 @@ pub fn decode_list_github_repos_request(
 
 /// Build the canonical CBOR value tree for a GithubRepoInfo.
 fn csil_enc_github_repo_info(csil_v: &GithubRepoInfo) -> CsilCborValue {
-    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(9);
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(10);
     csil_entries.push((cbor_text("fork"), cbor_bool(csil_v.fork)));
     csil_entries.push((cbor_text("private"), cbor_bool(csil_v.private)));
     csil_entries.push((cbor_text("archived"), cbor_bool(csil_v.archived)));
@@ -7899,6 +8244,9 @@ fn csil_enc_github_repo_info(csil_v: &GithubRepoInfo) -> CsilCborValue {
     }
     if let Some(csil_inner) = &csil_v.mirrored_as {
         csil_entries.push((cbor_text("mirrored_as"), cbor_text(csil_inner)));
+    }
+    if let Some(csil_inner) = &csil_v.import_state {
+        csil_entries.push((cbor_text("import_state"), cbor_text(csil_inner)));
     }
     csil_entries.push((
         cbor_text("default_branch"),
@@ -7960,6 +8308,13 @@ fn csil_dec_github_repo_info(csil_root: &CsilCborValue) -> Result<GithubRepoInfo
         }
         None => None,
     };
+    let import_state = match cbor_map_get(csil_root, "import_state") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
     Ok(GithubRepoInfo {
         full_name,
         description,
@@ -7970,6 +8325,7 @@ fn csil_dec_github_repo_info(csil_root: &CsilCborValue) -> Result<GithubRepoInfo
         html_url,
         pushed_at,
         mirrored_as,
+        import_state,
     })
 }
 
@@ -7982,6 +8338,140 @@ pub fn encode_github_repo_info(csil_v: &GithubRepoInfo) -> Vec<u8> {
 pub fn decode_github_repo_info(csil_data: &[u8]) -> Result<GithubRepoInfo, CsilCborError> {
     let csil_root = cbor_decode(csil_data)?;
     csil_dec_github_repo_info(&csil_root)
+}
+
+/// Build the canonical CBOR value tree for a GithubInstallation.
+fn csil_enc_github_installation(csil_v: &GithubInstallation) -> CsilCborValue {
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(7);
+    csil_entries.push((cbor_text("owner"), cbor_text(&csil_v.owner)));
+    csil_entries.push((cbor_text("app_id"), cbor_text(&csil_v.app_id)));
+    if let Some(csil_inner) = &csil_v.app_slug {
+        csil_entries.push((cbor_text("app_slug"), cbor_text(csil_inner)));
+    }
+    csil_entries.push((cbor_text("owner_type"), cbor_text(&csil_v.owner_type)));
+    csil_entries.push((
+        cbor_text("vcsstar_orgs"),
+        cbor_enc_array(&csil_v.vcsstar_orgs, |csil_elem| cbor_text(csil_elem)),
+    ));
+    csil_entries.push((
+        cbor_text("installation_id"),
+        cbor_uint(csil_v.installation_id),
+    ));
+    csil_entries.push((
+        cbor_text("repository_selection"),
+        cbor_text(&csil_v.repository_selection),
+    ));
+    CsilCborValue::Map(csil_entries)
+}
+
+/// Reconstruct a GithubInstallation from a decoded CBOR value tree.
+fn csil_dec_github_installation(
+    csil_root: &CsilCborValue,
+) -> Result<GithubInstallation, CsilCborError> {
+    let app_id = {
+        let csil_field = cbor_require(csil_root, "app_id")?;
+        let csil_decode = cbor_as_text;
+        csil_decode(csil_field)?
+    };
+    let app_slug = match cbor_map_get(csil_root, "app_slug") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let installation_id = {
+        let csil_field = cbor_require(csil_root, "installation_id")?;
+        let csil_decode = cbor_as_u64;
+        csil_decode(csil_field)?
+    };
+    let owner = {
+        let csil_field = cbor_require(csil_root, "owner")?;
+        let csil_decode = cbor_as_text;
+        csil_decode(csil_field)?
+    };
+    let owner_type = {
+        let csil_field = cbor_require(csil_root, "owner_type")?;
+        let csil_decode = cbor_as_text;
+        csil_decode(csil_field)?
+    };
+    let repository_selection = {
+        let csil_field = cbor_require(csil_root, "repository_selection")?;
+        let csil_decode = cbor_as_text;
+        csil_decode(csil_field)?
+    };
+    let vcsstar_orgs = {
+        let csil_field = cbor_require(csil_root, "vcsstar_orgs")?;
+        let csil_decode = |csil_v| cbor_dec_array(csil_v, cbor_as_text);
+        csil_decode(csil_field)?
+    };
+    Ok(GithubInstallation {
+        app_id,
+        app_slug,
+        installation_id,
+        owner,
+        owner_type,
+        repository_selection,
+        vcsstar_orgs,
+    })
+}
+
+/// Encode a GithubInstallation to canonical CSIL CBOR bytes.
+pub fn encode_github_installation(csil_v: &GithubInstallation) -> Vec<u8> {
+    cbor_encode(&csil_enc_github_installation(csil_v))
+}
+
+/// Decode canonical CSIL CBOR bytes into a GithubInstallation.
+pub fn decode_github_installation(csil_data: &[u8]) -> Result<GithubInstallation, CsilCborError> {
+    let csil_root = cbor_decode(csil_data)?;
+    csil_dec_github_installation(&csil_root)
+}
+
+/// Build the canonical CBOR value tree for a GithubInstallationList.
+fn csil_enc_github_installation_list(csil_v: &GithubInstallationList) -> CsilCborValue {
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(2);
+    csil_entries.push((
+        cbor_text("errors"),
+        cbor_enc_array(&csil_v.errors, |csil_elem| cbor_text(csil_elem)),
+    ));
+    csil_entries.push((
+        cbor_text("installations"),
+        cbor_enc_array(&csil_v.installations, csil_enc_github_installation),
+    ));
+    CsilCborValue::Map(csil_entries)
+}
+
+/// Reconstruct a GithubInstallationList from a decoded CBOR value tree.
+fn csil_dec_github_installation_list(
+    csil_root: &CsilCborValue,
+) -> Result<GithubInstallationList, CsilCborError> {
+    let installations = {
+        let csil_field = cbor_require(csil_root, "installations")?;
+        let csil_decode = |csil_v| cbor_dec_array(csil_v, csil_dec_github_installation);
+        csil_decode(csil_field)?
+    };
+    let errors = {
+        let csil_field = cbor_require(csil_root, "errors")?;
+        let csil_decode = |csil_v| cbor_dec_array(csil_v, cbor_as_text);
+        csil_decode(csil_field)?
+    };
+    Ok(GithubInstallationList {
+        installations,
+        errors,
+    })
+}
+
+/// Encode a GithubInstallationList to canonical CSIL CBOR bytes.
+pub fn encode_github_installation_list(csil_v: &GithubInstallationList) -> Vec<u8> {
+    cbor_encode(&csil_enc_github_installation_list(csil_v))
+}
+
+/// Decode canonical CSIL CBOR bytes into a GithubInstallationList.
+pub fn decode_github_installation_list(
+    csil_data: &[u8],
+) -> Result<GithubInstallationList, CsilCborError> {
+    let csil_root = cbor_decode(csil_data)?;
+    csil_dec_github_installation_list(&csil_root)
 }
 
 /// Build the canonical CBOR value tree for a GithubRepoPage.
@@ -8644,6 +9134,201 @@ pub fn decode_revoke_service_account_token_request(
 ) -> Result<RevokeServiceAccountTokenRequest, CsilCborError> {
     let csil_root = cbor_decode(csil_data)?;
     csil_dec_revoke_service_account_token_request(&csil_root)
+}
+
+/// Build the canonical CBOR value tree for a InstanceRoleGrant.
+fn csil_enc_instance_role_grant(csil_v: &InstanceRoleGrant) -> CsilCborValue {
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(5);
+    csil_entries.push((cbor_text("role"), cbor_text(&csil_v.role)));
+    csil_entries.push((cbor_text("source"), cbor_text(&csil_v.source)));
+    csil_entries.push((cbor_text("identity"), csil_enc_identity(&csil_v.identity)));
+    csil_entries.push((cbor_text("granted_at"), cbor_int(csil_v.granted_at)));
+    if let Some(csil_inner) = &csil_v.granted_by {
+        csil_entries.push((cbor_text("granted_by"), csil_enc_identity(csil_inner)));
+    }
+    CsilCborValue::Map(csil_entries)
+}
+
+/// Reconstruct a InstanceRoleGrant from a decoded CBOR value tree.
+fn csil_dec_instance_role_grant(
+    csil_root: &CsilCborValue,
+) -> Result<InstanceRoleGrant, CsilCborError> {
+    let identity = {
+        let csil_field = cbor_require(csil_root, "identity")?;
+        let csil_decode = csil_dec_identity;
+        csil_decode(csil_field)?
+    };
+    let role = {
+        let csil_field = cbor_require(csil_root, "role")?;
+        let csil_decode = cbor_as_text;
+        csil_decode(csil_field)?
+    };
+    let source = {
+        let csil_field = cbor_require(csil_root, "source")?;
+        let csil_decode = cbor_as_text;
+        csil_decode(csil_field)?
+    };
+    let granted_by = match cbor_map_get(csil_root, "granted_by") {
+        Some(csil_field) => {
+            let csil_decode = csil_dec_identity;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let granted_at = {
+        let csil_field = cbor_require(csil_root, "granted_at")?;
+        let csil_decode = cbor_as_i64;
+        csil_decode(csil_field)?
+    };
+    Ok(InstanceRoleGrant {
+        identity,
+        role,
+        source,
+        granted_by,
+        granted_at,
+    })
+}
+
+/// Encode a InstanceRoleGrant to canonical CSIL CBOR bytes.
+pub fn encode_instance_role_grant(csil_v: &InstanceRoleGrant) -> Vec<u8> {
+    cbor_encode(&csil_enc_instance_role_grant(csil_v))
+}
+
+/// Decode canonical CSIL CBOR bytes into a InstanceRoleGrant.
+pub fn decode_instance_role_grant(csil_data: &[u8]) -> Result<InstanceRoleGrant, CsilCborError> {
+    let csil_root = cbor_decode(csil_data)?;
+    csil_dec_instance_role_grant(&csil_root)
+}
+
+/// Build the canonical CBOR value tree for a InstanceRoleList.
+fn csil_enc_instance_role_list(csil_v: &InstanceRoleList) -> CsilCborValue {
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(2);
+    csil_entries.push((
+        cbor_text("grants"),
+        cbor_enc_array(&csil_v.grants, csil_enc_instance_role_grant),
+    ));
+    csil_entries.push((
+        cbor_text("configured_admins"),
+        cbor_enc_array(&csil_v.configured_admins, |csil_elem| cbor_text(csil_elem)),
+    ));
+    CsilCborValue::Map(csil_entries)
+}
+
+/// Reconstruct a InstanceRoleList from a decoded CBOR value tree.
+fn csil_dec_instance_role_list(
+    csil_root: &CsilCborValue,
+) -> Result<InstanceRoleList, CsilCborError> {
+    let grants = {
+        let csil_field = cbor_require(csil_root, "grants")?;
+        let csil_decode = |csil_v| cbor_dec_array(csil_v, csil_dec_instance_role_grant);
+        csil_decode(csil_field)?
+    };
+    let configured_admins = {
+        let csil_field = cbor_require(csil_root, "configured_admins")?;
+        let csil_decode = |csil_v| cbor_dec_array(csil_v, cbor_as_text);
+        csil_decode(csil_field)?
+    };
+    Ok(InstanceRoleList {
+        grants,
+        configured_admins,
+    })
+}
+
+/// Encode a InstanceRoleList to canonical CSIL CBOR bytes.
+pub fn encode_instance_role_list(csil_v: &InstanceRoleList) -> Vec<u8> {
+    cbor_encode(&csil_enc_instance_role_list(csil_v))
+}
+
+/// Decode canonical CSIL CBOR bytes into a InstanceRoleList.
+pub fn decode_instance_role_list(csil_data: &[u8]) -> Result<InstanceRoleList, CsilCborError> {
+    let csil_root = cbor_decode(csil_data)?;
+    csil_dec_instance_role_list(&csil_root)
+}
+
+/// Build the canonical CBOR value tree for a SetInstanceRoleRequest.
+fn csil_enc_set_instance_role_request(csil_v: &SetInstanceRoleRequest) -> CsilCborValue {
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(3);
+    csil_entries.push((cbor_text("ctx"), csil_enc_ctx(&csil_v.ctx)));
+    csil_entries.push((cbor_text("role"), cbor_text(&csil_v.role)));
+    csil_entries.push((cbor_text("identity"), cbor_text(&csil_v.identity)));
+    CsilCborValue::Map(csil_entries)
+}
+
+/// Reconstruct a SetInstanceRoleRequest from a decoded CBOR value tree.
+fn csil_dec_set_instance_role_request(
+    csil_root: &CsilCborValue,
+) -> Result<SetInstanceRoleRequest, CsilCborError> {
+    let ctx = {
+        let csil_field = cbor_require(csil_root, "ctx")?;
+        let csil_decode = csil_dec_ctx;
+        csil_decode(csil_field)?
+    };
+    let identity = {
+        let csil_field = cbor_require(csil_root, "identity")?;
+        let csil_decode = cbor_as_text;
+        csil_decode(csil_field)?
+    };
+    let role = {
+        let csil_field = cbor_require(csil_root, "role")?;
+        let csil_decode = cbor_as_text;
+        csil_decode(csil_field)?
+    };
+    Ok(SetInstanceRoleRequest {
+        ctx,
+        identity,
+        role,
+    })
+}
+
+/// Encode a SetInstanceRoleRequest to canonical CSIL CBOR bytes.
+pub fn encode_set_instance_role_request(csil_v: &SetInstanceRoleRequest) -> Vec<u8> {
+    cbor_encode(&csil_enc_set_instance_role_request(csil_v))
+}
+
+/// Decode canonical CSIL CBOR bytes into a SetInstanceRoleRequest.
+pub fn decode_set_instance_role_request(
+    csil_data: &[u8],
+) -> Result<SetInstanceRoleRequest, CsilCborError> {
+    let csil_root = cbor_decode(csil_data)?;
+    csil_dec_set_instance_role_request(&csil_root)
+}
+
+/// Build the canonical CBOR value tree for a RemoveInstanceRoleRequest.
+fn csil_enc_remove_instance_role_request(csil_v: &RemoveInstanceRoleRequest) -> CsilCborValue {
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(2);
+    csil_entries.push((cbor_text("ctx"), csil_enc_ctx(&csil_v.ctx)));
+    csil_entries.push((cbor_text("identity"), cbor_text(&csil_v.identity)));
+    CsilCborValue::Map(csil_entries)
+}
+
+/// Reconstruct a RemoveInstanceRoleRequest from a decoded CBOR value tree.
+fn csil_dec_remove_instance_role_request(
+    csil_root: &CsilCborValue,
+) -> Result<RemoveInstanceRoleRequest, CsilCborError> {
+    let ctx = {
+        let csil_field = cbor_require(csil_root, "ctx")?;
+        let csil_decode = csil_dec_ctx;
+        csil_decode(csil_field)?
+    };
+    let identity = {
+        let csil_field = cbor_require(csil_root, "identity")?;
+        let csil_decode = cbor_as_text;
+        csil_decode(csil_field)?
+    };
+    Ok(RemoveInstanceRoleRequest { ctx, identity })
+}
+
+/// Encode a RemoveInstanceRoleRequest to canonical CSIL CBOR bytes.
+pub fn encode_remove_instance_role_request(csil_v: &RemoveInstanceRoleRequest) -> Vec<u8> {
+    cbor_encode(&csil_enc_remove_instance_role_request(csil_v))
+}
+
+/// Decode canonical CSIL CBOR bytes into a RemoveInstanceRoleRequest.
+pub fn decode_remove_instance_role_request(
+    csil_data: &[u8],
+) -> Result<RemoveInstanceRoleRequest, CsilCborError> {
+    let csil_root = cbor_decode(csil_data)?;
+    csil_dec_remove_instance_role_request(&csil_root)
 }
 
 /// Build the canonical CBOR value tree for a FedHello.

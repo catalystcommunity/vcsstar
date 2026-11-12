@@ -1,13 +1,33 @@
 #!/usr/bin/env bash
 # Build and push the vcsstar images, then helm upgrade the instance.
 # Secrets arrive in the environment; this script never prints them.
+# See .reactorcide/jobs/deploy.yaml for the environment it reads.
 set -euo pipefail
 cd "${REACTORCIDE_REPOROOT:-${REACTORCIDE_CODE_DIR:-/job/src}}"
 
+: "${K8S_NAMESPACE:?set K8S_NAMESPACE (instance overlay)}"
+: "${HELM_RELEASE:=vcsstar}"
+DEPLOY_MODE="${DEPLOY_MODE:-release}"
+# A bind-mounted working tree (run-local) can belong to another uid.
+git config --global --add safe.directory "$(pwd)" 2>/dev/null || true
 SHA="${REACTORCIDE_SHA:-$(git rev-parse HEAD)}"
 BASE_VERSION="$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)"/\1/')"
-VERSION="${BASE_VERSION}-${SHA:0:12}"
-echo "version ${VERSION}"
+case "${DEPLOY_MODE}" in
+    release)
+        VERSION="${BASE_VERSION}-${SHA:0:12}"
+        PULL_POLICY="IfNotPresent"
+        BUILD_CLI="${BUILD_CLI:-true}"
+        ;;
+    dev)
+        DIRTY=""
+        git diff --quiet HEAD -- 2>/dev/null || DIRTY="-dirty"
+        VERSION="dev-$(date -u +%Y%m%d-%H%M%S)-${SHA:0:7}${DIRTY}"
+        PULL_POLICY="Always"
+        BUILD_CLI="${BUILD_CLI:-false}"
+        ;;
+    *) echo "DEPLOY_MODE must be release or dev" >&2; exit 1 ;;
+esac
+echo "mode ${DEPLOY_MODE}, version ${VERSION}, namespace ${K8S_NAMESPACE}"
 
 export HOME="${HOME:-/home/runner}"
 LOCAL_BIN="$HOME/.local/bin"
@@ -43,6 +63,10 @@ export DOCKER_CONFIG="$HOME/.docker"
 
 IMAGE="${REGISTRY}/${IMAGE_PATH}"
 CLI_IMAGE="${REGISTRY}/${CLI_IMAGE_PATH}"
+# A dev build never moves :latest.
+names() {
+    if [ "${DEPLOY_MODE}" = release ]; then echo "$1:${VERSION},$1:latest"; else echo "$1:${VERSION}"; fi
+}
 echo "building ${IMAGE}:${VERSION}"
 buildctl build \
     --frontend dockerfile.v0 \
@@ -50,15 +74,17 @@ buildctl build \
     --opt target=runtime \
     --local context=. \
     --local dockerfile=. \
-    --output "type=image,\"name=${IMAGE}:${VERSION},${IMAGE}:latest\",push=true"
-echo "building ${CLI_IMAGE}:${VERSION}"
-buildctl build \
-    --frontend dockerfile.v0 \
-    --opt filename=Containerfile \
-    --opt target=cli \
-    --local context=. \
-    --local dockerfile=. \
-    --output "type=image,\"name=${CLI_IMAGE}:${VERSION},${CLI_IMAGE}:latest\",push=true"
+    --output "type=image,\"name=$(names "${IMAGE}")\",push=true"
+if [ "${BUILD_CLI}" = true ]; then
+    echo "building ${CLI_IMAGE}:${VERSION}"
+    buildctl build \
+        --frontend dockerfile.v0 \
+        --opt filename=Containerfile \
+        --opt target=cli \
+        --local context=. \
+        --local dockerfile=. \
+        --output "type=image,\"name=$(names "${CLI_IMAGE}")\",push=true"
+fi
 
 mkdir -p ~/.kube
 printf '%s' "${KUBECONFIG_CONTENT}" > ~/.kube/config
@@ -69,20 +95,51 @@ kubectl create secret docker-registry regcred \
     --namespace "${K8S_NAMESPACE}" --save-config --dry-run=client \
     --docker-server="${REGISTRY}" --docker-username="${REGISTRY_USER}" --docker-password="${REGISTRY_PASSWORD}" \
     -o yaml | kubectl apply -f -
-kubectl create secret generic vcsstar-linkkeys \
-    --namespace "${K8S_NAMESPACE}" --save-config --dry-run=client \
-    --from-literal=SECRET_VCSSTAR__LINKKEYS_API_KEY="${LINKKEYS_API_KEY}" \
-    -o yaml | kubectl apply -f -
-# The instance's GitHub App, when the store has one (set githubApp.existingSecret
-# to vcsstar-github-app in the overlay).
-if [ -n "${GITHUB_APP_ID:-}" ]; then
-    kubectl create secret generic vcsstar-github-app \
+# Secrets from the store, written on every deploy (the store is the truth;
+# a rotation there reaches the cluster with the next deploy).
+put_secret() {  # name, then KEY=VALUE pairs; values never reach argv
+    local name="$1"; shift
+    local dir; dir="$(mktemp -d)"
+    local args=()
+    for kv in "$@"; do
+        printf '%s' "${kv#*=}" > "${dir}/${kv%%=*}"
+        args+=(--from-file="${kv%%=*}=${dir}/${kv%%=*}")
+    done
+    kubectl create secret generic "${name}" \
         --namespace "${K8S_NAMESPACE}" --save-config --dry-run=client \
-        --from-literal=SECRET_VCSSTAR__GITHUB_APP_ID="${GITHUB_APP_ID}" \
-        --from-literal=SECRET_VCSSTAR__GITHUB_APP_CLIENT_ID="${GITHUB_APP_CLIENT_ID}" \
-        --from-literal=SECRET_VCSSTAR__GITHUB_APP_CLIENT_SECRET="${GITHUB_APP_CLIENT_SECRET}" \
-        --from-literal=SECRET_VCSSTAR__GITHUB_APP_PRIVATE_KEY="${GITHUB_APP_PRIVATE_KEY}" \
-        -o yaml | kubectl apply -f -
+        "${args[@]}" -o yaml | kubectl apply -f -
+    rm -rf "${dir}"
+}
+if [ -n "${LINKKEYS_API_KEY:-}" ]; then
+    put_secret vcsstar-linkkeys "SECRET_VCSSTAR__LINKKEYS_API_KEY=${LINKKEYS_API_KEY}"
+else
+    echo "LINKKEYS_API_KEY is empty: login stays disabled" >&2
+fi
+# The instance's GitHub Apps (set githubApp.existingSecret to
+# vcsstar-github-app in the Helm overlay): a JSON list in GITHUB_APPS, or
+# the older single App in GITHUB_APP_*.
+if [ -n "${GITHUB_APPS:-}" ]; then
+    printf '%s' "${GITHUB_APPS}" | python3 -c 'import json,sys; l=json.load(sys.stdin); assert isinstance(l,list) and l and all(all(a.get(k) for k in ("app_id","client_id","client_secret","private_key")) for a in l), "GITHUB_APPS: every App needs app_id, client_id, client_secret, private_key"' \
+        || { echo "GITHUB_APPS is not a valid list of Apps" >&2; exit 1; }
+    put_secret vcsstar-github-app "SECRET_VCSSTAR__GITHUB_APPS=${GITHUB_APPS}"
+elif [ -n "${GITHUB_APP_ID:-}" ]; then
+    put_secret vcsstar-github-app \
+        "SECRET_VCSSTAR__GITHUB_APP_ID=${GITHUB_APP_ID}" \
+        "SECRET_VCSSTAR__GITHUB_APP_CLIENT_ID=${GITHUB_APP_CLIENT_ID}" \
+        "SECRET_VCSSTAR__GITHUB_APP_CLIENT_SECRET=${GITHUB_APP_CLIENT_SECRET}" \
+        "SECRET_VCSSTAR__GITHUB_APP_PRIVATE_KEY=${GITHUB_APP_PRIVATE_KEY}"
+fi
+# History bucket keys (objectStore.existingSecret: vcsstar-objectstore).
+if [ -n "${OBJECT_STORE_ACCESS_KEY:-}" ]; then
+    put_secret vcsstar-objectstore \
+        "SECRET_VCSSTAR__OBJECT_STORE_ACCESS_KEY=${OBJECT_STORE_ACCESS_KEY}" \
+        "SECRET_VCSSTAR__OBJECT_STORE_SECRET_KEY=${OBJECT_STORE_SECRET_KEY}"
+fi
+# Postgres backup bucket keys (postgresql.backup s3Credentials: vcsstar-backup-s3).
+if [ -n "${BACKUP_S3_ACCESS_KEY_ID:-}" ]; then
+    put_secret vcsstar-backup-s3 \
+        "ACCESS_KEY_ID=${BACKUP_S3_ACCESS_KEY_ID}" \
+        "ACCESS_SECRET_KEY=${BACKUP_S3_SECRET_KEY}"
 fi
 
 # Per-instance secrets that must survive redeploys: made once, never rotated
@@ -150,6 +207,7 @@ cat > "${RUNTIME_VALUES}" <<VALS
 image:
   repository: ${IMAGE}
   tag: "${VERSION}"
+  pullPolicy: ${PULL_POLICY}
 VALS
 helm upgrade --install --create-namespace --namespace "${K8S_NAMESPACE}" \
     "${HELM_RELEASE}" ./helm/vcsstar \
@@ -157,4 +215,5 @@ helm upgrade --install --create-namespace --namespace "${K8S_NAMESPACE}" \
     --wait --timeout 10m
 rm -f "${RUNTIME_VALUES}"
 if [ -n "${DEPLOY_VALUES:-}" ]; then rm -f "${VALUES_FILE}"; fi
+kubectl -n "${K8S_NAMESPACE}" rollout status deploy/"${HELM_RELEASE}" --timeout=5m
 echo "deployed ${HELM_RELEASE} ${VERSION} to ${K8S_NAMESPACE}"

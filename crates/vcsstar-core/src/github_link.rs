@@ -47,14 +47,17 @@ pub struct LinkRow {
     pub linked_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub last_used_at: Option<DateTime<Utc>>,
+    /// The App whose client issued the token (NULL: the first App).
+    pub app_id: Option<String>,
 }
 
-/// The instance's GitHub App, or a precondition error for the caller.
+/// The GitHub App that links accounts (the first one), or a precondition
+/// error for the caller.
 pub fn app_config(app: &App) -> Result<&GithubAppConfig, Error> {
-    app.config.github_app.as_ref().ok_or_else(|| {
+    app.config.github_app().ok_or_else(|| {
         Error::new(
             Code::PreconditionFailed,
-            "this instance has no GitHub App; set SECRET_VCSSTAR__GITHUB_APP_* or paste a personal access token",
+            "this instance has no GitHub App; set SECRET_VCSSTAR__GITHUB_APPS (or _GITHUB_APP_*) or paste a personal access token",
         )
     })
 }
@@ -67,7 +70,7 @@ pub fn callback_url(app: &App) -> String {
 }
 
 pub fn start_url(app: &App) -> Option<String> {
-    app.config.github_app.as_ref().map(|_| {
+    app.config.github_app().map(|_| {
         format!(
             "{}/auth/github/start",
             app.config.public_url.trim_end_matches('/')
@@ -163,7 +166,12 @@ pub fn complete(
     )?;
     let (gid, login) =
         github::Client::new(&app.config.github_api_base, &tok.access_token).get_user()?;
-    let row = store(app, conn, identity_id, gid, &login, "oauth", &tok)?;
+    store(app, conn, identity_id, gid, &login, "oauth", &tok)?;
+    // Remember the issuing App: a refresh must use its client.
+    let row: LinkRow = diesel::update(github_links::table.find(identity_id))
+        .set(github_links::app_id.eq(Some(cfg.app_id.as_str())))
+        .returning(LinkRow::as_returning())
+        .get_result(conn)?;
     Ok((row, return_to))
 }
 
@@ -241,6 +249,7 @@ pub fn store(
                 github_links::refresh_expires_at.eq(tok.refresh_expires_at),
                 github_links::broken_at.eq(None::<DateTime<Utc>>),
                 github_links::broken_reason.eq(None::<String>),
+                github_links::app_id.eq(None::<String>),
                 github_links::updated_at.eq(Utc::now()),
             ))
             .returning(LinkRow::as_returning())
@@ -294,10 +303,9 @@ pub fn unlink(app: &App, conn: &mut PgConnection, identity_id: Uuid) -> Result<b
         return Ok(false);
     };
     if row.kind == "oauth" {
-        if let (Some(cfg), Ok(token)) = (
-            app.config.github_app.as_ref(),
-            cred::open(app, &row.access_ciphertext),
-        ) {
+        if let (Some(cfg), Ok(token)) =
+            (link_app(app, &row), cred::open(app, &row.access_ciphertext))
+        {
             if let Err(e) = github::revoke_grant(
                 &app.config.github_api_base,
                 &cfg.client_id,
@@ -318,7 +326,7 @@ pub fn status(app: &App, conn: &mut PgConnection, identity_id: Uuid) -> Result<G
 }
 
 pub fn to_wire(app: &App, row: Option<&LinkRow>) -> GithubLink {
-    let slug = app.config.github_app.as_ref().and_then(|c| c.slug.clone());
+    let slug = app.config.github_app().and_then(|c| c.slug.clone());
     match row {
         Some(r) => GithubLink {
             linked: true,
@@ -419,12 +427,19 @@ pub fn user_token(
     Ok(Some((row.login, token)))
 }
 
+/// The App whose client issued a link's token: the recorded one, else the
+/// first App (links made before the App was recorded).
+fn link_app<'a>(app: &'a App, row: &LinkRow) -> Option<&'a GithubAppConfig> {
+    match row.app_id.as_deref() {
+        Some(id) => app.config.github_app_by_id(id),
+        None => app.config.github_app(),
+    }
+}
+
 fn refresh(app: &App, conn: &mut PgConnection, row: &LinkRow) -> Result<String, Failure> {
-    let cfg = app
-        .config
-        .github_app
-        .as_ref()
-        .ok_or_else(|| Failure::Terminal("the instance has no GitHub App any more".into()))?;
+    let cfg = link_app(app, row).ok_or_else(|| {
+        Failure::Terminal("the GitHub App that issued this link is no longer configured".into())
+    })?;
     let refresh_ct = row.refresh_ciphertext.as_ref().ok_or_else(|| {
         Failure::Terminal("the access token expired and there is no refresh token".into())
     })?;

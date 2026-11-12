@@ -83,6 +83,17 @@ pub fn installation_for_owner(base: &str, jwt: &str, owner: &str) -> Result<Opti
     Ok(None)
 }
 
+/// One page of the App's installations (`GET /app/installations` with the
+/// App JWT), with `more` when the page was full.
+pub fn list_app_installations(
+    base: &str,
+    jwt: &str,
+    page: u32,
+) -> Result<(Vec<Json>, bool), Failure> {
+    let client = Client::new(base, jwt).with_label("app-jwt");
+    client.page(&format!("/app/installations?per_page=100&page={page}"), 100)
+}
+
 /// The installation of the App on the owner of `full_name`
 /// (`GET /repos/{owner}/{repo}/installation` with the App JWT). `None`
 /// when the App is not installed there, or not for that repository.
@@ -446,41 +457,66 @@ impl Client {
         )
     }
 
-    pub fn list_reviews(&self, full_name: &str, number: i64) -> Result<Vec<Json>, Failure> {
-        let (items, _) = self.page(
-            &format!("/repos/{full_name}/pulls/{number}/reviews?per_page=100"),
+    /// Pull requests in creation order, oldest first, one page. The list
+    /// only grows at its end, so a (page, index) position stays valid
+    /// between passes (the history import's cursor).
+    pub fn list_pulls_created(
+        &self,
+        full_name: &str,
+        page: u32,
+        per_page: usize,
+    ) -> Result<(Vec<Json>, bool), Failure> {
+        self.page(
+            &format!("/repos/{full_name}/pulls?state=all&sort=created&direction=asc&per_page={per_page}&page={page}"),
+            per_page,
+        )
+    }
+
+    /// Reviews of a pull request, one page of 100.
+    pub fn list_reviews(
+        &self,
+        full_name: &str,
+        number: i64,
+        page: u32,
+    ) -> Result<(Vec<Json>, bool), Failure> {
+        self.page(
+            &format!("/repos/{full_name}/pulls/{number}/reviews?per_page=100&page={page}"),
             100,
-        )?;
-        Ok(items)
+        )
     }
 
     /// Conversation comments of a pull request, optionally only those
-    /// updated at or after `since` (RFC 3339).
+    /// updated at or after `since` (RFC 3339), one page of 100.
     pub fn list_issue_comments(
         &self,
         full_name: &str,
         number: i64,
         since: Option<&str>,
-    ) -> Result<Vec<Json>, Failure> {
-        let mut path = format!("/repos/{full_name}/issues/{number}/comments?per_page=100");
+        page: u32,
+    ) -> Result<(Vec<Json>, bool), Failure> {
+        let mut path =
+            format!("/repos/{full_name}/issues/{number}/comments?per_page=100&page={page}");
         if let Some(s) = since {
             path.push_str(&format!("&since={}", url_encode(s)));
         }
-        Ok(self.page(&path, 100)?.0)
+        self.page(&path, 100)
     }
 
-    /// Inline review comments of a pull request, optionally since a time.
+    /// Inline review comments of a pull request, optionally since a time,
+    /// one page of 100.
     pub fn list_review_comments(
         &self,
         full_name: &str,
         number: i64,
         since: Option<&str>,
-    ) -> Result<Vec<Json>, Failure> {
-        let mut path = format!("/repos/{full_name}/pulls/{number}/comments?per_page=100");
+        page: u32,
+    ) -> Result<(Vec<Json>, bool), Failure> {
+        let mut path =
+            format!("/repos/{full_name}/pulls/{number}/comments?per_page=100&page={page}");
         if let Some(s) = since {
             path.push_str(&format!("&since={}", url_encode(s)));
         }
-        Ok(self.page(&path, 100)?.0)
+        self.page(&path, 100)
     }
 
     /// The commit statuses of a sha (`statuses` of the combined status).
@@ -927,6 +963,16 @@ impl From<Failure> for Error {
     }
 }
 
+/// Whether a delivery is signed with the webhook secret of one of the
+/// instance's GitHub Apps.
+pub fn signed_by_app(apps: &[crate::config::GithubAppConfig], body: &[u8], header: &str) -> bool {
+    apps.iter().any(|a| {
+        a.webhook_secret
+            .as_deref()
+            .is_some_and(|w| verify_webhook_signature(w.as_bytes(), body, header))
+    })
+}
+
 /// HMAC-SHA256 check of a GitHub webhook (`X-Hub-Signature-256`).
 pub fn verify_webhook_signature(secret: &[u8], body: &[u8], header: &str) -> bool {
     use hmac::Mac;
@@ -1018,5 +1064,22 @@ mod tests {
             b"Hello, World!",
             "sha256=757107ea"
         ));
+    }
+
+    #[test]
+    fn delivery_signed_by_any_configured_app() {
+        let app = |id: &str, w: Option<&str>| crate::config::GithubAppConfig {
+            app_id: id.into(),
+            client_id: "c".into(),
+            client_secret: "s".into(),
+            private_key: "k".into(),
+            slug: None,
+            webhook_secret: w.map(str::to_string),
+        };
+        let sig = "sha256=757107ea0eb2509fc211221cce984b8a37570b6d7586c22c46f4379c8b043e17";
+        let apps = vec![app("1", None), app("2", Some("It's a Secret to Everybody"))];
+        assert!(signed_by_app(&apps, b"Hello, World!", sig));
+        assert!(!signed_by_app(&apps[..1], b"Hello, World!", sig));
+        assert!(!signed_by_app(&apps, b"Hello, World?", sig));
     }
 }

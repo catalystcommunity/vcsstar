@@ -1,6 +1,7 @@
 // The app shell: header, navigation, footer, session, and routing.
 // SimpleRouter owns the browser history. The shell reads the path and
 // picks the page, and keeps a page while the route stays on its object.
+import { loadPreferences } from "./prefs";
 import SimpleRouter from "@catalystcommunity/simple-router";
 import { api, ctx, isUnauthenticated, who } from "./api";
 import { fill, h, link } from "./dom";
@@ -70,6 +71,7 @@ export class VcsstarApp {
       this.session = null;
       if (!isUnauthenticated(error)) console.warn("whoami failed", error);
     }
+    await loadPreferences(Boolean(this.session));
   }
 
   private signOut = async (): Promise<void> => {

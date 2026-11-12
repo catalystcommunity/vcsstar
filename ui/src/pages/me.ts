@@ -12,6 +12,7 @@ export class MePage extends Page {
   private readonly keysStatus = h("div");
   private readonly tokens = table(["Name", "Scopes", "Label", "Created", "Expires", ""]);
   private readonly tokensStatus = h("div");
+  private readonly rolesBox = h("div");
 
   protected build() {
     const me = this.context.session;
@@ -26,6 +27,8 @@ export class MePage extends Page {
       section("GitHub", "With a connected GitHub account, what you do here on a mirrored repository is sent to GitHub as you, and what you do on GitHub is attributed to you here.", this.github),
       section("SSH keys", h("span", null, "Attested keys come from ", mono("vcsstar keys enroll"), " (LinkKeys application keys). An uploaded key works for access and is marked unattested."), this.keys.wrap, this.keysStatus, this.addKeyForm()),
       section("API tokens", "A token acts as you with the scopes you give it. Use it with the CLI or as the git HTTPS password.", this.tokens.wrap, this.tokensStatus, this.newTokenForm()),
+      // Only an instance admin may see or change instance roles.
+      me.instanceRole === "admin" && this.rolesBox,
     ];
   }
 
@@ -34,7 +37,7 @@ export class MePage extends Page {
     fill(this.github, loading());
     fill(this.keysStatus, loading());
     fill(this.tokensStatus, loading());
-    await Promise.all([this.loadLink(), this.loadKeys(), this.loadTokens()]);
+    await Promise.all([this.loadLink(), this.loadKeys(), this.loadTokens(), this.context.session.instanceRole === "admin" ? this.loadRoles() : Promise.resolve()]);
   }
 
   // --- GitHub -------------------------------------------------------------
@@ -130,5 +133,44 @@ export class MePage extends Page {
       clear(name);
       await showSecretOnce(`Token "${t.name}"`, t.secret ?? "", h("span", null, "Use it with ", mono(`vcsstar login ${location.origin} --token-stdin`), " or as the git HTTPS password."));
     }, { after: () => void this.loadTokens() }) }, name, scopes, button("Create token", { type: "submit" }));
+  }
+
+  // --- Instance roles (instance admins) -------------------------------------
+
+  private async loadRoles() {
+    const feedback = new Feedback();
+    let list;
+    try {
+      list = await api.instance.listRoles({ ctx: ctx() });
+    } catch (error) {
+      if (this.isActive()) { fill(this.rolesBox, section("Instance roles", null, feedback.element)); feedback.error(error); }
+      return;
+    }
+    if (!this.isActive()) return;
+    const t = table(["Identity", "Role", "Source", "Granted", ""]);
+    fill(t.body,
+      ...list.configuredAdmins.map((k) => tr(td("", mono(k)), "admin", "configuration", td("muted", "INSTANCE_ADMINS"), td(""))),
+      ...list.grants.map((g) => {
+        const key = `${g.identity.userId}@${g.identity.domain}`;
+        return tr(
+          td("", who(g.identity), h("div", { class: "hint mono" }, key)),
+          g.role,
+          g.source,
+          td("muted", when(g.grantedAt), g.grantedBy ? ` by ${who(g.grantedBy)}` : ""),
+          td("actions", textButton("Remove", async () => {
+            if (await confirmDanger(`Remove the ${g.role} role of ${who(g.identity)}?`, "They keep their organization and repository roles.", "Remove role")) {
+              void act(() => api.instance.removeRole({ ctx: ctx(), identity: key }), { feedback, done: "Role removed.", after: () => void this.loadRoles() });
+            }
+          }, { danger: true })),
+        );
+      }));
+    const identity = textField("Identity", { required: true, placeholder: "user_id@domain", class: "w-lg", autocapitalize: "none", spellcheck: false, helper: "A person appears after one sign-in." });
+    const role = comboBox("Role", [
+      { value: "viewer", label: "Viewer", description: "Reads every repository, private ones too" },
+      { value: "admin", label: "Admin", description: "Manages everything on this instance" },
+    ], { value: "viewer" });
+    fill(this.rolesBox, section("Instance roles", "Roles on the whole instance. Admins from the configuration cannot be removed here.", feedback.element, t.wrap,
+      form({ class: "form-row", onSubmit: () => void act(async () => { await api.instance.setRole({ ctx: ctx(), identity: identity.value, role: role.value }); clear(identity); }, { feedback, done: "Role set.", after: () => void this.loadRoles() }) }, identity, role, button("Set role", { type: "submit", variant: "default" })),
+    ));
   }
 }

@@ -1,6 +1,8 @@
 //! Rocket mount: the CSIL-RPC envelope-in-body carrier, health, and
-//! readiness. Rocket runs on its own thread with its own runtime; handlers
-//! are synchronous.
+//! readiness. Rocket runs on its own thread with its own runtime. Handlers
+//! that touch Postgres, corndogs, git, or the network run their body through
+//! [`blocking`], so a slow operation never stalls the async workers (and with
+//! them `/healthz`).
 
 use std::sync::Arc;
 
@@ -12,6 +14,14 @@ use vcsstar_transport::server::handle_envelope;
 use vcsstar_transport::{Carrier, CredentialSource, Dispatcher, Peer};
 
 use crate::shutdown;
+
+/// Runs blocking work from a Rocket handler. Rocket 0.5 polls a sync
+/// handler on an async worker thread; without this, a few slow requests
+/// (an `import-repo` fetch, a LinkKeys round trip, a pool wait) take every
+/// worker and the liveness probe times out.
+pub(crate) fn blocking<T>(f: impl FnOnce() -> T) -> T {
+    rocket::tokio::task::block_in_place(f)
+}
 
 struct Shared {
     app: App,
@@ -53,11 +63,13 @@ impl<'r> FromRequest<'r> for HttpPeer {
 
 #[post("/csil/v1/rpc", data = "<body>")]
 fn rpc(shared: &State<Shared>, peer: HttpPeer, body: Vec<u8>) -> (ContentType, Vec<u8>) {
-    let ct = ContentType::new("application", "cbor");
-    (
-        ct,
-        handle_envelope(shared.dispatcher.as_ref(), &body, peer.0),
-    )
+    crate::http::blocking(|| {
+        let ct = ContentType::new("application", "cbor");
+        (
+            ct,
+            handle_envelope(shared.dispatcher.as_ref(), &body, peer.0),
+        )
+    })
 }
 
 #[get("/healthz")]
@@ -68,17 +80,20 @@ fn healthz() -> &'static str {
 /// Prometheus text exposition for this process.
 #[get("/metrics")]
 fn metrics(app: &State<App>) -> (ContentType, String) {
-    // Backlog gauges come from Postgres at scrape time, so every node
-    // reports the same numbers and no worker has to be the one scraped.
-    if let Ok(mut conn) = app.conn() {
-        if let Err(e) = vcsstar_core::metrics::refresh_backlog(&mut conn) {
-            tracing::warn!(error = %e, "backlog gauges not refreshed");
+    crate::http::blocking(|| {
+        // Backlog gauges come from Postgres at scrape time, so every node
+        // reports the same numbers and no worker has to be the one scraped.
+        if let Ok(mut conn) = app.conn() {
+            if let Err(e) = vcsstar_core::metrics::refresh_backlog(&mut conn) {
+                tracing::warn!(error = %e, "backlog gauges not refreshed");
+            }
         }
-    }
-    (
-        ContentType::new("text", "plain; version=0.0.4"),
-        vcsstar_core::metrics::render(),
-    )
+        vcsstar_core::metrics::refresh_rate_limits();
+        (
+            ContentType::new("text", "plain; version=0.0.4"),
+            vcsstar_core::metrics::render(),
+        )
+    })
 }
 
 /// Client-side routes of the SPA: anything no other route claimed gets
@@ -98,58 +113,72 @@ async fn spa_fallback(app: &State<App>, path: std::path::PathBuf) -> Option<rock
 /// the raw item into corndogs, acknowledge. No processing happens here.
 #[post("/hooks/github", data = "<body>")]
 fn github_hook(shared: &State<Shared>, req: GithubHeaders, body: Vec<u8>) -> (HttpStatus, String) {
-    use diesel::prelude::*;
-    use vcsstar_db::schema::{credentials, mirror_state, repos};
-    let app = &shared.app;
-    let metric = |outcome: &str| vcsstar_core::metrics::github_webhook(&req.event, outcome);
-    let Some(sig) = req.signature.as_deref() else {
-        metric("unauthorized");
-        return (
-            HttpStatus::Unauthorized,
-            "missing X-Hub-Signature-256\n".into(),
-        );
-    };
-    let parsed: serde_json::Value = match serde_json::from_slice(&body) {
-        Ok(v) => v,
-        Err(_) => return (HttpStatus::BadRequest, "body is not JSON\n".into()),
-    };
-    let Some(full_name) = parsed
-        .pointer("/repository/full_name")
-        .and_then(|v| v.as_str())
-    else {
-        // `ping` for an org-level hook carries no repository; accept it.
-        if req.event == "ping" {
-            return (HttpStatus::Accepted, "pong\n".into());
-        }
-        return (
-            HttpStatus::BadRequest,
-            "payload without repository.full_name\n".into(),
-        );
-    };
-    let mut conn = match app.conn() {
-        Ok(c) => c,
-        Err(e) => return (HttpStatus::ServiceUnavailable, format!("{}\n", e.message)),
-    };
-    let target: Option<(uuid::Uuid, uuid::Uuid)> = mirror_state::table
-        .inner_join(repos::table)
-        .filter(mirror_state::github_repo.eq(full_name))
-        .select((repos::id, repos::org_id))
-        .first(&mut conn)
-        .optional()
-        .unwrap_or(None);
-    let Some((repo_id, org_id)) = target else {
-        metric("unknown_repo");
-        return (
-            HttpStatus::NotFound,
-            "no mirror for this repository\n".into(),
-        );
-    };
-    // Several webhook secrets may be live at once (rotation, or hooks set
-    // up at different times); the signature must match one of them.
-    let set =
-        match vcsstar_core::mirror::cred::candidates(&mut conn, org_id, repo_id, "webhook_inbound")
-        {
-            Ok(set) if !set.is_empty() => set,
+    crate::http::blocking(|| {
+        use diesel::prelude::*;
+        use vcsstar_db::schema::{credentials, mirror_state, repos};
+        let app = &shared.app;
+        let metric = |outcome: &str| vcsstar_core::metrics::github_webhook(&req.event, outcome);
+        let Some(sig) = req.signature.as_deref() else {
+            metric("unauthorized");
+            return (
+                HttpStatus::Unauthorized,
+                "missing X-Hub-Signature-256\n".into(),
+            );
+        };
+        let parsed: serde_json::Value = match serde_json::from_slice(&body) {
+            Ok(v) => v,
+            Err(_) => return (HttpStatus::BadRequest, "body is not JSON\n".into()),
+        };
+        // A GitHub App's own webhook secret (from the instance configuration)
+        // signs every delivery of that App, for every repository it covers.
+        let by_app = vcsstar_core::github::signed_by_app(&app.config.github_apps, &body, sig);
+        let Some(full_name) = parsed
+            .pointer("/repository/full_name")
+            .and_then(|v| v.as_str())
+        else {
+            // `ping` and installation events carry no repository; accept them.
+            if req.event == "ping" || by_app {
+                return (HttpStatus::Accepted, "accepted\n".into());
+            }
+            return (
+                HttpStatus::BadRequest,
+                "payload without repository.full_name\n".into(),
+            );
+        };
+        let mut conn = match app.conn() {
+            Ok(c) => c,
+            Err(e) => return (HttpStatus::ServiceUnavailable, format!("{}\n", e.message)),
+        };
+        let target: Option<(uuid::Uuid, uuid::Uuid)> = mirror_state::table
+            .inner_join(repos::table)
+            .filter(mirror_state::github_repo.eq(full_name))
+            .select((repos::id, repos::org_id))
+            .first(&mut conn)
+            .optional()
+            .unwrap_or(None);
+        let Some((repo_id, org_id)) = target else {
+            if by_app {
+                // An App covers repositories nobody enabled here yet; that is
+                // not a failed delivery.
+                metric("not_mirrored");
+                return (HttpStatus::Accepted, "not mirrored here; ignored\n".into());
+            }
+            metric("unknown_repo");
+            return (
+                HttpStatus::NotFound,
+                "no mirror for this repository\n".into(),
+            );
+        };
+        // Else the organization's (or repository's) `webhook_inbound` set:
+        // several secrets may be live at once (rotation, hooks set up at
+        // different times); the signature must match one of them.
+        let set = match vcsstar_core::mirror::cred::candidates(
+            &mut conn,
+            org_id,
+            repo_id,
+            "webhook_inbound",
+        ) {
+            Ok(set) if !set.is_empty() || by_app => set,
             _ => {
                 return (
                     HttpStatus::Unauthorized,
@@ -157,58 +186,59 @@ fn github_hook(shared: &State<Shared>, req: GithubHeaders, body: Vec<u8>) -> (Ht
                 )
             }
         };
-    let mut matched = false;
-    for cred in &set {
-        let secret = match vcsstar_core::mirror::cred::value(app, cred) {
-            Ok(s) => s,
-            Err(e) => return (HttpStatus::ServiceUnavailable, format!("{}\n", e.message)),
+        let mut matched = by_app;
+        for cred in set.iter().filter(|_| !matched) {
+            let secret = match vcsstar_core::mirror::cred::value(app, cred) {
+                Ok(s) => s,
+                Err(e) => return (HttpStatus::ServiceUnavailable, format!("{}\n", e.message)),
+            };
+            if vcsstar_core::github::verify_webhook_signature(secret.as_bytes(), &body, sig) {
+                matched = true;
+                break;
+            }
+        }
+        if !matched {
+            metric("unauthorized");
+            return (HttpStatus::Unauthorized, "signature mismatch\n".into());
+        }
+        let _ = credentials::table; // (schema import kept for clarity)
+        let item = vcsstar_workers::ingest::GithubInbound {
+            delivery_id: req
+                .delivery
+                .clone()
+                .unwrap_or_else(|| uuid::Uuid::now_v7().to_string()),
+            event: req.event.clone(),
+            body,
+            received_at_ms: vcsstar_core::now_ms(),
         };
-        if vcsstar_core::github::verify_webhook_signature(secret.as_bytes(), &body, sig) {
-            matched = true;
-            break;
+        let mut payload = Vec::new();
+        if ciborium::ser::into_writer(&item, &mut payload).is_err() {
+            return (HttpStatus::InternalServerError, "encode failed\n".into());
         }
-    }
-    if !matched {
-        metric("unauthorized");
-        return (HttpStatus::Unauthorized, "signature mismatch\n".into());
-    }
-    let _ = credentials::table; // (schema import kept for clarity)
-    let item = vcsstar_workers::ingest::GithubInbound {
-        delivery_id: req
-            .delivery
-            .clone()
-            .unwrap_or_else(|| uuid::Uuid::now_v7().to_string()),
-        event: req.event.clone(),
-        body,
-        received_at_ms: vcsstar_core::now_ms(),
-    };
-    let mut payload = Vec::new();
-    if ciborium::ser::into_writer(&item, &mut payload).is_err() {
-        return (HttpStatus::InternalServerError, "encode failed\n".into());
-    }
-    match app.submit_task(
-        vcsstar_workers::ingest::QUEUE,
-        &format!("github:{}", item.delivery_id),
-        payload,
-        5,
-    ) {
-        Ok(()) => {
-            metric("captured");
-            (HttpStatus::Accepted, "captured\n".into())
+        match app.submit_task(
+            vcsstar_workers::ingest::QUEUE,
+            &format!("github:{}", item.delivery_id),
+            payload,
+            5,
+        ) {
+            Ok(()) => {
+                metric("captured");
+                (HttpStatus::Accepted, "captured\n".into())
+            }
+            // A GitHub App hook and a repository hook deliver one event with the
+            // same delivery id and different bodies (the App's carries the
+            // installation); the second is the same work and is acknowledged.
+            Err(e) if e.code == vcsstar_core::Code::AlreadyExists => {
+                metric("duplicate");
+                (HttpStatus::Accepted, "duplicate\n".into())
+            }
+            Err(e) => {
+                tracing::warn!(delivery = %item.delivery_id, event = %item.event, error = %e.message, "github webhook not captured");
+                metric("rejected");
+                (HttpStatus::ServiceUnavailable, format!("{}\n", e.message))
+            }
         }
-        // A GitHub App hook and a repository hook deliver one event with the
-        // same delivery id and different bodies (the App's carries the
-        // installation); the second is the same work and is acknowledged.
-        Err(e) if e.code == vcsstar_core::Code::AlreadyExists => {
-            metric("duplicate");
-            (HttpStatus::Accepted, "duplicate\n".into())
-        }
-        Err(e) => {
-            tracing::warn!(delivery = %item.delivery_id, event = %item.event, error = %e.message, "github webhook not captured");
-            metric("rejected");
-            (HttpStatus::ServiceUnavailable, format!("{}\n", e.message))
-        }
-    }
+    })
 }
 
 struct GithubHeaders {
@@ -241,13 +271,15 @@ impl<'r> FromRequest<'r> for GithubHeaders {
 
 #[get("/readyz")]
 fn readyz(shared: &State<Shared>) -> (HttpStatus, &'static str) {
-    if shared.shutdown.stopping() {
-        return (HttpStatus::ServiceUnavailable, "stopping");
-    }
-    match shared.app.db.get() {
-        Ok(_) => (HttpStatus::Ok, "ready"),
-        Err(_) => (HttpStatus::ServiceUnavailable, "database unavailable"),
-    }
+    crate::http::blocking(|| {
+        if shared.shutdown.stopping() {
+            return (HttpStatus::ServiceUnavailable, "stopping");
+        }
+        match shared.app.db.get() {
+            Ok(_) => (HttpStatus::Ok, "ready"),
+            Err(_) => (HttpStatus::ServiceUnavailable, "database unavailable"),
+        }
+    })
 }
 
 pub fn serve(

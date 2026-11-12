@@ -26,6 +26,45 @@ impl CredentialKind {
     }
 }
 
+/// A role on the whole instance (table `instance_roles`; `INSTANCE_ADMINS`
+/// in the configuration also makes an admin).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstanceRole {
+    /// Manage everything.
+    Admin,
+    /// Read every repository of every organization; no writes.
+    Viewer,
+}
+
+impl InstanceRole {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "admin" => Some(InstanceRole::Admin),
+            "viewer" => Some(InstanceRole::Viewer),
+            _ => None,
+        }
+    }
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            InstanceRole::Admin => "admin",
+            InstanceRole::Viewer => "viewer",
+        }
+    }
+}
+
+/// The instance role an identity holds in the table, if any.
+pub fn load_instance_role(
+    conn: &mut PgConnection,
+    identity_id: uuid::Uuid,
+) -> Result<Option<InstanceRole>, Error> {
+    let role: Option<String> = vcsstar_db::schema::instance_roles::table
+        .find(identity_id)
+        .select(vcsstar_db::schema::instance_roles::role)
+        .first(conn)
+        .optional()?;
+    Ok(role.as_deref().and_then(InstanceRole::parse))
+}
+
 /// An authenticated caller.
 #[derive(Debug, Clone)]
 pub struct Principal {
@@ -36,6 +75,8 @@ pub struct Principal {
     pub acting_via: Option<String>,
     pub credential_id: Option<uuid::Uuid>,
     pub expires_at: Option<chrono::DateTime<Utc>>,
+    /// From `instance_roles`, read when the credential resolves.
+    pub instance_role: Option<InstanceRole>,
 }
 
 impl Principal {
@@ -144,7 +185,9 @@ fn resolve_api_token(app: &App, secret: &str, kind: CredentialKind) -> Result<Pr
     if identity.disabled_at.is_some() {
         return Err(Error::forbidden("identity disabled"));
     }
+    let instance_role = load_instance_role(&mut conn, identity.id)?;
     Ok(Principal {
+        instance_role,
         identity,
         scopes: token.scopes.into_iter().flatten().collect(),
         kind,
@@ -174,7 +217,9 @@ fn resolve_session(app: &App, secret: &str) -> Result<Principal, Error> {
         .set(sessions::last_used_at.eq(Utc::now()))
         .execute(&mut conn)
         .ok();
+    let instance_role = load_instance_role(&mut conn, identity.id)?;
     Ok(Principal {
+        instance_role,
         identity,
         scopes: vec!["*".into()],
         kind: CredentialKind::Session,

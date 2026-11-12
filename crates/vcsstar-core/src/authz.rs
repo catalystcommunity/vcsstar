@@ -6,7 +6,7 @@ use vcsstar_db::models::{Org, Repo};
 use vcsstar_db::schema::{org_members, orgs, repo_grants, repos, team_members, teams};
 use vcsstar_db::DbConn;
 
-use crate::principal::{Principal, ReqCtx};
+use crate::principal::{InstanceRole, Principal, ReqCtx};
 use crate::{App, Error};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -62,12 +62,27 @@ impl RepoRole {
     }
 }
 
-/// Instance administrators may create organizations and manage anything.
+/// Instance administrators may create organizations and manage anything:
+/// the ones in `INSTANCE_ADMINS` and the `admin` grants of `instance_roles`.
 pub fn is_instance_admin(app: &App, p: &Principal) -> bool {
+    p.instance_role == Some(InstanceRole::Admin) || is_configured_admin(app, &p.key())
+}
+
+/// An admin from the configuration (cannot be removed through the API).
+pub fn is_configured_admin(app: &App, key: &str) -> bool {
     app.config
         .instance_admins
         .iter()
-        .any(|a| a.eq_ignore_ascii_case(&p.key()))
+        .any(|a| a.eq_ignore_ascii_case(key))
+}
+
+/// The caller's instance role, configuration included.
+pub fn instance_role(app: &App, p: &Principal) -> Option<InstanceRole> {
+    if is_instance_admin(app, p) {
+        Some(InstanceRole::Admin)
+    } else {
+        p.instance_role
+    }
 }
 
 pub fn org_role(conn: &mut DbConn, org: &Org, p: &Principal) -> Result<Option<OrgRole>, Error> {
@@ -104,7 +119,8 @@ pub fn repo_role(
             best = Some(r);
         }
     };
-    if repo.visibility == "public" {
+    // An instance viewer reads every repository.
+    if repo.visibility == "public" || p.instance_role == Some(InstanceRole::Viewer) {
         bump(RepoRole::Read);
     }
     match org_role(conn, org, p)? {

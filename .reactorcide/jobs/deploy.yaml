@@ -1,0 +1,57 @@
+# Build the vcsstar image with buildkit and deploy one instance with Helm.
+#
+# This job knows nothing about an instance. An instance is an environment
+# overlay (see .reactorcide/overlays/): the namespace and the secret
+# references for its Helm values, its LinkKeys API key, and its GitHub
+# Apps. Hostnames, addresses, and keys live in the secret store, never in
+# this repository.
+#
+# CI (production store): a workflow node references this file and adds
+# the instance environment (.reactorcide/workflows/deploy-catalystsquad.yaml).
+#
+# Local (local store), a dev build of the working tree:
+#
+#   REACTORCIDE_SECRETS_PASSWORD="$(cat ~/.reactorcide-pass)" \
+#     reactorcide run-local --source-dir . \
+#       -i .reactorcide/overlays/dev.yaml \
+#       -i .reactorcide/overlays/deploy-catalystsquad.yaml \
+#       .reactorcide/jobs/deploy.yaml
+#
+# (`tools/deploy.sh dev catalystsquad` runs the same command.)
+#
+# Environment:
+#   K8S_NAMESPACE, HELM_RELEASE   where the release goes (overlay)
+#   DEPLOY_VALUES                 the instance Helm overlay text (secret)
+#   LINKKEYS_API_KEY              the instance's LinkKeys account API key (secret)
+#   GITHUB_APPS                   JSON list of the instance's GitHub Apps (secret, optional)
+#   OBJECT_STORE_ACCESS_KEY/_SECRET_KEY   history bucket keys (secret, optional)
+#   BACKUP_S3_ACCESS_KEY_ID/_SECRET_KEY   Postgres backup bucket keys (secret, optional)
+#   DEPLOY_MODE                   release (default): <version>-<sha> and :latest;
+#                                 dev: dev-<utc>-<sha>[-dirty], no :latest, pull Always
+name: vcsstar-deploy
+description: "Build the vcsstar image with buildkit and deploy one instance with Helm"
+job:
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:latest
+  command: "bash ${REACTORCIDE_CODE_DIR:-/job/src}/.reactorcide/jobs/scripts/deploy.sh"
+  timeout: 3600
+  capabilities:
+    - builder
+  resources:
+    cpu:
+      request: "2"
+      limit: "4"
+    memory:
+      limit: "8Gi"
+run_local:
+  user: host
+environment:
+  REGISTRY: "containers.catalystsquad.com"
+  IMAGE_PATH: "public/catalystcommunity/vcsstar"
+  CLI_IMAGE_PATH: "public/catalystcommunity/vcsstar-cli"
+  REGISTRY_USER: "${secret:catalystcommunity/registry:user}"
+  REGISTRY_PASSWORD: "${secret:catalystcommunity/registry:password}"
+  KUBECONFIG_CONTENT: "${secret:catalystcommunity/k8s:kubeconfig}"
+  DEPLOY_MODE: "release"
+  HELM_RELEASE: "vcsstar"
+  # Set by the instance overlay:
+  K8S_NAMESPACE: ""

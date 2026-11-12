@@ -133,12 +133,24 @@ pub struct ListTokensResponse {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Preferences {
+    pub diff_layout: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetPreferencesRequest {
+    pub ctx: Ctx,
+    pub diff_layout: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct WhoAmI {
     pub identity: Identity,
     pub scopes: Vec<String>,
     pub credential_kind: String,
     pub acting_via: Option<String>,
     pub expires_at: Option<Timestamp>,
+    pub instance_role: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -264,6 +276,7 @@ pub struct Org {
     pub display_name: Option<String>,
     pub github_owner: Option<String>,
     pub created_at: Timestamp,
+    pub viewer_role: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -383,6 +396,7 @@ pub struct Repo {
     pub created_at: Timestamp,
     pub https_url: String,
     pub ssh_url: Option<String>,
+    pub viewer_role: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -937,6 +951,35 @@ pub struct MirrorStatus {
     pub last_error: Option<String>,
     pub last_full_reconcile_at: Option<Timestamp>,
     pub last_pull_sync_at: Option<Timestamp>,
+    pub backfill_state: Option<String>,
+    pub backfill_pulls: Option<u64>,
+    pub backfill_started_at: Option<Timestamp>,
+    pub backfill_done_at: Option<Timestamp>,
+    pub import_state: Option<String>,
+    pub pull_sync_interval_s: u64,
+    pub ref_reconcile_interval_s: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetMirrorScheduleRequest {
+    pub ctx: Ctx,
+    pub repo: RepoRef,
+    pub pull_sync_interval_s: Option<u64>,
+    pub ref_reconcile_interval_s: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportAllRequest {
+    pub ctx: Ctx,
+    pub org: String,
+    pub mode: Option<String>,
+    pub skip_archived: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportAllResult {
+    pub queued: Vec<String>,
+    pub skipped: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1062,6 +1105,24 @@ pub struct GithubRepoInfo {
     pub html_url: String,
     pub pushed_at: Option<Timestamp>,
     pub mirrored_as: Option<String>,
+    pub import_state: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GithubInstallation {
+    pub app_id: String,
+    pub app_slug: Option<String>,
+    pub installation_id: u64,
+    pub owner: String,
+    pub owner_type: String,
+    pub repository_selection: String,
+    pub vcsstar_orgs: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GithubInstallationList {
+    pub installations: Vec<GithubInstallation>,
+    pub errors: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1150,6 +1211,34 @@ pub struct RevokeServiceAccountTokenRequest {
     pub org: String,
     pub name: String,
     pub token_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct InstanceRoleGrant {
+    pub identity: Identity,
+    pub role: String,
+    pub source: String,
+    pub granted_by: Option<Identity>,
+    pub granted_at: Timestamp,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct InstanceRoleList {
+    pub grants: Vec<InstanceRoleGrant>,
+    pub configured_admins: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetInstanceRoleRequest {
+    pub ctx: Ctx,
+    pub identity: String,
+    pub role: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RemoveInstanceRoleRequest {
+    pub ctx: Ctx,
+    pub identity: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]

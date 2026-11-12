@@ -5,18 +5,19 @@ use chrono::Utc;
 use diesel::prelude::*;
 use vcsstar_db::models::{NewRepo, Org as OrgRow, Repo as RepoRow};
 use vcsstar_db::schema::{credentials, mirror_actions, mirror_state, repos};
-use vcsstar_store::refs::{self, RefUpdate};
+use vcsstar_store::refs;
 use vcsstar_types::{
     BlockedAction, ConfigureMirrorRequest, Credential, CredentialRef, EventPayload, GetRepoRequest,
-    GithubHealth, GithubRepoInfo, GithubRepoPage, ImportRequest, ListBlockedResponse,
-    ListCredentialsRequest, ListCredentialsResponse, ListGithubReposRequest, MirrorStatus,
-    Ok as WireOk, ReconcileReport, ReplayRequest, ReplayResult, Repo, SetCredentialRequest,
+    GithubHealth, GithubInstallation, GithubInstallationList, GithubRepoInfo, GithubRepoPage,
+    ImportAllRequest, ImportAllResult, ImportRequest, ListBlockedResponse, ListCredentialsRequest,
+    ListCredentialsResponse, ListGithubReposRequest, MirrorStatus, Ok as WireOk, ReconcileReport,
+    ReplayRequest, ReplayResult, Repo, SetCredentialRequest, SetMirrorScheduleRequest,
     SettingsPayload,
 };
-use vcsstar_vcs::RevId;
 
 use crate::authz::{self, OrgRole, RepoRole};
 use crate::mirror::{self, cred, ActionRow, CredentialRow, StateRow};
+use crate::mirror_import;
 use crate::outbox::{self, Emit};
 use crate::principal::ReqCtx;
 use crate::services::{check_name, repos as repo_svc};
@@ -50,6 +51,22 @@ fn status_wire(
         last_error: s.last_error.clone(),
         last_full_reconcile_at: s.last_full_reconcile_at.map(to_ms),
         last_pull_sync_at: s.last_pull_sync_at.map(to_ms),
+        backfill_state: Some(
+            if s.backfill_done_at.is_some() {
+                "done"
+            } else if s.backfill_started_at.is_some() {
+                "running"
+            } else {
+                "pending"
+            }
+            .into(),
+        ),
+        backfill_pulls: Some(s.backfill_pulls.max(0) as u64),
+        backfill_started_at: s.backfill_started_at.map(to_ms),
+        backfill_done_at: s.backfill_done_at.map(to_ms),
+        import_state: mirror_import::state(repo, s).map(str::to_string),
+        pull_sync_interval_s: mirror::pull_sync_interval(s).num_seconds() as u64,
+        ref_reconcile_interval_s: mirror::ref_reconcile_interval(s).num_seconds() as u64,
     })
 }
 
@@ -87,6 +104,13 @@ pub fn status(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<MirrorStat
             last_error: Some("mirror not configured".into()),
             last_full_reconcile_at: None,
             last_pull_sync_at: None,
+            backfill_state: None,
+            backfill_pulls: None,
+            backfill_started_at: None,
+            backfill_done_at: None,
+            import_state: None,
+            pull_sync_interval_s: mirror::DEFAULT_PASS_INTERVAL_S as u64,
+            ref_reconcile_interval_s: mirror::DEFAULT_PASS_INTERVAL_S as u64,
         }),
     }
 }
@@ -515,6 +539,108 @@ pub fn reconcile(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<Reconci
     })
 }
 
+/// Start the history import of a repository again from the first GitHub
+/// pull request. Imported rows stay and match; the worker does the rest.
+pub fn backfill(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<MirrorStatus, Error> {
+    let (mut conn, org, repo) =
+        open_admin(app, ctx, &req.repo.org, &req.repo.name, RepoRole::Admin)?;
+    let Some(_) = mirror::state_for(&mut conn, repo.id)? else {
+        return Err(Error::new(
+            Code::PreconditionFailed,
+            "this repository has no mirror; configure or import one first",
+        ));
+    };
+    crate::github_sync::restart_backfill(&mut conn, repo.id)?;
+    let s = mirror::state_for(&mut conn, repo.id)?
+        .ok_or_else(|| Error::internal("mirror state vanished"))?;
+    status_wire(&mut conn, &org, &repo, &s)
+}
+
+/// Where the instance's GitHub Apps are installed. An instance admin sees
+/// every installation; anyone else sees those whose owner is the
+/// `github_owner` of an organization they administer.
+pub fn list_github_installations(
+    app: &App,
+    ctx: &ReqCtx,
+    _req: vcsstar_types::Empty,
+) -> Result<GithubInstallationList, Error> {
+    let p = ctx.require()?;
+    p.require_scope("mirror:manage")?;
+    let mut conn = app.conn()?;
+    let admin = authz::is_instance_admin(app, p);
+    let owned: Vec<OrgRow> = vcsstar_db::schema::orgs::table
+        .filter(vcsstar_db::schema::orgs::github_owner.is_not_null())
+        .select(OrgRow::as_select())
+        .load(&mut conn)?;
+    let mut installations = Vec::new();
+    let mut errors = Vec::new();
+    for cfg in &app.config.github_apps {
+        let jwt = match crate::github_app::sign_jwt(&cfg.app_id, &cfg.private_key) {
+            Ok(j) => j,
+            Err(e) => {
+                errors.push(format!("App {}: {}", cfg.app_id, e.message));
+                continue;
+            }
+        };
+        let mut page = 1u32;
+        loop {
+            let (items, more) = match crate::github::list_app_installations(
+                &app.config.github_api_base,
+                &jwt,
+                page,
+            ) {
+                Ok(v) => v,
+                Err(e) => {
+                    errors.push(format!("App {}: {}", cfg.app_id, e.message()));
+                    break;
+                }
+            };
+            for j in &items {
+                let t = |ptr: &str| j.pointer(ptr).and_then(serde_json::Value::as_str);
+                let Some(owner) = t("/account/login").map(str::to_string) else {
+                    continue;
+                };
+                let mut orgs_here = Vec::new();
+                for o in owned.iter().filter(|o| {
+                    o.github_owner
+                        .as_deref()
+                        .is_some_and(|g| g.eq_ignore_ascii_case(&owner))
+                }) {
+                    if admin
+                        || authz::require_org_role(app, &mut conn, o, p, OrgRole::Admin).is_ok()
+                    {
+                        orgs_here.push(o.name.clone());
+                    }
+                }
+                if !admin && orgs_here.is_empty() {
+                    continue;
+                }
+                installations.push(GithubInstallation {
+                    app_id: cfg.app_id.clone(),
+                    app_slug: cfg
+                        .slug
+                        .clone()
+                        .or_else(|| t("/app_slug").map(str::to_string)),
+                    installation_id: j.get("id").and_then(serde_json::Value::as_u64).unwrap_or(0),
+                    owner,
+                    owner_type: t("/account/type").unwrap_or("User").to_string(),
+                    repository_selection: t("/repository_selection").unwrap_or("all").to_string(),
+                    vcsstar_orgs: orgs_here,
+                });
+            }
+            if !more {
+                break;
+            }
+            page += 1;
+        }
+    }
+    installations.sort_by_key(|a| a.owner.to_lowercase());
+    Ok(GithubInstallationList {
+        installations,
+        errors,
+    })
+}
+
 /// This node's view of GitHub: lane breakers, rate limits, and the size of
 /// the mirror backlog across every repository.
 pub fn health(app: &App, ctx: &ReqCtx, _req: vcsstar_types::Empty) -> Result<GithubHealth, Error> {
@@ -592,14 +718,14 @@ pub fn list_github_repos(
         .with_detail(format!("retry_after_s={}", wait.as_secs())));
     }
     let (items, more) = match &token.source {
-        cred::TokenSource::InstanceApp => gh.list_installation_repos(page, per_page)?,
+        cred::TokenSource::InstanceApp { .. } => gh.list_installation_repos(page, per_page)?,
         _ => gh.list_owner_repos(&owner, page, per_page)?,
     };
     // Which GitHub repositories this organization already mirrors.
-    let mirrored: Vec<(String, String)> = mirror_state::table
-        .inner_join(repos::table)
+    let mirrored: Vec<(RepoRow, StateRow)> = repos::table
+        .inner_join(mirror_state::table)
         .filter(repos::org_id.eq(org.id))
-        .select((mirror_state::github_repo, repos::name))
+        .select((RepoRow::as_select(), StateRow::as_select()))
         .load(&mut conn)?;
     let mut out = Vec::with_capacity(items.len());
     for j in &items {
@@ -629,11 +755,14 @@ pub fn list_github_repos(
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_string)
         };
+        let here = mirrored
+            .iter()
+            .find(|(_, st)| st.github_repo.eq_ignore_ascii_case(&full));
         out.push(GithubRepoInfo {
-            mirrored_as: mirrored
-                .iter()
-                .find(|(g, _)| g.eq_ignore_ascii_case(&full))
-                .map(|(_, n)| n.clone()),
+            mirrored_as: here.map(|(r, _)| r.name.clone()),
+            import_state: here
+                .and_then(|(r, st)| mirror_import::state(r, st))
+                .map(str::to_string),
             full_name: full,
             description: t("description").filter(|d| !d.is_empty()),
             private: b("private"),
@@ -654,9 +783,11 @@ pub fn list_github_repos(
     })
 }
 
-/// Onboard an existing GitHub repository: create the vcsstar repo, fetch
-/// every branch and tag, record them as refs and as already mirrored, and
-/// configure the mirror in the requested mode.
+/// Onboard an existing GitHub repository: make the vcsstar repository
+/// (paused, mirror not enabled) and queue its import. A mirror worker
+/// fetches every branch and tag and enables the mirror
+/// (`mirror_import::run`); `status` reports `import_state`. A request for
+/// a repository whose import did not finish (or failed) queues it again.
 pub fn import_repo(app: &App, ctx: &ReqCtx, req: ImportRequest) -> Result<Repo, Error> {
     let p = ctx.require()?;
     p.require_scope("repo:admin")?;
@@ -679,67 +810,146 @@ pub fn import_repo(app: &App, ctx: &ReqCtx, req: ImportRequest) -> Result<Repo, 
     let mut conn = app.conn()?;
     let org = authz::load_org(&mut conn, &req.org)?;
     authz::require_org_role(app, &mut conn, &org, p, OrgRole::Admin)?;
-    // The instance App's installation, the organization's credential set,
-    // then the caller's own link; a public repository also reads anonymously.
-    let owner = req.github_repo.split('/').next().unwrap_or_default();
-    let token = match cred::token_for_owner(app, &mut conn, org.id, owner, Some(p.identity.id)) {
-        Ok((t, _)) => {
-            tracing::info!(repo = %req.github_repo, source = %t.label(), "import credential chosen");
-            Some(t.value)
-        }
-        Err(crate::github::Failure::Terminal(_)) => None,
-        Err(e) => return Err(e.into()),
-    };
-    // Learn the default branch and the refs from GitHub before any row exists.
-    let scratch = tempfile::tempdir().map_err(Error::internal)?;
-    let scratch_dir = scratch.path().join("probe.git");
-    app.store.backend().init(&scratch_dir)?;
-    let url = mirror::github_url(app, &req.github_repo);
-    let remote = mirror::ls_remote(&scratch_dir, &url, token.as_deref())?;
-    let default_branch = token
-        .as_deref()
-        .and_then(|t| {
-            crate::github::Client::new(&app.config.github_api_base, t)
-                .get_repo(&req.github_repo)
-                .ok()
-                .flatten()
-                .and_then(|r| r.default_branch)
-        })
-        .or_else(|| {
-            remote
-                .iter()
-                .find(|(n, _)| n == "refs/heads/main" || n == "refs/heads/master")
-                .map(|(n, _)| n.trim_start_matches("refs/heads/").to_string())
-        })
-        .unwrap_or_else(|| "main".into());
-    let repo_id = vcsstar_db::new_id();
-    let repo = conn.transaction::<RepoRow, Error, _>(|conn| {
-        let row = NewRepo {
-            id: repo_id,
-            org_id: org.id,
+    let repo = queue_import(
+        app,
+        &mut conn,
+        p,
+        &ImportRow {
+            org: &org,
             name: &req.name,
+            github_repo: &req.github_repo,
+            mode,
             visibility,
-            vcs_type: "git",
-            default_branch: &default_branch,
-            description: None,
+        },
+    )?;
+    Ok(repo_svc::to_wire(app, &org, &repo))
+}
+
+/// Queue the import of every GitHub repository under the organization's
+/// `github_owner` with no mirror here yet. Lists GitHub (all pages) in the
+/// request; the imports run in the mirror workers.
+pub fn import_all(
+    app: &App,
+    ctx: &ReqCtx,
+    req: ImportAllRequest,
+) -> Result<ImportAllResult, Error> {
+    let p = ctx.require()?;
+    p.require_scope("repo:admin")?;
+    p.require_scope("mirror:manage")?;
+    let mode = req.mode.as_deref().unwrap_or("import_drift");
+    if !mirror::MODES.contains(&mode) {
+        return Err(Error::invalid(format!(
+            "mode must be one of {:?}",
+            mirror::MODES
+        )));
+    }
+    let skip_archived = req.skip_archived.unwrap_or(false);
+    let mut conn = app.conn()?;
+    let org = authz::load_org(&mut conn, &req.org)?;
+    authz::require_org_role(app, &mut conn, &org, p, OrgRole::Admin)?;
+    let owner = org.github_owner.clone().ok_or_else(|| {
+        Error::new(
+            Code::PreconditionFailed,
+            "set github_owner on the organization first (Orgs/update)",
+        )
+    })?;
+    let (token, _) = cred::token_for_owner(app, &mut conn, org.id, &owner, Some(p.identity.id))?;
+    let gh = crate::github::Client::new(&app.config.github_api_base, &token.value)
+        .with_label(&token.label());
+    let mut items = Vec::new();
+    for page in 1..=50u32 {
+        let (batch, more) = match &token.source {
+            cred::TokenSource::InstanceApp { .. } => gh.list_installation_repos(page, 100)?,
+            _ => gh.list_owner_repos(&owner, page, 100)?,
         };
-        let repo: RepoRow = diesel::insert_into(repos::table)
-            .values(&row)
-            .returning(RepoRow::as_returning())
-            .get_result(conn)?;
-        diesel::insert_into(mirror_state::table)
-            .values((
-                mirror_state::repo_id.eq(repo.id),
-                mirror_state::github_repo.eq(&req.github_repo),
-                mirror_state::mode.eq(mode),
-                mirror_state::paused.eq(true),
-            ))
-            .execute(conn)?;
+        items.extend(batch);
+        if !more {
+            break;
+        }
+    }
+    let mut out = ImportAllResult {
+        queued: Vec::new(),
+        skipped: Vec::new(),
+    };
+    for j in &items {
+        let t = |k: &str| j.get(k).and_then(serde_json::Value::as_str).unwrap_or("");
+        let b = |k: &str| {
+            j.get(k)
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+        };
+        let full = t("full_name").to_string();
+        let Some((o, name)) = full.split_once('/') else {
+            continue;
+        };
+        if !o.eq_ignore_ascii_case(&owner) {
+            continue;
+        }
+        if skip_archived && b("archived") {
+            out.skipped.push(format!("{full}: archived"));
+            continue;
+        }
+        let row = ImportRow {
+            org: &org,
+            name,
+            github_repo: &full,
+            mode,
+            visibility: if b("private") { "private" } else { "public" },
+        };
+        if let Err(e) = check_name("repository", name) {
+            out.skipped.push(format!("{full}: {}", e.message));
+            continue;
+        }
+        match queue_import(app, &mut conn, p, &row) {
+            Ok(_) => out.queued.push(full),
+            Err(e) if e.code == Code::AlreadyExists => {}
+            Err(e) => out.skipped.push(format!("{full}: {}", e.message)),
+        }
+    }
+    tracing::info!(org = %org.name, queued = out.queued.len(), skipped = out.skipped.len(), "import-all queued");
+    Ok(out)
+}
+
+/// Change how often the pull-based passes run for one repository.
+pub fn set_schedule(
+    app: &App,
+    ctx: &ReqCtx,
+    req: SetMirrorScheduleRequest,
+) -> Result<MirrorStatus, Error> {
+    let (mut conn, org, repo) =
+        open_admin(app, ctx, &req.repo.org, &req.repo.name, RepoRole::Admin)?;
+    let p = ctx.require()?;
+    p.require_scope("mirror:manage")?;
+    let check = |v: Option<u64>, what: &str| -> Result<Option<Option<i32>>, Error> {
+        match v {
+            None => Ok(None),
+            Some(0) => Ok(Some(None)),
+            Some(s) if (60..=604_800).contains(&s) => Ok(Some(Some(s as i32))),
+            Some(_) => Err(Error::invalid(format!(
+                "{what} must be 0 or 60 to 604800 seconds"
+            ))),
+        }
+    };
+    let pull = check(req.pull_sync_interval_s, "pull_sync_interval_s")?;
+    let refs_every = check(req.ref_reconcile_interval_s, "ref_reconcile_interval_s")?;
+    let state = mirror::state_for(&mut conn, repo.id)?
+        .ok_or_else(|| Error::new(Code::PreconditionFailed, "mirror not configured"))?;
+    conn.transaction::<(), Error, _>(|conn| {
+        if let Some(v) = pull {
+            diesel::update(mirror_state::table.find(repo.id))
+                .set(mirror_state::pull_sync_interval_s.eq(v))
+                .execute(conn)?;
+        }
+        if let Some(v) = refs_every {
+            diesel::update(mirror_state::table.find(repo.id))
+                .set(mirror_state::ref_reconcile_interval_s.eq(v))
+                .execute(conn)?;
+        }
         outbox::emit(
             conn,
             Emit {
                 lane: outbox::lane_for_repo(&org.name, &repo.name),
-                kind: "repo_created",
+                kind: "mirror_configured",
                 repo_id: Some(repo.id),
                 org_id: Some(org.id),
                 actor_id: Some(p.identity.id),
@@ -748,60 +958,137 @@ pub fn import_repo(app: &App, ctx: &ReqCtx, req: ImportRequest) -> Result<Repo, 
                 org: Some(org.name.clone()),
                 subject: None,
                 payload: EventPayload::Variant5(SettingsPayload {
-                    changed: vec!["created".into(), format!("import:{}", req.github_repo)],
+                    changed: vec!["schedule".into()],
                 }),
             },
         )?;
-        Ok(repo)
-    })?;
-    // Fetch history into the cache, then record refs (CAS from absent) and
-    // the mirrored shas so the first dispatch pushes nothing.
-    let dir = app.store.ensure(repo.id)?;
-    let fetch = |refspec: &str| mirror::fetch_ref(&dir, &url, token.as_deref(), refspec, refspec);
-    for (name, _) in &remote {
-        if let Err(e) = fetch(name) {
-            return Err(Error::new(
-                Code::Unavailable,
-                format!("fetch {name}: {}", e.message()),
-            ));
-        }
-    }
-    let updates: Vec<RefUpdate> = remote
-        .iter()
-        .map(|(n, s)| RefUpdate {
-            name: n.clone(),
-            old: None,
-            new: Some(RevId(s.clone())),
-        })
-        .collect();
-    let want: Vec<RevId> = remote.iter().map(|(_, s)| RevId(s.clone())).collect();
-    conn.transaction::<(), Error, _>(|conn| {
-        vcs::capture(app, conn, repo.id, &dir, &[], &want)?;
-        refs::apply(conn, repo.id, &updates, Some(p.identity.id))?;
-        for (n, s) in &remote {
-            diesel::insert_into(vcsstar_db::schema::mirror_refs::table)
-                .values((
-                    vcsstar_db::schema::mirror_refs::repo_id.eq(repo.id),
-                    vcsstar_db::schema::mirror_refs::ref_.eq(n),
-                    vcsstar_db::schema::mirror_refs::mirrored_sha.eq(s),
-                    vcsstar_db::schema::mirror_refs::last_verified_at.eq(Utc::now()),
-                ))
-                .execute(conn)?;
-        }
-        diesel::update(mirror_state::table.find(repo.id))
-            .set((
-                mirror_state::paused.eq(false),
-                mirror_state::last_full_reconcile_at.eq(Utc::now()),
-            ))
-            .execute(conn)?;
-        diesel::update(repos::table.find(repo.id))
-            .set(repos::mirror_enabled.eq(true))
-            .execute(conn)?;
         Ok(())
     })?;
-    let repo = repos::table
-        .find(repo.id)
+    let _ = state;
+    let s = mirror::state_for(&mut conn, repo.id)?
+        .ok_or_else(|| Error::new(Code::PreconditionFailed, "mirror not configured"))?;
+    status_wire(&mut conn, &org, &repo, &s)
+}
+
+/// What an import request writes for a new imported repository.
+struct ImportRow<'a> {
+    org: &'a OrgRow,
+    name: &'a str,
+    github_repo: &'a str,
+    mode: &'a str,
+    visibility: &'a str,
+}
+
+/// Make the row (or take the unfinished one) and submit the import task.
+/// A finished import of the name answers `AlreadyExists`.
+fn queue_import(
+    app: &App,
+    conn: &mut vcsstar_db::DbConn,
+    p: &crate::principal::Principal,
+    row: &ImportRow<'_>,
+) -> Result<RepoRow, Error> {
+    let now = Utc::now();
+    // An import that did not finish (stopped, failed, or still queued)
+    // keeps its row: queue it again for this requester.
+    let stub: Option<RepoRow> = repos::table
+        .inner_join(mirror_state::table)
+        .filter(repos::org_id.eq(row.org.id))
+        .filter(repos::name.eq(row.name))
+        .filter(repos::mirror_enabled.eq(false))
+        .filter(mirror_state::github_repo.eq(row.github_repo))
+        .filter(mirror_state::import_done_at.is_null())
         .select(RepoRow::as_select())
-        .first(&mut conn)?;
-    Ok(repo_svc::to_wire(app, &org, &repo))
+        .first(conn)
+        .optional()?;
+    let stub = match stub {
+        Some(r) if refs::load(conn, r.id)?.is_empty() => Some(r),
+        _ => None,
+    };
+    let repo = match stub {
+        Some(r) => {
+            let state = mirror::state_for(conn, r.id)?;
+            let running = state.as_ref().is_some_and(|s| {
+                s.import_requested_at.is_some() && s.import_attempts < mirror_import::MAX_ATTEMPTS
+            });
+            if running {
+                // Still queued: nothing to change.
+                return Ok(r);
+            }
+            diesel::update(mirror_state::table.find(r.id))
+                .set((
+                    mirror_state::import_requested_by.eq(p.identity.id),
+                    mirror_state::import_requested_at.eq(now),
+                    mirror_state::import_attempts.eq(0),
+                    mirror_state::import_claimed_at.eq(None::<chrono::DateTime<Utc>>),
+                ))
+                .execute(conn)?;
+            tracing::info!(repo = %row.github_repo, "import queued again");
+            r
+        }
+        None => create_import_row(conn, p, row, now)?,
+    };
+    if let Err(e) = mirror_import::submit(app, repo.id, now) {
+        // The worker's sweep submits it again (`mirror_import::resubmit_lost`).
+        tracing::warn!(repo = %row.github_repo, error = %e.message, "import task not submitted; the sweep retries");
+    }
+    Ok(repo)
+}
+
+/// The repository row and its paused mirror state, before any fetch.
+fn create_import_row(
+    conn: &mut vcsstar_db::DbConn,
+    p: &crate::principal::Principal,
+    row: &ImportRow<'_>,
+    now: chrono::DateTime<Utc>,
+) -> Result<RepoRow, Error> {
+    let repo_id = vcsstar_db::new_id();
+    // The row mirrors what GitHub has: the event carries origin `github`,
+    // so the dispatcher sends no settings back (an empty description would
+    // otherwise blank GitHub's). The worker sets GitHub's default branch
+    // and description.
+    outbox::with_origin("github", || {
+        conn.transaction::<RepoRow, Error, _>(|conn| {
+            let new_row = NewRepo {
+                id: repo_id,
+                org_id: row.org.id,
+                name: row.name,
+                visibility: row.visibility,
+                vcs_type: "git",
+                default_branch: "main",
+                description: None,
+            };
+            let repo: RepoRow = diesel::insert_into(repos::table)
+                .values(&new_row)
+                .returning(RepoRow::as_returning())
+                .get_result(conn)?;
+            diesel::insert_into(mirror_state::table)
+                .values((
+                    mirror_state::repo_id.eq(repo.id),
+                    mirror_state::github_repo.eq(row.github_repo),
+                    mirror_state::mode.eq(row.mode),
+                    mirror_state::paused.eq(true),
+                    mirror_state::import_requested_by.eq(p.identity.id),
+                    mirror_state::import_requested_at.eq(now),
+                ))
+                .execute(conn)?;
+            outbox::emit(
+                conn,
+                Emit {
+                    lane: outbox::lane_for_repo(&row.org.name, &repo.name),
+                    kind: "repo_created",
+                    repo_id: Some(repo.id),
+                    org_id: Some(row.org.id),
+                    actor_id: Some(p.identity.id),
+                    actor: Some(p.to_wire()),
+                    repo: Some(vcs::repo_ref(row.org, &repo)),
+                    org: Some(row.org.name.clone()),
+                    subject: None,
+                    payload: EventPayload::Variant5(SettingsPayload {
+                        changed: vec!["created".into(), format!("import:{}", row.github_repo)],
+                    }),
+                },
+            )?;
+            Ok(repo)
+        })
+    })
 }

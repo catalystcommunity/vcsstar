@@ -23,3 +23,6 @@ deploy/values-*.yaml
 dev/*.local
 dev/corndogs.env
 .playwright-mcp/
+
+# Scratch files with secrets (GitHub App credentials and similar)
+temp_*

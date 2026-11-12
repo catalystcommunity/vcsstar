@@ -23,7 +23,30 @@ fn to_wire(o: &OrgRow) -> Org {
         display_name: o.display_name.clone(),
         github_owner: o.github_owner.clone(),
         created_at: to_ms(o.created_at),
+        viewer_role: None,
     }
+}
+
+/// The caller's role in the organization, for `Org.viewer_role`.
+fn viewer_role(
+    app: &App,
+    conn: &mut DbConn,
+    o: &OrgRow,
+    ctx: &ReqCtx,
+) -> Result<Option<String>, Error> {
+    let Some(p) = ctx.principal.as_ref() else {
+        return Ok(None);
+    };
+    if authz::is_instance_admin(app, p) {
+        return Ok(Some(OrgRole::Owner.as_str().into()));
+    }
+    Ok(authz::org_role(conn, o, p)?.map(|r| r.as_str().to_string()))
+}
+
+fn to_wire_for(app: &App, conn: &mut DbConn, o: &OrgRow, ctx: &ReqCtx) -> Result<Org, Error> {
+    let mut org = to_wire(o);
+    org.viewer_role = viewer_role(app, conn, o, ctx)?;
+    Ok(org)
 }
 
 fn load_identity(conn: &mut DbConn, key: &str) -> Result<Identity, Error> {
@@ -87,12 +110,13 @@ pub fn create(app: &App, ctx: &ReqCtx, req: CreateOrgRequest) -> Result<Org, Err
     Ok(to_wire(&org))
 }
 
-pub fn get(app: &App, _ctx: &ReqCtx, req: GetOrgRequest) -> Result<Org, Error> {
+pub fn get(app: &App, ctx: &ReqCtx, req: GetOrgRequest) -> Result<Org, Error> {
     let mut conn = app.conn()?;
-    Ok(to_wire(&authz::load_org(&mut conn, &req.org)?))
+    let org = authz::load_org(&mut conn, &req.org)?;
+    to_wire_for(app, &mut conn, &org, ctx)
 }
 
-pub fn list(app: &App, _ctx: &ReqCtx, req: ListOrgsRequest) -> Result<OrgPage, Error> {
+pub fn list(app: &App, ctx: &ReqCtx, req: ListOrgsRequest) -> Result<OrgPage, Error> {
     let mut conn = app.conn()?;
     let limit = req
         .page
@@ -114,10 +138,11 @@ pub fn list(app: &App, _ctx: &ReqCtx, req: ListOrgsRequest) -> Result<OrgPage, E
     } else {
         None
     };
-    Ok(OrgPage {
-        orgs: rows.iter().map(to_wire).collect(),
-        next_cursor,
-    })
+    let mut orgs = Vec::with_capacity(rows.len());
+    for o in &rows {
+        orgs.push(to_wire_for(app, &mut conn, o, ctx)?);
+    }
+    Ok(OrgPage { orgs, next_cursor })
 }
 
 pub fn update(app: &App, ctx: &ReqCtx, req: UpdateOrgRequest) -> Result<Org, Error> {

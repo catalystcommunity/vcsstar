@@ -166,6 +166,7 @@ diesel::table! {
         linked_at -> Timestamptz,
         updated_at -> Timestamptz,
         last_used_at -> Nullable<Timestamptz>,
+        app_id -> Nullable<Text>,
     }
 }
 
@@ -257,6 +258,16 @@ diesel::table! {
 }
 
 diesel::table! {
+    instance_roles (identity_id) {
+        identity_id -> Uuid,
+        role -> Text,
+        source -> Text,
+        granted_by -> Nullable<Uuid>,
+        granted_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
     lane_counters (lane) {
         lane -> Text,
         next_seq -> Int8,
@@ -318,6 +329,20 @@ diesel::table! {
         created_at -> Timestamptz,
         last_pull_sync_at -> Nullable<Timestamptz>,
         last_pull_pass_at -> Nullable<Timestamptz>,
+        backfill_page -> Int4,
+        backfill_index -> Int4,
+        backfill_pulls -> Int4,
+        backfill_heads_at -> Nullable<Timestamptz>,
+        backfill_pass_at -> Nullable<Timestamptz>,
+        backfill_started_at -> Nullable<Timestamptz>,
+        backfill_done_at -> Nullable<Timestamptz>,
+        import_requested_by -> Nullable<Uuid>,
+        import_requested_at -> Nullable<Timestamptz>,
+        import_claimed_at -> Nullable<Timestamptz>,
+        import_attempts -> Int4,
+        import_done_at -> Nullable<Timestamptz>,
+        pull_sync_interval_s -> Nullable<Int4>,
+        ref_reconcile_interval_s -> Nullable<Int4>,
     }
 }
 
@@ -543,6 +568,14 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    user_preferences (identity_id) {
+        identity_id -> Uuid,
+        diff_layout -> Text,
+        updated_at -> Timestamptz,
+    }
+}
+
 diesel::joinable!(act_as_grants -> identities (identity_id));
 diesel::joinable!(api_tokens -> identities (identity_id));
 diesel::joinable!(app_key_cache -> identities (identity_id));
@@ -563,6 +596,7 @@ diesel::joinable!(identity_claims -> identities (identity_id));
 diesel::joinable!(mirror_actions -> repos (repo_id));
 diesel::joinable!(mirror_attempts -> mirror_actions (action_id));
 diesel::joinable!(mirror_refs -> repos (repo_id));
+diesel::joinable!(mirror_state -> identities (import_requested_by));
 diesel::joinable!(mirror_state -> repos (repo_id));
 diesel::joinable!(org_members -> identities (identity_id));
 diesel::joinable!(org_members -> orgs (org_id));
@@ -584,6 +618,7 @@ diesel::joinable!(statuses -> repos (repo_id));
 diesel::joinable!(team_members -> identities (identity_id));
 diesel::joinable!(team_members -> teams (team_id));
 diesel::joinable!(teams -> orgs (org_id));
+diesel::joinable!(user_preferences -> identities (identity_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     act_as_grants,
@@ -605,6 +640,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     identities,
     identity_claims,
     instance_keys,
+    instance_roles,
     lane_counters,
     mirror_actions,
     mirror_attempts,
@@ -627,4 +663,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     statuses,
     team_members,
     teams,
+    user_preferences,
 );

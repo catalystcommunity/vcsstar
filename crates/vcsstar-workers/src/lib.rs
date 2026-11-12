@@ -2,8 +2,10 @@
 //! unit of pending work, guarded claims, idempotent workers that read the
 //! desired state from Postgres at execution time.
 
+pub mod backfill;
 pub mod dispatcher;
 pub mod hooks;
+pub mod import;
 pub mod ingest;
 pub mod mirror;
 pub mod repack;

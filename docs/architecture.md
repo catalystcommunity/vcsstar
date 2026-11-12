@@ -189,7 +189,35 @@ Work made on vcsstar during an outage is a bounded set of pending actions,
 not a log: a day of pushes to one branch is one action carrying the newest
 target. Work made on GitHub during an outage is found by the pull pass when
 the lane recovers. Rate limits are respected per token: below a reserve the
-token waits for its window, and a `Retry-After` is honoured.
+token waits for its window, and a `Retry-After` is honoured. GitHub limits
+the rate per App installation, so an instance may have several GitHub Apps:
+each call goes through the installed App with the most calls left. The
+rate state of every token is a Prometheus gauge with the App id as a label.
+
+A new mirror also imports its history: every pull request GitHub has, from
+the first one, with its reviews and comments, at GitHub's own numbers and
+times. The import keeps its position after each pull request and keeps a
+larger rate reserve than live work, so pushes and comments go through while
+it runs.
+
+Enabling a repository is durable work too. The request makes the
+repository row and puts one import task into corndogs, then answers. A
+mirror worker fetches the branches and tags and enables the mirror; a pod
+restart only delays the task, and a failed attempt waits and tries again.
+"Enable all" queues every repository of the GitHub owner at once. Each
+repository has its own cadence for the pull-based passes (15 minutes by
+default).
+
+## Access
+
+What a caller can do decides what is shown and what is requested. An
+anonymous caller reads public repositories. Organization roles (owner,
+admin, member) and repository roles (admin, maintain, write, read) come
+back on the records the caller reads (`viewer_role`), and the web UI builds
+only the sections that role can use. Instance roles sit above them: an
+instance admin manages everything, an instance viewer reads every
+repository. Admins set instance roles; a policy from LinkKeys claims is
+planned.
 
 ## Identity
 
@@ -221,8 +249,8 @@ the home domain is per application: vcsstar signs people in as the
 application `vcsstar` of its LinkKeys account, the same application its
 instance keys and act-as grants use. A linked GitHub
 account makes vcsstar act on GitHub as that person; an unlinked actor's
-work goes through the instance's GitHub App, then the organization's
-credential. GitHub accounts without a link appear as shadow identities.
+work goes through one of the instance's GitHub Apps, then the
+organization's credential. GitHub accounts without a link appear as shadow identities.
 
 ## Where to read more
 

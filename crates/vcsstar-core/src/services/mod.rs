@@ -4,6 +4,7 @@
 pub mod actas;
 pub mod auth;
 pub mod hooks;
+pub mod instance;
 pub mod keys;
 pub mod login;
 pub mod meta;

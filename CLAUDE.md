@@ -103,6 +103,12 @@ helm/                    chart for the catalyst cluster
   approves the code at `/auth/device`. `--token-stdin` and `--token-file`
   store a token directly. First admin: `vcsstard bootstrap-token`.
 
+- HTTP handlers that touch Postgres, corndogs, git, or the network wrap
+  their body in `http::blocking` (`block_in_place`). Rocket 0.5 runs a
+  sync handler on one of its four async workers; a few slow requests
+  (an `import-repo` fetch) then stalled `/healthz` and the liveness probe
+  restarted the pod.
+
 ## Git serving (phase 1)
 
 - Roles: `api` serves CSIL-RPC, the browser pages, and git smart HTTP at
@@ -168,8 +174,13 @@ helm/                    chart for the catalyst cluster
   it for a one-hour installation token, cached per credential on the node
   and dropped on a terminal GitHub failure. Workers see a plain token
   either way. `webhook_inbound` has no `github_app` form.
-- `POST /hooks/github` verifies `X-Hub-Signature-256` with the repo's
-  `webhook_inbound` credential, captures the raw body into corndogs
+- `POST /hooks/github` verifies `X-Hub-Signature-256` first with the
+  `webhook_secret` of every configured GitHub App (field of
+  `SECRET_VCSSTAR__GITHUB_APPS`, or `SECRET_VCSSTAR__GITHUB_APP_WEBHOOK_SECRET`;
+  `github::signed_by_app`), then with the repo's `webhook_inbound` set. An
+  App-signed delivery without a repository (installation events) or for
+  a repository with no mirror answers 202 (`not_mirrored`). The rest:
+  verified with the `webhook_inbound` credential, captures the raw body into corndogs
   (key `github:<delivery id>`), and answers 202. For `push` the ingest
   worker verifies the hinted ref; it never applies the payload. A GitHub
   App hook and a repository hook deliver one event with the *same*
@@ -239,17 +250,28 @@ helm/                    chart for the catalyst cluster
   `SECRET_VCSSTAR__CREDENTIAL_KEY`; App user tokens are refreshed five
   minutes before expiry; a refused token marks the link broken
   (`broken_reason`) and the user connects again.
-- The instance App is `SECRET_VCSSTAR__GITHUB_APP_ID`, `_CLIENT_ID`,
-  `_CLIENT_SECRET`, `_PRIVATE_KEY` (all four, else it is ignored with a
-  warning) and `VCSSTAR__GITHUB_APP_SLUG` for display. Chart:
+- The instance has a list of GitHub Apps (`config.github_apps`):
+  `SECRET_VCSSTAR__GITHUB_APPS` is a JSON list of `{app_id, client_id,
+  client_secret, private_key, slug?}`; the older single App
+  (`SECRET_VCSSTAR__GITHUB_APP_ID`, `_CLIENT_ID`, `_CLIENT_SECRET`,
+  `_PRIVATE_KEY`, all four, and `VCSSTAR__GITHUB_APP_SLUG`) is added when
+  its id is not in the list. The first App links user accounts;
+  `github_links.app_id` records the issuing App, and refresh and revoke
+  use it. GitHub limits the rate per installation, so
+  `cred::best_install` looks up every App's installation for the
+  repository or owner and takes the one not held with the most calls left.
+  Token label `app:<app id>/<installation>`. Chart:
   `githubApp.existingSecret`, `githubApp.slug`; the deploy job writes
-  Secret `vcsstar-github-app` from the store keys
-  `catalystcommunity/vcsstar:github-app-*`. The App needs the callback
+  Secret `vcsstar-github-app` from `GITHUB_APPS` (store key
+  `catalystcommunity/vcsstar:<instance>-github-apps`, made by
+  `tools/store-github-apps.sh`). `Mirror/list-github-installations`
+  lists where the Apps are installed (home page). Every App needs the callback
   URL `<publicUrl>/auth/github/callback`, "Request user authorization
   during installation", permissions contents, pull requests, and commit
   statuses (write) plus metadata (read), and the webhook URL
-  `<publicUrl>/hooks/github` with a secret that is a member of the org's
-  `webhook_inbound` set.
+  `<publicUrl>/hooks/github` with the secret given as the App's
+  `webhook_secret` (`WEBHOOK_SECRET_FILE` for `tools/store-github-apps.sh`),
+  or a member of the org's `webhook_inbound` set.
 - Token order for every mirror operation (`cred::token_for_actor`): the
   event actor's own linked token, then the instance App's installation
   token when the App is installed for the repository (looked up by
@@ -280,6 +302,34 @@ helm/                    chart for the catalyst cluster
   (`GET /orgs|users/{owner}/installation`), the organization's credential
   set, then the caller's own link. `Mirror/import-repo` ("Enable" on the
   Org page, mode `import_drift`) uses the same order.
+- Imports are durable work (`vcsstar_core::mirror_import`, worker
+  `crates/vcsstar-workers/src/import.rs`, two threads of the
+  `mirror-worker` role). `import-repo` and `import-all` ("Enable all":
+  every GitHub repository of the owner, all pages) only make the row
+  (paused, not enabled, `mirror_state.import_requested_*`) under origin
+  `github` and submit a task to queue `import:github` (key
+  `import:<repo id>:<request ms>`); the answer comes before any fetch.
+  The worker claims the repository (`import_claimed_at`), fetches every
+  branch and tag in batches, takes GitHub's default branch and
+  description, records the refs under origin `github`, and enables the
+  mirror. A failed attempt parks the task (1, 2, 4, 8, 16 min); after
+  `MAX_ATTEMPTS` (6) the state is "failed" and a new request queues it
+  again. A pod restart only delays a task (lease 30 min); a submission
+  lost while corndogs was down is submitted again by the sweep
+  (`resubmit_lost`, every 2 min). `MirrorStatus.import_state` and
+  `GithubRepoInfo.import_state` report "queued", "failed", or "done";
+  the Org page polls while imports are queued. Metric
+  `vcsstar_github_import_total{outcome}`.
+- Per-repository cadence: `mirror_state.pull_sync_interval_s` and
+  `ref_reconcile_interval_s` (60 to 604800 s; NULL is 900 s), set with
+  `Mirror/set-schedule` (0 restores the default; Mirror tab, Schedule).
+  The worker's due queries read them (`due_filter`).
+- A closed or merged pull request from GitHub's history keeps GitHub's
+  base sha of the time and gets `merge_base_sha` from the merge commit's
+  first parent (merged) or the base (closed) and the head
+  (`prs::settle_history_base`, at import and lazily on `PullRequests/get`
+  for older rows). Without it the Files view compared the head with
+  today's base branch.
 
 ## GitHub outages, reconcile, and rate limits
 
@@ -296,12 +346,33 @@ helm/                    chart for the catalyst cluster
   which makes every repository due for both reconcile passes at once.
   A 4xx answer (401, 403 without a limit, 404, 422) is not a lane failure.
   A healthy lane writes its row at most once a minute.
-- Rate limits are tracked per token label (`app`, `user:<login>`, a
-  credential purpose, `tok:<hash>`) from the `X-RateLimit-*` headers of
+- Rate limits are tracked per token label (`app:<app id>/<installation>`,
+  `user:<login>`, a credential purpose, `tok:<hash>`) from the `X-RateLimit-*` headers of
   every response. Below the reserve (2 %, at least 50 calls) the token is
   held until its window resets; a `Retry-After` holds it for that long.
   `github_sync::client` and the pull pass check the hold first; a parked
   task waits at least as long as the longest hold (`longest_hold`).
+- History import (`github_sync::backfill_pulls`, `crates/vcsstar-workers/
+  src/backfill.rs`, a thread of the `mirror-worker` role): every mirrored
+  repository imports all its GitHub pull requests, oldest first
+  (`sort=created&direction=asc`), with reviews and comments (all pages)
+  and, for open ones, statuses and check runs. Cursor `mirror_state.
+  backfill_page`/`backfill_index`, saved after each pull request;
+  `backfill_done_at` NULL means pending; `backfill_pass_at` is the claim
+  and the round-robin schedule. Before the first page every
+  `refs/pull/*/head` is fetched in one go (`mirror::fetch_pull_heads`) and
+  captured as one segment. A pass spends at most `BACKFILL_BUDGET` (300)
+  calls and stops at `github_health::bulk_hold` (reserve a tenth of the
+  window, at least 250 calls), so live work keeps priority; nothing runs
+  while the api lane is open. A pull request that fails three passes in a
+  row (or fails for good) is skipped and named in `last_error`. Imports
+  keep GitHub's numbers when free (`number_for_import`; the counter moves
+  past them) and GitHub's `created_at`, `closed_at`/`merged_at`,
+  `submitted_at`; a closed pull request never recreates its branch.
+  `Mirror/backfill` starts it again; `MirrorStatus.backfill_*` reports it.
+  Metrics `vcsstar_github_backfill_total{outcome}`,
+  `vcsstar_github_backfill_pulls_total`. `Mirror/import-repo` fetches all
+  refs in batched `git fetch` calls (`mirror::fetch_refs`).
 - Webhooks are not retried by GitHub, so the mirror worker also runs a
   pull-based pass (`github_sync::reconcile_pulls`): every 15 minutes per
   repository (two repositories per minute per node, oldest first, and all
@@ -312,9 +383,10 @@ helm/                    chart for the catalyst cluster
   `updated_at` newest first, stops at `mirror_state.last_pull_sync_at`,
   and replays the newer ones with their reviews, comments, statuses, and
   check runs through the webhook upserts under origin `github`. The first
-  pass takes open pull requests only (no history import). A pass spends
+  pass takes open pull requests only (the history import does the rest). A pass spends
   at most `PULL_SYNC_BUDGET` (150) calls and stops at a rate limit hold
-  without moving the watermark. Deletions made on GitHub are not seen by
+  without moving the watermark past what it replayed (it replays oldest
+  first and keeps the progress). Deletions made on GitHub are not seen by
   this pass. `Mirror/reconcile` runs it too and reports `pulls_checked`,
   `pulls_changed`, `pulls_complete`.
 - Every inbound snapshot carries GitHub's `updated_at`; it is stored on
@@ -325,7 +397,9 @@ helm/                    chart for the catalyst cluster
   (pending and blocked actions, oldest pending). Metrics:
   `vcsstar_github_lane_open{lane}`,
   `vcsstar_github_lane_transitions_total{lane,to}`,
-  `vcsstar_github_rate_limit_remaining{token}`,
+  `vcsstar_github_rate_limit_remaining`, `_limit`, `_reset_seconds`,
+  `_held` (labels `token`, `app_id`, `installation`; from the shared rate
+  table at scrape time, so every pod answers the same),
   `vcsstar_github_pull_sync_total{outcome}`,
   `vcsstar_hook_deliveries_total{outcome}`, the mirror action outcome
   `held`, and three gauges read from Postgres at scrape time on any node:
@@ -351,6 +425,37 @@ helm/                    chart for the catalyst cluster
   hook socket is local to the pod running `git receive-pack`).
 - `replicaCount` with every role in each pod scales the whole instance;
   separate deployments per role are a chart change, not a code change.
+
+## Instance roles and the viewer's role
+
+- `Instance/*` (`services/instance.rs`, table `instance_roles`): an
+  instance admin gives an identity (`user_id@domain`, seen once) the role
+  `admin` (as `INSTANCE_ADMINS`) or `viewer` (reads every repository,
+  private ones too; no writes). `source` is `manual`; `claims` is
+  reserved for a LinkKeys claim policy. The role is read when the
+  credential resolves (`Principal.instance_role`); `authz::is_instance_admin`
+  takes the configuration or the table. Events on lane `@instance`.
+  Account page, "Instance roles" (instance admins only).
+- The caller's role rides on the records: `WhoAmI.instance_role`,
+  `Org.viewer_role` (owner, admin, member), `Repo.viewer_role` (admin,
+  maintain, write, read; set by `get`, `list`, `list-forks`). The UI
+  builds and requests only what the role allows: anonymous viewers see
+  public repositories, the Org repository list, and the Code, Commits,
+  Pull requests, and read-only Mirror tabs; members see members and
+  teams; org admins get GitHub, credentials, service accounts, webhooks;
+  repo admins get Settings, Webhooks, and the mirror schedule; merge
+  needs write (the author may also close and reopen).
+
+## Forks and pull requests across organizations
+
+- `Repos/fork` copies refs and the segment manifest into an organization
+  where the caller is admin ("Fork" on the repository page).
+  `Repo.fork_of` names the parent; `Repos/list-forks` lists the direct
+  forks the caller can see. A pull request goes into a repository from
+  the repository itself or a direct fork of it, in any organization on
+  the instance ("New pull request": into this repository or its parent,
+  from the base or one of its forks). A same-repository pair shows the
+  compare diff before it opens.
 
 ## Service accounts
 
@@ -406,6 +511,26 @@ helm/                    chart for the catalyst cluster
 - Live updates: `ui/src/live.ts` speaks CSIL-Events (verbose profile) to
   `GET /csil/v1/events`; the gateway (`crates/vcsstard/src/events_ws.rs`)
   polls the outbox for the subscribed lanes every second.
+- A section or tab that needs a sign-in is not built for an anonymous
+  viewer, and its ops are not called (no error shown in its place). A
+  signed-out viewer gets the Org page's repository list and the Code,
+  Commits, Pull requests, and read-only Mirror tabs; another tab in the
+  path opens Code.
+- Code and diffs (`ui/src/render.ts`, `ui/src/pages/diff.ts`): markdown
+  is markdown-it, sanitized with DOMPurify (HTML allowed, scripts never);
+  relative links go to the code view, relative images load through
+  `Repos/blob`. highlight.js (every language) and mermaid (`securityLevel:
+  strict`) are dynamic imports. A file view highlights with line
+  numbers, renders markdown and mermaid with a Source toggle, shows media
+  inline, and has Raw (always plain text: an HTML or SVG file never runs
+  as a page of this origin) and Download (bytes read in 2 MB pieces, up
+  to 64 MB). The directory README renders under the listing. Diffs are
+  side by side or in-line; `Auth/get-preferences`/`set-preferences`
+  (`user_preferences.diff_layout`) keep a signed-in viewer's choice,
+  anonymous viewers get side by side. A file's diff is drawn when it is
+  first opened; the PR Files tab reads every page of `Repos/diff`.
+- Class names in `@layer page` are global: check for a clash before you
+  add one (`.split` and `.empty` exist).
 - Every button calls a contract op. Nothing in the UI reaches the server
   by another path.
 - The shell routes only links made with `link()` (`data-nav`). A link to a
@@ -422,8 +547,20 @@ helm/                    chart for the catalyst cluster
   template, real overlays live in `~/.config/vcsstar/values-<instance>.yaml`,
   and the deploy job reads its overlay from the secret store
   (`catalystcommunity/vcsstar:values-catalystsquad` -> `DEPLOY_VALUES`).
-  The reactorcide workflow `vcsstar-deploy-catalystsquad` builds and deploys
-  on push to `production`.
+- `.reactorcide/jobs/deploy.yaml` (`vcsstar-deploy`) knows no instance. An
+  instance is an environment overlay, `.reactorcide/overlays/deploy-
+  <instance>.yaml`: namespace and secret references only (hostnames and
+  addresses stay in the store). `tools/deploy.sh dev <instance>` runs it
+  through `reactorcide run-local` with the LOCAL store (`DEPLOY_MODE=dev`:
+  tag `dev-<utc>-<sha>[-dirty]`, no `:latest`, no CLI image, pull Always);
+  CI uses the PRODUCTION store through the workflow
+  `vcsstar-deploy-catalystsquad` (node of the same name, `job_file:
+  deploy.yaml` plus the overlay's environment; keep both in step) on push
+  to `production`. The job writes Secrets `vcsstar-linkkeys`,
+  `vcsstar-github-app`, `vcsstar-objectstore`, `vcsstar-backup-s3` from
+  the store when their keys are set, without putting a value in argv.
+- vcsstar.catalystsquad.com is an application of the todandlorna.com
+  LinkKeys server (account `vcsstar@todandlorna.com`).
 - Secrets reach the cluster from the reactorcide store through the deploy
   job (`vcsstar-linkkeys` Secret). Never put a secret value in values files.
 - Postgres comes from CloudNativePG (`postgresql.operator: cnpg`, Secret

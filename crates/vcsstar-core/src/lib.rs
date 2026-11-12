@@ -16,6 +16,7 @@ pub mod instance_keys;
 pub mod linkkeys;
 pub mod metrics;
 pub mod mirror;
+pub mod mirror_import;
 pub mod outbox;
 pub mod principal;
 pub mod push;

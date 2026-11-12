@@ -1,7 +1,10 @@
-# Build the image and deploy vcsstar.catalystsquad.com on every push to the
-# `production` branch that changes server code, the contract, migrations, the
-# chart, or values. Production is gated on that branch until the open gaps in
-# plan/14-status.md are closed; fast-forward `production` to `main` to deploy.
+# Build the image and deploy the catalystsquad instance on every push to
+# the `production` branch that changes server code, the contract,
+# migrations, the chart, or the deploy job. Fast-forward `production` to
+# `main` to deploy. The node name is what the secret grants match.
+#
+# The environment is the instance overlay
+# .reactorcide/overlays/deploy-catalystsquad.yaml; change both together.
 id: vcsstar-deploy-catalystsquad
 name: vcsstar deploy catalystsquad
 on:
@@ -20,8 +23,20 @@ paths:
     - "ui/**"
     - "Cargo.toml"
     - "Cargo.lock"
-    - ".reactorcide/jobs/deploy-catalystsquad.yaml"
+    - ".reactorcide/jobs/deploy.yaml"
     - ".reactorcide/jobs/scripts/deploy.sh"
+    - ".reactorcide/overlays/deploy-catalystsquad.yaml"
+    - ".reactorcide/workflows/deploy-catalystsquad.yaml"
 jobs:
   vcsstar-deploy-catalystsquad:
-    job_file: deploy-catalystsquad.yaml
+    job_file: deploy.yaml
+    environment:
+      K8S_NAMESPACE: "vcsstar"
+      HELM_RELEASE: "vcsstar"
+      DEPLOY_VALUES: "${secret:catalystcommunity/vcsstar:values-catalystsquad}"
+      LINKKEYS_API_KEY: "${secret:catalystcommunity/vcsstar:catalystsquad-linkkeys-api-key}"
+      OBJECT_STORE_ACCESS_KEY: "${secret:catalystcommunity/vcsstar:catalystsquad-object-store-access-key}"
+      OBJECT_STORE_SECRET_KEY: "${secret:catalystcommunity/vcsstar:catalystsquad-object-store-secret-key}"
+      BACKUP_S3_ACCESS_KEY_ID: "${secret:catalystcommunity/vcsstar:catalystsquad-backup-access-key}"
+      BACKUP_S3_SECRET_KEY: "${secret:catalystcommunity/vcsstar:catalystsquad-backup-secret-key}"
+      GITHUB_APPS: "${secret:catalystcommunity/vcsstar:catalystsquad-github-apps}"

@@ -110,6 +110,18 @@ pub trait Auth {
     ) -> Result<GithubLink, ServiceError>;
     /// unlink-github (request/response).
     fn unlink_github(&self, ctx: &Self::Context, input: Empty) -> Result<Ok, ServiceError>;
+    /// The caller's display preferences (defaults when none are saved).
+    fn get_preferences(
+        &self,
+        ctx: &Self::Context,
+        input: Empty,
+    ) -> Result<Preferences, ServiceError>;
+    /// Save the given fields; absent fields keep their value.
+    fn set_preferences(
+        &self,
+        ctx: &Self::Context,
+        input: SetPreferencesRequest,
+    ) -> Result<Preferences, ServiceError>;
 }
 
 /// Wire-id ordinals for the Auth service (transport compact profiles).
@@ -133,6 +145,8 @@ pub mod auth_wire_ids {
     pub const OP_GITHUB_LINK_STATUS: u64 = 15;
     pub const OP_SET_GITHUB_TOKEN: u64 = 16;
     pub const OP_UNLINK_GITHUB: u64 = 17;
+    pub const OP_GET_PREFERENCES: u64 = 18;
+    pub const OP_SET_PREFERENCES: u64 = 19;
 }
 
 /// Orgs service trait
@@ -284,6 +298,13 @@ pub trait Repos {
         ctx: &Self::Context,
         input: GetRepoRequest,
     ) -> Result<CaptureReport, ServiceError>;
+    /// Direct forks of the repository that the caller can see, on this
+    /// instance. A pull request into the repository may come from one.
+    fn list_forks(
+        &self,
+        ctx: &Self::Context,
+        input: GetRepoRequest,
+    ) -> Result<RepoPage, ServiceError>;
 }
 
 /// Wire-id ordinals for the Repos service (transport compact profiles).
@@ -309,6 +330,7 @@ pub mod repos_wire_ids {
     pub const OP_REMOVE_PROTECTION: u64 = 17;
     pub const OP_LIST_PROTECTIONS: u64 = 18;
     pub const OP_CAPTURE_HISTORY: u64 = 19;
+    pub const OP_LIST_FORKS: u64 = 20;
 }
 
 /// PullRequests service trait
@@ -478,7 +500,8 @@ pub trait Mirror {
     fn pause(&self, ctx: &Self::Context, input: GetRepoRequest) -> Result<Ok, ServiceError>;
     /// resume (request/response).
     fn resume(&self, ctx: &Self::Context, input: GetRepoRequest) -> Result<Ok, ServiceError>;
-    /// import-repo (request/response).
+    /// Make the repository and queue its import. The answer comes before
+    /// the branches are fetched; `status` reports `import_state`.
     fn import_repo(&self, ctx: &Self::Context, input: ImportRequest) -> Result<Repo, ServiceError>;
     /// configure (request/response).
     fn configure(
@@ -508,6 +531,33 @@ pub trait Mirror {
     ) -> Result<GithubRepoPage, ServiceError>;
     /// This node's view of GitHub availability and rate limits.
     fn health(&self, ctx: &Self::Context, input: Empty) -> Result<GithubHealth, ServiceError>;
+    /// Start the history import of the repository's GitHub pull requests
+    /// again from the first one. A mirrored repository imports its history
+    /// by itself; this is for a repository whose import must run again.
+    fn backfill(
+        &self,
+        ctx: &Self::Context,
+        input: GetRepoRequest,
+    ) -> Result<MirrorStatus, ServiceError>;
+    /// Where the instance's GitHub Apps are installed, with the vcsstar
+    /// organizations whose `github_owner` is each owner.
+    fn list_github_installations(
+        &self,
+        ctx: &Self::Context,
+        input: Empty,
+    ) -> Result<GithubInstallationList, ServiceError>;
+    /// import-all (request/response).
+    fn import_all(
+        &self,
+        ctx: &Self::Context,
+        input: ImportAllRequest,
+    ) -> Result<ImportAllResult, ServiceError>;
+    /// set-schedule (request/response).
+    fn set_schedule(
+        &self,
+        ctx: &Self::Context,
+        input: SetMirrorScheduleRequest,
+    ) -> Result<MirrorStatus, ServiceError>;
 }
 
 /// Wire-id ordinals for the Mirror service (transport compact profiles).
@@ -526,6 +576,41 @@ pub mod mirror_wire_ids {
     pub const OP_REMOVE_CREDENTIAL: u64 = 10;
     pub const OP_LIST_GITHUB_REPOS: u64 = 11;
     pub const OP_HEALTH: u64 = 12;
+    pub const OP_BACKFILL: u64 = 13;
+    pub const OP_LIST_GITHUB_INSTALLATIONS: u64 = 14;
+    pub const OP_IMPORT_ALL: u64 = 15;
+    pub const OP_SET_SCHEDULE: u64 = 16;
+}
+
+/// Instance service trait
+pub trait Instance {
+    type Context;
+    /// Every instance role. Instance admins only.
+    fn list_roles(
+        &self,
+        ctx: &Self::Context,
+        input: Empty,
+    ) -> Result<InstanceRoleList, ServiceError>;
+    /// set-role (request/response).
+    fn set_role(
+        &self,
+        ctx: &Self::Context,
+        input: SetInstanceRoleRequest,
+    ) -> Result<InstanceRoleGrant, ServiceError>;
+    /// remove-role (request/response).
+    fn remove_role(
+        &self,
+        ctx: &Self::Context,
+        input: RemoveInstanceRoleRequest,
+    ) -> Result<Ok, ServiceError>;
+}
+
+/// Wire-id ordinals for the Instance service (transport compact profiles).
+pub mod instance_wire_ids {
+    pub const SERVICE: u64 = 12;
+    pub const OP_LIST_ROLES: u64 = 0;
+    pub const OP_SET_ROLE: u64 = 1;
+    pub const OP_REMOVE_ROLE: u64 = 2;
 }
 
 /// ServiceAccounts service trait
