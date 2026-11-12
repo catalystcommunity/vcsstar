@@ -90,3 +90,8 @@ helm/                    chart; .reactorcide/ CI and deploy jobs
 ```
 
 Documentation follows ASD-STE100 Simplified Technical English.
+
+## License
+
+vcsstar is licensed under the Apache License, Version 2.0. Refer to
+[`LICENSE`](LICENSE) for the full text.
