@@ -29,6 +29,27 @@ pub const PURPOSES: &[&str] = &[
 ];
 pub const MODES: &[&str] = &["authoritative_vcsstar", "import_drift", "flag_drift"];
 
+/// Default cadence of the pull request pass and of the ref reconcile pass.
+pub const DEFAULT_PASS_INTERVAL_S: i32 = 900;
+
+/// How often the pull request pass runs for this repository.
+pub fn pull_sync_interval(s: &StateRow) -> chrono::Duration {
+    chrono::Duration::seconds(
+        s.pull_sync_interval_s
+            .unwrap_or(DEFAULT_PASS_INTERVAL_S)
+            .into(),
+    )
+}
+
+/// How often the ref reconcile pass runs for this repository.
+pub fn ref_reconcile_interval(s: &StateRow) -> chrono::Duration {
+    chrono::Duration::seconds(
+        s.ref_reconcile_interval_s
+            .unwrap_or(DEFAULT_PASS_INTERVAL_S)
+            .into(),
+    )
+}
+
 #[derive(Debug, Clone, Queryable, Selectable)]
 #[diesel(table_name = mirror_state)]
 pub struct StateRow {
@@ -43,6 +64,31 @@ pub struct StateRow {
     pub created_at: DateTime<Utc>,
     pub last_pull_sync_at: Option<DateTime<Utc>>,
     pub last_pull_pass_at: Option<DateTime<Utc>>,
+    /// History import cursor: page of the creation-ordered list (from 1).
+    pub backfill_page: i32,
+    /// History import cursor: next position in that page.
+    pub backfill_index: i32,
+    /// Pull requests the history import went through.
+    pub backfill_pulls: i32,
+    /// When every pull request head was fetched in one go.
+    pub backfill_heads_at: Option<DateTime<Utc>>,
+    /// Claim and schedule of the history import pass.
+    pub backfill_pass_at: Option<DateTime<Utc>>,
+    pub backfill_started_at: Option<DateTime<Utc>>,
+    /// NULL while the history import is not complete.
+    pub backfill_done_at: Option<DateTime<Utc>>,
+    /// Who asked for the import (the worker acts with their token order).
+    pub import_requested_by: Option<Uuid>,
+    pub import_requested_at: Option<DateTime<Utc>>,
+    /// Claim of the import task (one worker at a time).
+    pub import_claimed_at: Option<DateTime<Utc>>,
+    pub import_attempts: i32,
+    /// NULL while the import of the refs is not complete.
+    pub import_done_at: Option<DateTime<Utc>>,
+    /// Cadence of the pull request pass; NULL is the default.
+    pub pull_sync_interval_s: Option<i32>,
+    /// Cadence of the ref reconcile pass; NULL is the default.
+    pub ref_reconcile_interval_s: Option<i32>,
 }
 
 #[derive(Debug, Clone, Queryable, Selectable)]
@@ -262,10 +308,15 @@ pub mod cred {
     pub enum TokenSource {
         /// A linked user's own token: GitHub attributes the change to them.
         User { identity_id: Uuid, login: String },
-        /// The instance's GitHub App, installed on the repository's owner.
-        InstanceApp,
-        /// A credential row of the organization or repository.
-        Credential { purpose: String, id: Uuid },
+        /// One of the instance's GitHub Apps, installed on the owner.
+        InstanceApp { app_id: String, installation: i64 },
+        /// A credential row of the organization or repository. `app` is
+        /// `(app id, installation)` for a `github_app` row.
+        Credential {
+            purpose: String,
+            id: Uuid,
+            app: Option<(String, i64)>,
+        },
     }
 
     #[derive(Debug, Clone)]
@@ -279,11 +330,19 @@ pub mod cred {
             matches!(self.source, TokenSource::User { .. })
         }
 
-        /// A short label for logs: `user:<login>`, `app`, or the purpose.
+        /// A short label for logs and rate tracking: `user:<login>`,
+        /// `app:<app id>/<installation>`, or the purpose.
         pub fn label(&self) -> String {
             match &self.source {
                 TokenSource::User { login, .. } => format!("user:{login}"),
-                TokenSource::InstanceApp => "app".into(),
+                TokenSource::InstanceApp {
+                    app_id,
+                    installation,
+                } => app_label(app_id, *installation),
+                TokenSource::Credential {
+                    app: Some((app_id, installation)),
+                    ..
+                } => app_label(app_id, *installation),
                 TokenSource::Credential { purpose, .. } => purpose.clone(),
             }
         }
@@ -317,15 +376,157 @@ pub mod cred {
             .map_err(|e| Failure::Transient(format!("database: {e}")))
     }
 
-    /// An installation token of the instance's GitHub App for the
-    /// repository, when the App is configured and installed on its owner
-    /// for that repository. Cached per repository for the token's life;
-    /// a missing installation is remembered for a while.
+    /// Rate limit label of one App installation. GitHub limits the rate
+    /// per installation, so each one is tracked (and held) on its own.
+    pub fn app_label(app_id: &str, installation: i64) -> String {
+        format!("app:{app_id}/{installation}")
+    }
+
+    /// One installation of one instance App, with a token for it.
+    #[derive(Debug, Clone)]
+    struct AppInstall {
+        app_id: String,
+        installation: i64,
+        token: String,
+    }
+
+    /// The installation of App `cfg` that covers `scope` (a repository
+    /// `owner/name`, or `owner:<owner>` for every repository of an owner),
+    /// with a token. Cached for the token's life; "not installed" is
+    /// remembered for a while (GitHub answers 404 for some minutes after
+    /// an installation is made).
+    fn app_install(
+        app: &App,
+        cfg: &crate::config::GithubAppConfig,
+        scope: &str,
+    ) -> Result<Option<AppInstall>, Failure> {
+        let name = format!("{}:{scope}", cfg.app_id);
+        let key = instance_app_key(&name);
+        let id_key = instance_app_key(&format!("{name}:id"));
+        if let (Some(t), Some(id)) = (
+            app.github_app_tokens.get(key),
+            app.github_app_tokens.get(id_key),
+        ) {
+            if let Ok(installation) = id.parse::<i64>() {
+                return Ok(Some(AppInstall {
+                    app_id: cfg.app_id.clone(),
+                    installation,
+                    token: t,
+                }));
+            }
+        }
+        if app.github_app_tokens.not_installed(&name) {
+            return Ok(None);
+        }
+        let jwt = crate::github_app::sign_jwt(&cfg.app_id, &cfg.private_key)
+            .map_err(|e| Failure::Terminal(e.message))?;
+        let base = &app.config.github_api_base;
+        let found = match scope.strip_prefix("owner:") {
+            Some(owner) => github::installation_for_owner(base, &jwt, owner)?,
+            None => github::installation_for_repo(base, &jwt, scope)?,
+        };
+        let Some(installation) = found else {
+            tracing::info!(app_id = %cfg.app_id, scope, "this GitHub App is not installed there (or GitHub does not show it yet)");
+            app.github_app_tokens.remember_not_installed(&name);
+            return Ok(None);
+        };
+        let (token, expires_at) =
+            github::installation_token(base, &jwt, &installation.to_string())?;
+        app.github_app_tokens.put(key, token.clone(), expires_at);
+        app.github_app_tokens
+            .put(id_key, installation.to_string(), expires_at);
+        Ok(Some(AppInstall {
+            app_id: cfg.app_id.clone(),
+            installation,
+            token,
+        }))
+    }
+
+    /// Every instance App installed for `scope`, then the one with the
+    /// most room: an installation not held by its rate limit before a
+    /// held one, then the most calls left (an installation not seen yet
+    /// counts as full). This spreads the load over the Apps, because
+    /// GitHub limits the rate per installation. One App that cannot be
+    /// asked (GitHub down, a bad key) does not hide the others; when none
+    /// answers, the first failure is returned.
+    fn best_install(app: &App, scope: &str) -> Result<Option<AppInstall>, Failure> {
+        let mut found: Vec<AppInstall> = Vec::new();
+        let mut first_err: Option<Failure> = None;
+        for cfg in &app.config.github_apps {
+            match app_install(app, cfg, scope) {
+                Ok(Some(i)) => found.push(i),
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!(app_id = %cfg.app_id, scope, error = %e.message(), "GitHub App installation lookup failed");
+                    first_err.get_or_insert(e);
+                }
+            }
+        }
+        if found.is_empty() {
+            return match first_err {
+                Some(e) => Err(e),
+                None => Ok(None),
+            };
+        }
+        let room = |i: &AppInstall| {
+            let label = app_label(&i.app_id, i.installation);
+            let held = crate::github_health::rate_hold(&label).is_some();
+            let left = crate::github_health::rate_remaining(&label).unwrap_or(i64::MAX);
+            (!held, left)
+        };
+        found.sort_by_key(|i| std::cmp::Reverse(room(i)));
+        Ok(found.into_iter().next())
+    }
+
+    /// The token of a credential row: the secret itself (`pat`) or an
+    /// installation token minted from it (`github_app`).
+    fn credential_token(app: &App, row: &CredentialRow, purpose: &str) -> Result<Token, Failure> {
+        let v = value(app, row).map_err(|e| Failure::Terminal(e.message))?;
+        let (value, app_ref) = if row.auth_method == "github_app" {
+            let parsed = crate::github_app::AppCredential::parse(&v)
+                .ok()
+                .and_then(|c| {
+                    c.installation_id
+                        .trim()
+                        .parse::<i64>()
+                        .ok()
+                        .map(|i| (c.app_id.trim().to_string(), i))
+                });
+            (
+                crate::github_app::installation_token(app, row.id, &v)?,
+                parsed,
+            )
+        } else {
+            (v, None)
+        };
+        Ok(Token {
+            value,
+            source: TokenSource::Credential {
+                purpose: purpose.to_string(),
+                id: row.id,
+                app: app_ref,
+            },
+        })
+    }
+
+    fn app_token(i: AppInstall) -> Token {
+        Token {
+            value: i.token,
+            source: TokenSource::InstanceApp {
+                app_id: i.app_id,
+                installation: i.installation,
+            },
+        }
+    }
+
+    /// An installation token of an instance GitHub App for the repository,
+    /// when an App is configured and installed on its owner for that
+    /// repository (the one with the most rate room when several are).
     pub fn instance_app_token(
         app: &App,
         conn: &mut PgConnection,
         repo_id: Uuid,
-    ) -> Result<Option<String>, Failure> {
+    ) -> Result<Option<Token>, Failure> {
         let Some(full) = github_repo_of(conn, repo_id)? else {
             return Ok(None);
         };
@@ -334,78 +535,14 @@ pub mod cred {
 
     /// `instance_app_token` by GitHub repository name, for operations that
     /// run before a vcsstar repository exists (import, discovery).
-    pub fn instance_app_token_for(app: &App, full: &str) -> Result<Option<String>, Failure> {
-        let Some(cfg) = app.config.github_app.as_ref() else {
-            return Ok(None);
-        };
-        let key = instance_app_key(full);
-        if let Some(t) = app.github_app_tokens.get(key) {
-            return Ok(Some(t));
-        }
-        if app.github_app_tokens.not_installed(full) {
-            return Ok(None);
-        }
-        let jwt = crate::github_app::sign_jwt(&cfg.app_id, &cfg.private_key)
-            .map_err(|e| Failure::Terminal(e.message))?;
-        let Some(installation) =
-            github::installation_for_repo(&app.config.github_api_base, &jwt, full)?
-        else {
-            // GitHub answers 404 for a while after an installation is
-            // made, so this is remembered only briefly.
-            tracing::info!(repo = %full, "the instance GitHub App is not installed for this repository (or GitHub does not show it yet)");
-            app.github_app_tokens.remember_not_installed(full);
-            return Ok(None);
-        };
-        let (token, expires_at) = github::installation_token(
-            &app.config.github_api_base,
-            &jwt,
-            &installation.to_string(),
-        )?;
-        app.github_app_tokens.put(key, token.clone(), expires_at);
-        Ok(Some(token))
+    pub fn instance_app_token_for(app: &App, full: &str) -> Result<Option<Token>, Failure> {
+        Ok(best_install(app, full)?.map(app_token))
     }
 
-    /// An installation token of the instance App on an owner (every
+    /// An installation token of an instance App on an owner (every
     /// repository the installation covers), with the installation id.
-    pub fn owner_app_token(app: &App, owner: &str) -> Result<Option<(i64, String)>, Failure> {
-        let Some(cfg) = app.config.github_app.as_ref() else {
-            return Ok(None);
-        };
-        let cache_name = format!("owner:{owner}");
-        let key = instance_app_key(&cache_name);
-        let id_key = instance_app_key(&format!("{cache_name}:id"));
-        if let (Some(t), Some(id)) = (
-            app.github_app_tokens.get(key),
-            app.github_app_tokens.get(id_key),
-        ) {
-            if let Ok(id) = id.parse::<i64>() {
-                return Ok(Some((id, t)));
-            }
-        }
-        if app.github_app_tokens.not_installed(&cache_name) {
-            return Ok(None);
-        }
-        let jwt = crate::github_app::sign_jwt(&cfg.app_id, &cfg.private_key)
-            .map_err(|e| Failure::Terminal(e.message))?;
-        let Some(installation) =
-            github::installation_for_owner(&app.config.github_api_base, &jwt, owner)?
-        else {
-            tracing::info!(
-                owner,
-                "the instance GitHub App is not installed on this owner"
-            );
-            app.github_app_tokens.remember_not_installed(&cache_name);
-            return Ok(None);
-        };
-        let (token, expires_at) = github::installation_token(
-            &app.config.github_api_base,
-            &jwt,
-            &installation.to_string(),
-        )?;
-        app.github_app_tokens.put(key, token.clone(), expires_at);
-        app.github_app_tokens
-            .put(id_key, installation.to_string(), expires_at);
-        Ok(Some((installation, token)))
+    pub fn owner_app_token(app: &App, owner: &str) -> Result<Option<(i64, Token)>, Failure> {
+        Ok(best_install(app, &format!("owner:{owner}"))?.map(|i| (i.installation, app_token(i))))
     }
 
     /// The token for reading an owner's repositories or importing one of
@@ -419,35 +556,14 @@ pub mod cred {
         owner: &str,
         caller: Option<Uuid>,
     ) -> Result<(Token, Option<i64>), Failure> {
-        if let Some((installation, value)) = owner_app_token(app, owner)? {
-            return Ok((
-                Token {
-                    value,
-                    source: TokenSource::InstanceApp,
-                },
-                Some(installation),
-            ));
+        if let Some((installation, token)) = owner_app_token(app, owner)? {
+            return Ok((token, Some(installation)));
         }
         for p in purpose_order("import_fetch") {
             if let Some(row) =
                 find(conn, org_id, Uuid::nil(), p).map_err(|e| Failure::Transient(e.message))?
             {
-                let v = value(app, &row).map_err(|e| Failure::Terminal(e.message))?;
-                let value = if row.auth_method == "github_app" {
-                    crate::github_app::installation_token(app, row.id, &v)?
-                } else {
-                    v
-                };
-                return Ok((
-                    Token {
-                        value,
-                        source: TokenSource::Credential {
-                            purpose: p.to_string(),
-                            id: row.id,
-                        },
-                    },
-                    None,
-                ));
+                return Ok((credential_token(app, &row, p)?, None));
             }
         }
         if let Some(identity_id) = caller {
@@ -487,30 +603,15 @@ pub mod cred {
             }
         }
         if purpose != "webhook_inbound" {
-            if let Some(value) = instance_app_token(app, conn, repo_id)? {
-                return Ok(Token {
-                    value,
-                    source: TokenSource::InstanceApp,
-                });
+            if let Some(token) = instance_app_token(app, conn, repo_id)? {
+                return Ok(token);
             }
         }
         for p in purpose_order(purpose) {
             if let Some(row) =
                 find(conn, org_id, repo_id, p).map_err(|e| Failure::Transient(e.message))?
             {
-                let v = value(app, &row).map_err(|e| Failure::Terminal(e.message))?;
-                let value = if row.auth_method == "github_app" {
-                    crate::github_app::installation_token(app, row.id, &v)?
-                } else {
-                    v
-                };
-                return Ok(Token {
-                    value,
-                    source: TokenSource::Credential {
-                        purpose: p.to_string(),
-                        id: row.id,
-                    },
-                });
+                return credential_token(app, &row, p);
             }
         }
         Err(Failure::Terminal(format!(
@@ -540,8 +641,13 @@ pub mod cred {
         purpose: &str,
     ) {
         if let Ok(Some(full)) = github_repo_of(conn, repo_id) {
-            app.github_app_tokens.forget(instance_app_key(&full));
-            app.github_app_tokens.forget_not_installed(&full);
+            for cfg in &app.config.github_apps {
+                let name = format!("{}:{full}", cfg.app_id);
+                app.github_app_tokens.forget(instance_app_key(&name));
+                app.github_app_tokens
+                    .forget(instance_app_key(&format!("{name}:id")));
+                app.github_app_tokens.forget_not_installed(&name);
+            }
         }
         for p in purpose_order(purpose) {
             if let Ok(set) = candidates(conn, org_id, repo_id, p) {
@@ -808,6 +914,87 @@ pub fn ls_remote(
             Some((name.trim().to_string(), sha.trim().to_string()))
         })
         .collect())
+}
+
+/// Fetch several remote refs in one `git fetch` (each `remote:local`),
+/// in batches so a repository with thousands of tags stays under the
+/// argument limit.
+pub fn fetch_refs(
+    dir: &std::path::Path,
+    url: &str,
+    token: Option<&str>,
+    refs: &[(String, String)],
+) -> Result<(), Failure> {
+    let env = token.map(auth_env).unwrap_or_default();
+    for batch in refs.chunks(500) {
+        let mut cmd = git_cmd(dir, &env);
+        cmd.args(["fetch", "--quiet", "--no-tags", url]);
+        for (remote, local) in batch {
+            cmd.arg(format!("+{remote}:{local}"));
+        }
+        let out = cmd
+            .output()
+            .map_err(|e| Failure::Transient(format!("spawn git: {e}")))?;
+        if !out.status.success() {
+            return Err(github::classify_git(
+                &String::from_utf8_lossy(&out.stderr),
+                &String::from_utf8_lossy(&out.stdout),
+            ));
+        }
+    }
+    crate::github_health::record_success(crate::github_health::Lane::Git);
+    Ok(())
+}
+
+/// Every pull request head GitHub serves (`refs/pull/*/head`), fetched in
+/// one go into `refs/vcsstar/import/pull/*`. Returns the head shas, from
+/// `ls-remote` (a cache refresh may drop the local refs at any time; the
+/// objects stay). The history import calls it once per repository, so the
+/// per pull request fetch finds every head in place.
+pub fn fetch_pull_heads(
+    dir: &std::path::Path,
+    url: &str,
+    token: Option<&str>,
+) -> Result<Vec<RevId>, Failure> {
+    let env = token.map(auth_env).unwrap_or_default();
+    let out = git_cmd(dir, &env)
+        .args(["ls-remote", url, "refs/pull/*/head"])
+        .output()
+        .map_err(|e| Failure::Transient(format!("spawn git: {e}")))?;
+    if !out.status.success() {
+        return Err(github::classify_git(
+            &String::from_utf8_lossy(&out.stderr),
+            &String::from_utf8_lossy(&out.stdout),
+        ));
+    }
+    let heads: Vec<RevId> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| {
+            l.split_once('\t')
+                .map(|(sha, _)| RevId(sha.trim().to_string()))
+        })
+        .collect();
+    if heads.is_empty() {
+        return Ok(heads);
+    }
+    let out = git_cmd(dir, &env)
+        .args([
+            "fetch",
+            "--quiet",
+            "--no-tags",
+            url,
+            "+refs/pull/*/head:refs/vcsstar/import/pull/*",
+        ])
+        .output()
+        .map_err(|e| Failure::Transient(format!("spawn git: {e}")))?;
+    if !out.status.success() {
+        return Err(github::classify_git(
+            &String::from_utf8_lossy(&out.stderr),
+            &String::from_utf8_lossy(&out.stdout),
+        ));
+    }
+    crate::github_health::record_success(crate::github_health::Lane::Git);
+    Ok(heads)
 }
 
 /// Fetch one remote ref into a local ref of the cache dir.
@@ -1163,7 +1350,8 @@ fn exec_push(
     let target_str = target.as_ref().map(|t| t.0.as_str());
     if target.is_none() && lease.is_some() {
         if let Some(branch) = r#ref.strip_prefix("refs/heads/") {
-            let gh = github::Client::new(&app.config.github_api_base, &token);
+            let gh =
+                github::Client::new(&app.config.github_api_base, &token).with_label(&used.label());
             match crate::github_sync::prepare_branch_delete(conn, repo, state, &gh, branch) {
                 Ok(n) if n > 0 => {
                     tracing::info!(repo = %state.github_repo, branch, moved = n, "retargeted GitHub pull requests before the branch delete")
@@ -1573,13 +1761,13 @@ fn exec_settings(
     state: &StateRow,
     action: &ActionRow,
 ) -> Result<Exec, Error> {
-    let (_p, token) = match cred::token_for(app, conn, org.id, repo.id, &action.credential_purpose)
-    {
-        Ok(v) => v,
-        Err(Failure::Terminal(m)) => return Ok(Exec::Blocked(m)),
-        Err(Failure::Transient(m)) => return Ok(Exec::Transient(m)),
-    };
-    let gh = github::Client::new(&app.config.github_api_base, &token);
+    let (label, token) =
+        match cred::token_for(app, conn, org.id, repo.id, &action.credential_purpose) {
+            Ok(v) => v,
+            Err(Failure::Terminal(m)) => return Ok(Exec::Blocked(m)),
+            Err(Failure::Transient(m)) => return Ok(Exec::Transient(m)),
+        };
+    let gh = github::Client::new(&app.config.github_api_base, &token).with_label(&label);
     let (owner, name) = state
         .github_repo
         .split_once('/')

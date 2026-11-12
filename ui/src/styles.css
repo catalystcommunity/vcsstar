@@ -223,12 +223,78 @@
   /* Conversation */
   .entry { border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 0.75rem; overflow: hidden; }
   .entry > header { padding: 0.5rem 0.9rem; background: var(--navy-1); border-bottom: 1px solid var(--line); }
-  .entry-body { padding: 0.75rem 0.9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .entry-body { padding: 0.75rem 0.9rem; overflow-wrap: anywhere; }
   tab-view::part(tab) { color: var(--text-2); }
   tab-view::part(tab):hover { color: var(--text); }
   tab-view::part(tab selected) { color: var(--text); }
 
+  /* Diff tables: side by side or in-line, line numbers in a gutter */
+  .diff-toolbar { justify-content: flex-end; margin-bottom: 0.5rem; gap: 0.25rem; }
+  .diff-toolbar push-button[aria-pressed="true"], .view-toggle push-button[aria-pressed="true"], .file-head [aria-pressed="true"] { color: var(--star); }
+  .view-toggle { gap: 0.25rem; margin-left: auto; }
+  .diff-body { border-top: 1px solid var(--line); overflow-x: auto; }
+  .diff-body > .hint, .diff-body > .problem { padding: 0.6rem 0.9rem; }
+  .diff-table { width: 100%; border-collapse: collapse; font: 400 0.8rem/1.45 var(--mono); tab-size: 4; }
+  .diff-table.diff-split { table-layout: fixed; }
+  .diff-table col.no { width: 3.6em; }
+  .diff-table td { padding: 0 0.6rem; vertical-align: top; }
+  .diff-table .line-no { color: var(--text-3); text-align: right; user-select: none; width: 3.6em; border-right: 1px solid var(--line); white-space: nowrap; }
+  .diff-table .code-cell { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .diff-table.diff-unified .code-cell { white-space: pre; }
+  .diff-table tr.add td, .diff-table td.add { background: rgb(95 212 160 / 12%); }
+  .diff-table tr.del td, .diff-table td.del { background: rgb(255 133 133 / 12%); }
+  .diff-table td.blank { background: var(--navy-0); }
+  .diff-table tr.hunk td { color: var(--sky); background: var(--navy-2); padding: 0.15rem 0.9rem; }
+  .media-diff { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 0.9rem; }
+  .media-side { margin: 0; }
+  .media, .media-view img { max-width: 100%; height: auto; background: repeating-conic-gradient(#ffffff10 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
+  .media.pdf { width: 100%; height: 80vh; border: 0; }
+  .media-view { padding: 0.9rem; text-align: center; }
+
+  /* Code view */
+  .file-view { border: 1px solid var(--line); border-radius: var(--radius); background: var(--navy-1); overflow: hidden; }
+  .file-head { padding: 0.35rem 0.9rem; border-bottom: 1px solid var(--line); gap: 0.5rem; flex-wrap: wrap; }
+  .file-head .meta { margin: 0; }
+  .code-view { display: grid; grid-template-columns: auto 1fr; overflow: auto; font: 400 0.82rem/1.5 var(--mono); }
+  .code-view pre { margin: 0; padding: 0.9rem 0.8rem; font: inherit; tab-size: 4; }
+  .code-gutter { color: var(--text-3); text-align: right; user-select: none; border-right: 1px solid var(--line); }
+  .code-view pre.code { border: 0; border-radius: 0; background: transparent; overflow: visible; }
+  .file-body > .markdown { padding: 1rem 1.25rem; }
+
+  /* Rendered markdown */
+  .markdown { line-height: 1.6; overflow-wrap: anywhere; }
+  .markdown > :first-child { margin-top: 0; } .markdown > :last-child { margin-bottom: 0; }
+  .markdown h1, .markdown h2 { border-bottom: 1px solid var(--line); padding-bottom: 0.3em; }
+  .markdown h1 { font-size: 1.6rem; } .markdown h2 { font-size: 1.3rem; } .markdown h3 { font-size: 1.1rem; }
+  .markdown a { color: var(--sky); }
+  .markdown code { font: 400 0.86em var(--mono); background: var(--navy-2); padding: 0.1em 0.35em; border-radius: 4px; }
+  .markdown pre { background: var(--navy-0); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.8rem 1rem; overflow: auto; }
+  .markdown pre code { background: none; padding: 0; font-size: 0.82rem; }
+  .markdown blockquote { margin: 0; padding: 0 1em; color: var(--text-2); border-left: 3px solid var(--line-strong); }
+  .markdown table { border-collapse: collapse; display: block; overflow: auto; }
+  .markdown th, .markdown td { border: 1px solid var(--line); padding: 0.35em 0.7em; }
+  .markdown img { max-width: 100%; }
+  .markdown hr { border: 0; border-top: 1px solid var(--line); }
+  .markdown ul, .markdown ol { padding-left: 1.6em; }
+  .mermaid-view { padding: 0.9rem; overflow: auto; text-align: center; }
+  .mermaid-view svg { max-width: 100%; height: auto; }
+
+  /* Syntax colours from the palette (highlight.js classes) */
+  .hljs-comment, .hljs-quote, .hljs-meta { color: var(--text-3); font-style: italic; }
+  .hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-doctag { color: #c3a6ff; }
+  .hljs-string, .hljs-regexp, .hljs-addition, .hljs-attribute, .hljs-template-tag { color: var(--ok); }
+  .hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet { color: var(--warn); }
+  .hljs-title, .hljs-section, .hljs-function .hljs-title, .hljs-title.function_ { color: var(--sky); }
+  .hljs-type, .hljs-title.class_, .hljs-class .hljs-title { color: var(--star); }
+  .hljs-variable, .hljs-template-variable, .hljs-params, .hljs-property { color: #e7c3f8; }
+  .hljs-tag, .hljs-name, .hljs-selector-id, .hljs-selector-class { color: #8fd3ff; }
+  .hljs-attr { color: #ffd59e; }
+  .hljs-deletion { color: var(--bad); }
+  .hljs-emphasis { font-style: italic; } .hljs-strong { font-weight: 600; }
+
   @media (max-width: 720px) {
+    .diff-table.diff-split { table-layout: auto; }
+    .media-diff { grid-template-columns: 1fr; }
     .site-header { gap: 1rem; }
     .brand-name { display: none; }
     .split { grid-template-columns: 1fr; }

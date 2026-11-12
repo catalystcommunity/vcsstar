@@ -12,6 +12,7 @@ export class HomePage extends Page {
   private readonly repoStatus = h("div");
   private readonly count = h("p", { class: "lead" });
   private readonly orgList = h("div", { class: "chips" });
+  private readonly installBox = h("div");
   private readonly feedback = new Feedback();
   private orgBox!: ZestComboBox;
   private orgs: Org[] = [];
@@ -24,6 +25,7 @@ export class HomePage extends Page {
       this.repoTable.wrap,
       this.repoStatus,
       section("Organizations", null, this.orgList),
+      this.installBox,
       signedIn && h("div", { class: "panel-grid" }, this.newRepoPanel(), this.newOrgPanel()),
     ];
   }
@@ -31,6 +33,43 @@ export class HomePage extends Page {
   protected async start() {
     fill(this.repoStatus, loading());
     await Promise.all([this.loadRepos(), this.loadOrgs()]);
+    if (this.context.session) await this.loadInstallations();
+  }
+
+  // Where the instance's GitHub Apps are installed. An owner without an
+  // organization here gets a button that makes one with that GitHub owner;
+  // its page then lists the repositories to enable.
+  private async loadInstallations() {
+    let list;
+    try {
+      list = await api.mirror.listGithubInstallations({ ctx: ctx() });
+    } catch {
+      fill(this.installBox);
+      return;
+    }
+    if (!this.isActive()) return;
+    if (list.installations.length === 0 && list.errors.length === 0) { fill(this.installBox); return; }
+    const t = table(["GitHub owner", "App", "Repositories", "Here"]);
+    fill(t.body, ...list.installations.map((i) => {
+      const here = h("td");
+      if (i.vcsstarOrgs.length) fill(here, ...i.vcsstarOrgs.map((o) => link(`/${o}`, o)));
+      else {
+        const name = i.owner.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+        const make = button(`Create ${name}`, { variant: "default", onClick: async () => {
+          make.disabled = true;
+          const ok = await act(() => api.orgs.create({ ctx: ctx(), name, githubOwner: i.owner }), { done: `Organization ${name} created for ${i.owner}.`, after: () => { void this.loadOrgs(); void this.loadInstallations(); } });
+          if (!ok) make.disabled = false;
+        } });
+        fill(here, make);
+      }
+      return tr(
+        td("", mono(i.owner), " ", badge(i.ownerType === "Organization" ? "org" : "user")),
+        td("", i.appSlug ? mono(i.appSlug) : mono(i.appId), h("div", { class: "hint" }, `installation ${i.installationId}`)),
+        i.repositorySelection === "all" ? "all" : "selected",
+        here,
+      );
+    }));
+    fill(this.installBox, section("GitHub App installations", "Owners where this instance's GitHub Apps are installed. Open the organization to enable its repositories.", t.wrap, ...list.errors.map((e) => h("p", { class: "problem" }, e))));
   }
 
   private async loadRepos() {

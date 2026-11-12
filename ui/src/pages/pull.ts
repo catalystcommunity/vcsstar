@@ -1,11 +1,12 @@
 // One pull request: the conversation, the commits, and the files, with the
 // actions a signed-in person can take.
+import { markdown } from "../render";
 import { api, ctx, short, when, who } from "../api";
 import { button, comboBox, fill, form, h, link, external, textArea, textField, clear } from "../dom";
 import { live } from "../live";
 import { Page } from "../page";
 import { act, badge, confirmDanger, Feedback, firstLine, loading, meta, mono, pageHead, panel, refShort, table, td, tr, type Tone } from "../ui";
-import { diffView } from "./diff";
+import { diffView, type DiffFile } from "./diff";
 import type { Comment, PullRequest, Review } from "../generated/types.gen.ts";
 
 export class PullPage extends Page {
@@ -14,6 +15,8 @@ export class PullPage extends Page {
   private number = 0;
   private pr?: PullRequest;
   private readonly feedback = new Feedback();
+  /** The caller's role on the repository (from `Repos/get`). */
+  private repoRole?: string;
   private readonly titleText = document.createTextNode("");
   private readonly numberText = h("span", { class: "muted pr-number" });
   private readonly summary = h("div", { class: "pr-summary" });
@@ -51,7 +54,11 @@ export class PullPage extends Page {
 
   private async load() {
     try {
-      const pr = await api.pullRequests.get({ ctx: ctx(), repo: this.ref, number: this.number });
+      const [pr, repo] = await Promise.all([
+        api.pullRequests.get({ ctx: ctx(), repo: this.ref, number: this.number }),
+        this.context.session && this.repoRole === undefined ? api.repos.get({ ctx: ctx(), repo: this.ref }).catch(() => null) : Promise.resolve(null),
+      ]);
+      if (repo) this.repoRole = repo.viewerRole;
       if (!this.isActive()) return;
       this.pr = pr;
       this.title = `${firstLine(pr.title)} #${pr.number}`;
@@ -102,7 +109,7 @@ export class PullPage extends Page {
   }
 
   private entry(head: unknown[], body?: string | null) {
-    return h("article", { class: "entry" }, h("header", { class: "row small" }, ...(head as never[])), body && h("div", { class: "entry-body" }, body));
+    return h("article", { class: "entry" }, h("header", { class: "row small" }, ...(head as never[])), body && h("div", { class: "entry-body" }, markdown(body, this.pr && { ...this.ref, rev: this.pr.headSha, dir: "" })));
   }
 
   private actions(p: PullRequest) {
@@ -111,7 +118,16 @@ export class PullPage extends Page {
     const reviewState = comboBox("Review", [{ value: "approved", label: "Approve" }, { value: "changes_requested", label: "Request changes" }, { value: "comment", label: "Comment only" }], { value: "approved" });
     const review = button(["Submit review on ", mono(short(p.headSha))], { variant: "default", onClick: () => void act(async () => { await api.pullRequests.review({ ctx: ctx(), repo: this.ref, number: this.number, state: reviewState.value, headSha: p.headSha, body: text.value || undefined }); clear(text); }, { done: "Review submitted.", after: () => void this.load() }) });
     const parts: unknown[] = [panel(text, h("div", { class: "row" }, comment, p.state === "open" && [reviewState, review]))];
-    if (p.state === "open") {
+    // Merging needs write access; closing and reopening also suit the author.
+    const writer = ["write", "maintain", "admin"].includes(this.repoRole ?? "");
+    const me = this.context.session?.identity;
+    const author = Boolean(me && me.userId === p.author.userId && me.domain === p.author.domain);
+    if (p.state === "open" && !writer && author) {
+      parts.push(button("Close", { variant: "danger", onClick: async () => {
+        if (await confirmDanger("Close this pull request?", "You can reopen it later. On GitHub it closes too.", "Close pull request")) void act(() => api.pullRequests.close({ ctx: ctx(), repo: this.ref, number: this.number }), { done: "Pull request closed.", after: () => void this.load() });
+      } }));
+    }
+    if (p.state === "open" && writer) {
       const kind = comboBox("Merge kind", [{ value: "merge", label: "Merge commit" }, { value: "squash", label: "Squash" }, { value: "rebase", label: "Rebase" }], { value: "merge" });
       const message = textField("Message", { placeholder: "optional", class: "w-lg" });
       const merge = button(["Merge ", mono(short(p.headSha))], { type: "submit", disabled: p.mergeable === "conflicts" });
@@ -123,7 +139,7 @@ export class PullPage extends Page {
         h("p", { class: "hint" }, "The merge is refused when the head moved since you saw it, or when a protection is not met. The reason is shown as a notice."),
       ));
     }
-    if (p.state === "closed") parts.push(button("Reopen", { variant: "default", onClick: () => void act(() => api.pullRequests.reopen({ ctx: ctx(), repo: this.ref, number: this.number }), { done: "Reopened.", after: () => void this.load() }) }));
+    if (p.state === "closed" && (writer || author)) parts.push(button("Reopen", { variant: "default", onClick: () => void act(() => api.pullRequests.reopen({ ctx: ctx(), repo: this.ref, number: this.number }), { done: "Reopened.", after: () => void this.load() }) }));
     return h("div", { class: "stack" }, ...(parts as never[]));
   }
 
@@ -146,10 +162,23 @@ export class PullPage extends Page {
   }
 
   private async loadFiles(p: PullRequest) {
-    const diff = await api.repos.diff({ ctx: ctx(), repo: this.ref, base: p.mergeBaseSha ?? p.baseSha, head: p.headSha }).catch(() => null);
+    // Every page of the diff (50 files a page), up to 2000 files.
+    const base = p.mergeBaseSha ?? p.baseSha;
+    let diff: { files: DiffFile[] } | null = null;
+    try {
+      const files: DiffFile[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await api.repos.diff({ ctx: ctx(), repo: this.ref, base, head: p.headSha, page: { cursor, limit: 100 } });
+        files.push(...page.files);
+        cursor = page.nextCursor ?? undefined;
+        if (cursor) fill(this.files, h("p", { class: "hint" }, `Loading files… ${files.length}`));
+      } while (cursor && files.length < 2000 && this.isActive());
+      diff = { files };
+    } catch { diff = null; }
     if (!this.isActive()) return;
     this.filesLabel.setAttribute("label", `Files (${diff?.files.length ?? 0})`);
-    fill(this.files, diff ? diffView(diff.files) : h("p", { class: "hint" }, "The diff is not available."));
+    fill(this.files, diff ? diffView(diff.files, { repo: this.ref, base, head: p.headSha }) : h("p", { class: "hint" }, "The diff is not available."));
   }
 }
 

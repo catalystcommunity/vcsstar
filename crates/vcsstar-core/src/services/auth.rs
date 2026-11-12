@@ -54,9 +54,10 @@ fn token_to_wire(t: &ApiTokenRow, secret: Option<String>) -> ApiToken {
     }
 }
 
-pub fn whoami(_app: &App, ctx: &ReqCtx, _req: Empty) -> Result<WhoAmI, Error> {
+pub fn whoami(app: &App, ctx: &ReqCtx, _req: Empty) -> Result<WhoAmI, Error> {
     let p = ctx.require()?;
     Ok(WhoAmI {
+        instance_role: crate::authz::instance_role(app, p).map(|r| r.as_str().to_string()),
         identity: p.to_wire(),
         scopes: p.scopes.clone(),
         credential_kind: p.kind.as_str().to_string(),
@@ -204,4 +205,57 @@ pub fn unlink_github(app: &App, ctx: &ReqCtx, _req: Empty) -> Result<WireOk, Err
     let mut conn = app.conn()?;
     crate::github_link::unlink(app, &mut conn, p.identity.id)?;
     Ok(WireOk { ok: true })
+}
+
+/// Diff layouts a client can draw.
+pub const DIFF_LAYOUTS: &[&str] = &["split", "unified"];
+
+/// The caller's display preferences; the defaults when none are saved.
+/// Account data like tokens and keys: no outbox event.
+pub fn get_preferences(
+    app: &App,
+    ctx: &ReqCtx,
+    _req: Empty,
+) -> Result<vcsstar_types::Preferences, Error> {
+    use vcsstar_db::schema::user_preferences;
+    let p = ctx.require()?;
+    let mut conn = app.conn()?;
+    let layout: Option<String> = user_preferences::table
+        .find(p.identity.id)
+        .select(user_preferences::diff_layout)
+        .first(&mut conn)
+        .optional()?;
+    Ok(vcsstar_types::Preferences {
+        diff_layout: layout.unwrap_or_else(|| "split".into()),
+    })
+}
+
+pub fn set_preferences(
+    app: &App,
+    ctx: &ReqCtx,
+    req: vcsstar_types::SetPreferencesRequest,
+) -> Result<vcsstar_types::Preferences, Error> {
+    use vcsstar_db::schema::user_preferences;
+    let p = ctx.require()?;
+    if let Some(l) = &req.diff_layout {
+        if !DIFF_LAYOUTS.contains(&l.as_str()) {
+            return Err(Error::invalid(format!(
+                "diff_layout must be one of {DIFF_LAYOUTS:?}"
+            )));
+        }
+        let mut conn = app.conn()?;
+        diesel::insert_into(user_preferences::table)
+            .values((
+                user_preferences::identity_id.eq(p.identity.id),
+                user_preferences::diff_layout.eq(l),
+            ))
+            .on_conflict(user_preferences::identity_id)
+            .do_update()
+            .set((
+                user_preferences::diff_layout.eq(l),
+                user_preferences::updated_at.eq(chrono::Utc::now()),
+            ))
+            .execute(&mut conn)?;
+    }
+    get_preferences(app, ctx, Empty { ctx: req.ctx })
 }

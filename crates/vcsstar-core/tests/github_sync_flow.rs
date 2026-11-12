@@ -118,6 +118,7 @@ fn principal(app: &App) -> Principal {
         acting_via: None,
         credential_id: None,
         expires_at: None,
+        instance_role: None,
     }
 }
 
@@ -182,6 +183,30 @@ fn pull_json(number: i64, full: &str, head: &str, base: &str, state: &str, merge
     })
 }
 
+/// `import-repo` queues the import; run the task here as a worker would.
+fn import_now(
+    app: &App,
+    r: Result<vcsstar_types::Repo, vcsstar_core::Error>,
+) -> Result<vcsstar_types::Repo, vcsstar_core::Error> {
+    use vcsstar_core::mirror_import::{self, Outcome};
+    let mut repo = r?;
+    let mut conn = app.conn().unwrap();
+    let id: uuid::Uuid = vcsstar_db::schema::repos::table
+        .inner_join(vcsstar_db::schema::orgs::table)
+        .filter(vcsstar_db::schema::orgs::name.eq(&repo.org))
+        .filter(vcsstar_db::schema::repos::name.eq(&repo.name))
+        .select(vcsstar_db::schema::repos::id)
+        .first(&mut conn)
+        .unwrap();
+    drop(conn);
+    match mirror_import::run(app, id)? {
+        Outcome::Done { .. } => {}
+        other => panic!("import did not finish: {other:?}"),
+    }
+    repo.mirror_enabled = true;
+    Ok(repo)
+}
+
 fn event_kinds(conn: &mut PgConnection, lane: &str, after: i64) -> Vec<String> {
     events::table
         .filter(events::lane.eq(lane))
@@ -229,17 +254,20 @@ fn github_pull_request_life_cycle_is_imported_without_echo() {
         },
     )
     .expect("org");
-    mirror::import_repo(
+    import_now(
         &app,
-        &ctx,
-        vcsstar_types::ImportRequest {
-            ctx: wire_ctx(),
-            org: org_name.clone(),
-            name: "thing".into(),
-            github_repo: full.clone(),
-            mode: Some("import_drift".into()),
-            visibility: Some("public".into()),
-        },
+        mirror::import_repo(
+            &app,
+            &ctx,
+            vcsstar_types::ImportRequest {
+                ctx: wire_ctx(),
+                org: org_name.clone(),
+                name: "thing".into(),
+                github_repo: full.clone(),
+                mode: Some("import_drift".into()),
+                visibility: Some("public".into()),
+            },
+        ),
     )
     .expect("import");
     let mut conn = app.conn().unwrap();
@@ -872,17 +900,20 @@ fn pull_based_sync_imports_what_webhooks_missed() {
         },
     )
     .expect("credential");
-    mirror::import_repo(
+    import_now(
         &app,
-        &ctx,
-        vcsstar_types::ImportRequest {
-            ctx: wire_ctx(),
-            org: org_name.clone(),
-            name: "thing".into(),
-            github_repo: full.clone(),
-            mode: Some("import_drift".into()),
-            visibility: Some("public".into()),
-        },
+        mirror::import_repo(
+            &app,
+            &ctx,
+            vcsstar_types::ImportRequest {
+                ctx: wire_ctx(),
+                org: org_name.clone(),
+                name: "thing".into(),
+                github_repo: full.clone(),
+                mode: Some("import_drift".into()),
+                visibility: Some("public".into()),
+            },
+        ),
     )
     .expect("import");
     let mut conn = app.conn().unwrap();
@@ -1062,6 +1093,249 @@ fn pull_based_sync_imports_what_webhooks_missed() {
 }
 
 #[test]
+fn history_import_brings_every_pull_request_with_github_numbers_and_times() {
+    let tmp = tempfile::tempdir().unwrap();
+    let routes: Routes = Default::default();
+    let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let base = fake_api(routes.clone(), asked.clone());
+    let Some(app) = app_with_api(tmp.path(), &base) else {
+        eprintln!("DATABASE_URL unset or git missing; skipping");
+        return;
+    };
+    let p = principal(&app);
+    let ctx = ReqCtx {
+        request_id: "t".into(),
+        principal: Some(p.clone()),
+        peer: Peer::default(),
+    };
+    let suffix = uuid::Uuid::now_v7().simple().to_string();
+    let org_name = format!("ghback{}", &suffix[suffix.len() - 8..]);
+    let owner = format!("{org_name}-gh");
+    let full = format!("{owner}/thing");
+    let (work, main, feat) = fake_github(tmp.path(), &owner, "thing");
+    // An old pull request whose branch is gone: only refs/pull/7/head
+    // still holds its head on GitHub.
+    let bare = tmp.path().join("github").join(&owner).join("thing.git");
+    let bare_url = bare.display().to_string();
+    git(&work, &["checkout", "-q", "-b", "old", &main]);
+    std::fs::write(work.join("old.txt"), "old work\n").unwrap();
+    git(&work, &["add", "."]);
+    git(&work, &["commit", "-q", "-m", "old work"]);
+    let old = git(&work, &["rev-parse", "HEAD"]);
+    git(&work, &["push", "-q", &bare_url, "old:refs/pull/7/head"]);
+    git(&work, &["push", "-q", &bare_url, "feat:refs/pull/9/head"]);
+    orgs::create(
+        &app,
+        &ctx,
+        vcsstar_types::CreateOrgRequest {
+            ctx: wire_ctx(),
+            name: org_name.clone(),
+            display_name: None,
+            github_owner: Some(owner.clone()),
+        },
+    )
+    .expect("org");
+    mirror::set_credential(
+        &app,
+        &ctx,
+        vcsstar_types::SetCredentialRequest {
+            ctx: wire_ctx(),
+            org: org_name.clone(),
+            repo: None,
+            provider: "github".into(),
+            purpose: "mirror_api".into(),
+            auth_method: "pat".into(),
+            host: "github.com".into(),
+            secret_ref: "stored".into(),
+            secret: Some("ghp_test_not_real".into()),
+            enabled: Some(true),
+        },
+    )
+    .expect("credential");
+    import_now(
+        &app,
+        mirror::import_repo(
+            &app,
+            &ctx,
+            vcsstar_types::ImportRequest {
+                ctx: wire_ctx(),
+                org: org_name.clone(),
+                name: "thing".into(),
+                github_repo: full.clone(),
+                mode: Some("import_drift".into()),
+                visibility: Some("public".into()),
+            },
+        ),
+    )
+    .expect("import");
+    let mut conn = app.conn().unwrap();
+    let (org, repo, _) =
+        vcsstar_core::authz::load_repo_visible(&app, &mut conn, &ctx, &org_name, "thing").unwrap();
+    let state = vcsstar_core::mirror::state_for(&mut conn, repo.id)
+        .unwrap()
+        .unwrap();
+    assert!(
+        state.backfill_done_at.is_none(),
+        "a new mirror has its history to import"
+    );
+
+    let mut pr7 = pull_json(7, &full, &old, &main, "closed", true);
+    pr7["head"]["ref"] = json!("old");
+    pr7["created_at"] = json!("2022-03-01T10:00:00Z");
+    pr7["updated_at"] = json!("2022-03-02T10:00:00Z");
+    pr7["closed_at"] = json!("2022-03-02T10:00:00Z");
+    pr7["merged_at"] = json!("2022-03-02T10:00:00Z");
+    // No merge commit here (the fake base is a root commit): the merge
+    // base comes from GitHub's base of the time.
+    pr7["merge_commit_sha"] = Json::Null;
+    let mut pr9 = pull_json(9, &full, &feat, &main, "open", false);
+    pr9["created_at"] = json!("2024-01-01T00:00:00Z");
+    pr9["updated_at"] = json!("2024-01-02T00:00:00Z");
+    {
+        let mut r = routes.lock().unwrap();
+        r.push((
+            format!("/repos/{full}/pulls"),
+            json!([pr7.clone(), pr9.clone()]),
+        ));
+        r.push((
+            format!("/repos/{full}/pulls/7/reviews"),
+            json!([{"id": 7001, "state": "APPROVED", "body": "ship it", "user": {"id": 502, "login": "rev"}, "commit_id": old, "submitted_at": "2022-03-01T12:00:00Z"}]),
+        ));
+        r.push((
+            format!("/repos/{full}/issues/7/comments"),
+            json!([{"id": 7101, "body": "an old remark", "user": {"id": 500, "login": "octo"}, "created_at": "2022-03-01T11:00:00Z", "updated_at": "2022-03-01T11:00:00Z"}]),
+        ));
+        r.push((format!("/repos/{full}/pulls/7/comments"), json!([])));
+        r.push((format!("/repos/{full}/pulls/9/reviews"), json!([])));
+        r.push((format!("/repos/{full}/issues/9/comments"), json!([])));
+        r.push((format!("/repos/{full}/pulls/9/comments"), json!([])));
+        r.push((
+            format!("/repos/{full}/commits/{feat}/status"),
+            json!({"statuses": []}),
+        ));
+        r.push((
+            format!("/repos/{full}/commits/{feat}/check-runs"),
+            json!({"check_runs": []}),
+        ));
+    }
+    let lane = format!("{org_name}/thing");
+    let out =
+        github_sync::backfill_pulls(&app, &mut conn, &org, &repo, &state, 300).expect("backfill");
+    assert!(out.done, "{out:?}");
+    assert_eq!(out.pulls, 2, "{out:?}");
+    assert!(
+        asked
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|p| p.contains("sort=created")),
+        "the import lists in creation order"
+    );
+    let rows: Vec<prs::PrRow> = pull_requests::table
+        .filter(pull_requests::repo_id.eq(repo.id))
+        .order(pull_requests::number.asc())
+        .select(prs::PrRow::as_select())
+        .load(&mut conn)
+        .unwrap();
+    let numbers: Vec<(i32, Option<i32>)> =
+        rows.iter().map(|r| (r.number, r.github_number)).collect();
+    assert_eq!(
+        numbers,
+        vec![(7, Some(7)), (9, Some(9))],
+        "GitHub's numbers are kept"
+    );
+    let r7 = &rows[0];
+    assert_eq!(r7.state, "merged");
+    assert_eq!(
+        r7.base_sha, main,
+        "GitHub's base of the time, not today's branch"
+    );
+    assert!(
+        r7.merge_base_sha.is_some(),
+        "a history pull request gets its merge base, so its Files view is right"
+    );
+    assert_eq!(r7.created_at.to_rfc3339(), "2022-03-01T10:00:00+00:00");
+    assert_eq!(
+        r7.closed_at.map(|t| t.to_rfc3339()).as_deref(),
+        Some("2022-03-02T10:00:00+00:00")
+    );
+    let review_at: chrono::DateTime<chrono::Utc> = pr_reviews::table
+        .filter(pr_reviews::pr_id.eq(r7.id))
+        .select(pr_reviews::created_at)
+        .first(&mut conn)
+        .unwrap();
+    assert_eq!(review_at.to_rfc3339(), "2022-03-01T12:00:00+00:00");
+    let comment_at: chrono::DateTime<chrono::Utc> = pr_comments::table
+        .filter(pr_comments::pr_id.eq(r7.id))
+        .select(pr_comments::created_at)
+        .first(&mut conn)
+        .unwrap();
+    assert_eq!(comment_at.to_rfc3339(), "2022-03-01T11:00:00+00:00");
+    // The old head came with the bulk fetch; its deleted branch did not
+    // come back (it would be pushed to GitHub again).
+    let dir = app.store.repo_dir(repo.id);
+    git(&dir, &["cat-file", "-e", &old]);
+    assert!(
+        refs::get(&mut conn, repo.id, "refs/heads/old")
+            .unwrap()
+            .is_none(),
+        "no branch for a closed pull request"
+    );
+    let state = vcsstar_core::mirror::state_for(&mut conn, repo.id)
+        .unwrap()
+        .unwrap();
+    assert!(state.backfill_done_at.is_some());
+    assert!(state.backfill_heads_at.is_some());
+    assert_eq!(state.backfill_pulls, 2);
+    let next: i32 = vcsstar_db::schema::pr_counters::table
+        .find(repo.id)
+        .select(vcsstar_db::schema::pr_counters::next_number)
+        .first(&mut conn)
+        .unwrap();
+    assert_eq!(
+        next, 10,
+        "vcsstar's own numbers continue after the imported ones"
+    );
+
+    // Again from the start: everything matches, nothing is emitted.
+    github_sync::restart_backfill(&mut conn, repo.id).unwrap();
+    let state = vcsstar_core::mirror::state_for(&mut conn, repo.id)
+        .unwrap()
+        .unwrap();
+    let before = last_seq(&mut conn, &lane);
+    let out = github_sync::backfill_pulls(&app, &mut conn, &org, &repo, &state, 300)
+        .expect("backfill again");
+    assert!(out.done);
+    assert_eq!(
+        out.changed,
+        0,
+        "{out:?} {:?}",
+        event_kinds(&mut conn, &lane, before)
+    );
+    assert_eq!(
+        last_seq(&mut conn, &lane),
+        before,
+        "no events the second time"
+    );
+
+    // A budget too small for one pull request keeps the position.
+    github_sync::restart_backfill(&mut conn, repo.id).unwrap();
+    let state = vcsstar_core::mirror::state_for(&mut conn, repo.id)
+        .unwrap()
+        .unwrap();
+    let out =
+        github_sync::backfill_pulls(&app, &mut conn, &org, &repo, &state, 3).expect("short pass");
+    assert!(!out.done);
+    let state = vcsstar_core::mirror::state_for(&mut conn, repo.id)
+        .unwrap()
+        .unwrap();
+    assert!(state.backfill_done_at.is_none());
+    assert_eq!((state.backfill_page, state.backfill_index), (1, 0));
+    let out = github_sync::backfill_pulls(&app, &mut conn, &org, &repo, &state, 300).expect("rest");
+    assert!(out.done, "{out:?}");
+}
+
+#[test]
 fn stale_snapshots_do_not_overwrite_newer_state() {
     let tmp = tempfile::tempdir().unwrap();
     let Some(app) = app(tmp.path()) else {
@@ -1089,17 +1363,20 @@ fn stale_snapshots_do_not_overwrite_newer_state() {
         },
     )
     .expect("org");
-    mirror::import_repo(
+    import_now(
         &app,
-        &ctx,
-        vcsstar_types::ImportRequest {
-            ctx: wire_ctx(),
-            org: org_name.clone(),
-            name: "thing".into(),
-            github_repo: full.clone(),
-            mode: Some("import_drift".into()),
-            visibility: Some("public".into()),
-        },
+        mirror::import_repo(
+            &app,
+            &ctx,
+            vcsstar_types::ImportRequest {
+                ctx: wire_ctx(),
+                org: org_name.clone(),
+                name: "thing".into(),
+                github_repo: full.clone(),
+                mode: Some("import_drift".into()),
+                visibility: Some("public".into()),
+            },
+        ),
     )
     .expect("import");
     let mut conn = app.conn().unwrap();
@@ -1212,4 +1489,415 @@ fn stale_snapshots_do_not_overwrite_newer_state() {
         .first(&mut conn)
         .unwrap();
     assert_eq!(body, "third");
+}
+
+#[test]
+fn several_github_apps_share_the_load_by_rate_room() {
+    let tmp = tempfile::tempdir().unwrap();
+    let routes: Routes = Default::default();
+    let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let base = fake_api(routes.clone(), asked);
+    let Some(app) = app_with_api(tmp.path(), &base) else {
+        eprintln!("DATABASE_URL unset or git missing; skipping");
+        return;
+    };
+    // Two Apps with ids no other test uses, both installed for the repo.
+    let n = uuid::Uuid::now_v7().as_u128() % 1_000_000_000;
+    let (a, b) = (
+        format!("{}", 1_000_000_000 + n),
+        format!("{}", 2_000_000_000 + n),
+    );
+    let key = include_str!("fixtures/github-app-test-key.pem");
+    let list = json!([
+        {"app_id": a, "client_id": "Iv1.a", "client_secret": "sa", "private_key": key},
+        {"app_id": b, "client_id": "Iv1.b", "client_secret": "sb", "private_key": key},
+    ]);
+    let mut cfg = (*app.config).clone();
+    cfg.github_apps = vcsstar_core::config::parse_github_apps(&list.to_string());
+    assert_eq!(cfg.github_apps.len(), 2);
+    let app = App::new(cfg, app.db.clone());
+    let full = format!("multi{n}/thing");
+    {
+        let mut r = routes.lock().unwrap();
+        r.push((format!("/repos/{full}/installation"), json!({"id": 4242})));
+        r.push((
+            "/app/installations/4242/access_tokens".into(),
+            json!({"token": "ghs_not_real", "expires_at": (chrono::Utc::now() + chrono::Duration::hours(1)).to_rfc3339()}),
+        ));
+    }
+    let reset = chrono::Utc::now() + chrono::Duration::hours(1);
+    let (la, lb) = (format!("app:{a}/4242"), format!("app:{b}/4242"));
+    // App A is below its reserve: B is used.
+    vcsstar_core::github_health::note_rate_limit(&la, 10, 5000, reset);
+    let t = vcsstar_core::mirror::cred::instance_app_token_for(&app, &full)
+        .expect("lookup")
+        .expect("installed");
+    assert_eq!(t.label(), lb);
+    // B has spent most of its window, A has room again: A is used.
+    vcsstar_core::github_health::note_rate_limit(&la, 4000, 5000, reset);
+    vcsstar_core::github_health::note_rate_limit(&lb, 300, 5000, reset);
+    let t = vcsstar_core::mirror::cred::instance_app_token_for(&app, &full)
+        .expect("lookup")
+        .expect("installed");
+    assert_eq!(t.label(), la);
+    // The scrape shows both, with the App id as a label.
+    vcsstar_core::metrics::refresh_rate_limits();
+    let text = vcsstar_core::metrics::render();
+    assert!(
+        text.contains(&format!("vcsstar_github_rate_limit_remaining{{app_id=\"{a}\",installation=\"4242\",token=\"{la}\"}} 4000")),
+        "{text}"
+    );
+    assert!(
+        text.contains(&format!("vcsstar_github_rate_limit_limit{{app_id=\"{b}\"")),
+        "{text}"
+    );
+}
+
+#[test]
+fn import_continues_an_unfinished_import_and_sends_nothing_back() {
+    use vcsstar_db::schema::{mirror_state, orgs as orgs_t, repos};
+    let tmp = tempfile::tempdir().unwrap();
+    let Some(app) = app(tmp.path()) else {
+        eprintln!("DATABASE_URL unset or git missing; skipping");
+        return;
+    };
+    let p = principal(&app);
+    let ctx = ReqCtx {
+        request_id: "t".into(),
+        principal: Some(p.clone()),
+        peer: Peer::default(),
+    };
+    let suffix = uuid::Uuid::now_v7().simple().to_string();
+    let org_name = format!("ghresume{}", &suffix[suffix.len() - 8..]);
+    let full = format!("{org_name}-gh/thing");
+    let (_work, _main, _feat) = fake_github(tmp.path(), &format!("{org_name}-gh"), "thing");
+    orgs::create(
+        &app,
+        &ctx,
+        vcsstar_types::CreateOrgRequest {
+            ctx: wire_ctx(),
+            name: org_name.clone(),
+            display_name: None,
+            github_owner: Some(format!("{org_name}-gh")),
+        },
+    )
+    .expect("org");
+    let mut conn = app.conn().unwrap();
+    // What an import leaves when the pod stops during its fetch: the row,
+    // its paused mirror state, no refs, mirror not enabled.
+    let org_id: uuid::Uuid = orgs_t::table
+        .filter(orgs_t::name.eq(&org_name))
+        .select(orgs_t::id)
+        .first(&mut conn)
+        .unwrap();
+    let stub_id = vcsstar_db::new_id();
+    diesel::insert_into(repos::table)
+        .values(&vcsstar_db::models::NewRepo {
+            id: stub_id,
+            org_id,
+            name: "thing",
+            visibility: "public",
+            vcs_type: "git",
+            default_branch: "main",
+            description: None,
+        })
+        .execute(&mut conn)
+        .unwrap();
+    diesel::insert_into(mirror_state::table)
+        .values((
+            mirror_state::repo_id.eq(stub_id),
+            mirror_state::github_repo.eq(&full),
+            mirror_state::mode.eq("import_drift"),
+            mirror_state::paused.eq(true),
+        ))
+        .execute(&mut conn)
+        .unwrap();
+    let lane = format!("{org_name}/thing");
+    let before = last_seq(&mut conn, &lane);
+    let repo = import_now(
+        &app,
+        mirror::import_repo(
+            &app,
+            &ctx,
+            vcsstar_types::ImportRequest {
+                ctx: wire_ctx(),
+                org: org_name.clone(),
+                name: "thing".into(),
+                github_repo: full.clone(),
+                mode: Some("import_drift".into()),
+                visibility: Some("public".into()),
+            },
+        ),
+    )
+    .expect("the import continues");
+    assert!(repo.mirror_enabled);
+    let (id, enabled): (uuid::Uuid, bool) = repos::table
+        .filter(repos::org_id.eq(org_id))
+        .filter(repos::name.eq("thing"))
+        .select((repos::id, repos::mirror_enabled))
+        .first(&mut conn)
+        .unwrap();
+    assert_eq!(id, stub_id, "the stub row is used, not a second one");
+    assert!(enabled);
+    assert!(!refs::load(&mut conn, stub_id).unwrap().is_empty());
+    assert!(
+        event_kinds(&mut conn, &lane, before)
+            .iter()
+            .all(|k| k != "repo_created"),
+        "a continued import emits no second repo_created"
+    );
+
+    // A fresh import: its repo_created mirrors GitHub, so it carries origin
+    // `github` and the dispatcher plans no settings action from it.
+    std::fs::remove_dir_all(tmp.path().join("work")).unwrap();
+    let (_w2, _m2, _f2) = fake_github(tmp.path(), &format!("{org_name}-gh"), "other");
+    import_now(
+        &app,
+        mirror::import_repo(
+            &app,
+            &ctx,
+            vcsstar_types::ImportRequest {
+                ctx: wire_ctx(),
+                org: org_name.clone(),
+                name: "other".into(),
+                github_repo: format!("{org_name}-gh/other"),
+                mode: Some("import_drift".into()),
+                visibility: Some("public".into()),
+            },
+        ),
+    )
+    .expect("import");
+    let origins: Vec<Option<String>> = events::table
+        .filter(events::lane.eq(format!("{org_name}/other")))
+        .filter(events::kind.eq("repo_created"))
+        .select(events::origin)
+        .load(&mut conn)
+        .unwrap();
+    assert_eq!(origins, vec![Some("github".to_string())]);
+}
+
+#[test]
+fn queued_import_finishes_once_and_schedule_is_per_repository() {
+    use vcsstar_core::mirror_import::{self, Outcome};
+    let tmp = tempfile::tempdir().unwrap();
+    let Some(app) = app(tmp.path()) else {
+        eprintln!("DATABASE_URL unset or git missing; skipping");
+        return;
+    };
+    let p = principal(&app);
+    let ctx = ReqCtx {
+        request_id: "t".into(),
+        principal: Some(p.clone()),
+        peer: Peer::default(),
+    };
+    let suffix = uuid::Uuid::now_v7().simple().to_string();
+    let org_name = format!("ghqueue{}", &suffix[suffix.len() - 8..]);
+    let full = format!("{org_name}-gh/thing");
+    let _gh = fake_github(tmp.path(), &format!("{org_name}-gh"), "thing");
+    orgs::create(
+        &app,
+        &ctx,
+        vcsstar_types::CreateOrgRequest {
+            ctx: wire_ctx(),
+            name: org_name.clone(),
+            display_name: None,
+            github_owner: Some(format!("{org_name}-gh")),
+        },
+    )
+    .expect("org");
+    let req = || vcsstar_types::ImportRequest {
+        ctx: wire_ctx(),
+        org: org_name.clone(),
+        name: "thing".into(),
+        github_repo: full.clone(),
+        mode: Some("import_drift".into()),
+        visibility: Some("public".into()),
+    };
+    let repo = mirror::import_repo(&app, &ctx, req()).expect("queued");
+    assert!(!repo.mirror_enabled, "the answer comes before the fetch");
+    let get = || vcsstar_types::GetRepoRequest {
+        ctx: wire_ctx(),
+        repo: vcsstar_types::RepoRef {
+            org: org_name.clone(),
+            name: "thing".into(),
+            instance: None,
+        },
+    };
+    let s = mirror::status(&app, &ctx, get()).unwrap();
+    assert_eq!(s.import_state.as_deref(), Some("queued"));
+    // A second request while queued changes nothing and is no error.
+    mirror::import_repo(&app, &ctx, req()).expect("still queued");
+    let id = {
+        let mut conn = app.conn().unwrap();
+        vcsstar_db::schema::repos::table
+            .inner_join(vcsstar_db::schema::orgs::table)
+            .filter(vcsstar_db::schema::orgs::name.eq(&org_name))
+            .select(vcsstar_db::schema::repos::id)
+            .first::<uuid::Uuid>(&mut conn)
+            .unwrap()
+    };
+    assert!(matches!(mirror_import::run(&app, id).unwrap(), Outcome::Done { refs } if refs >= 2));
+    // The task given out again (lease expiry) does nothing more.
+    assert_eq!(
+        mirror_import::run(&app, id).unwrap(),
+        Outcome::Done { refs: 0 }
+    );
+    let s = mirror::status(&app, &ctx, get()).unwrap();
+    assert_eq!(s.import_state.as_deref(), Some("done"));
+    assert!(!s.paused);
+    assert_eq!(
+        (s.pull_sync_interval_s, s.ref_reconcile_interval_s),
+        (900, 900)
+    );
+    // A finished import of the name is refused.
+    let again = mirror::import_repo(&app, &ctx, req()).unwrap_err();
+    assert_eq!(again.code, vcsstar_core::Code::AlreadyExists);
+
+    let sched = |pull: Option<u64>, refs_s: Option<u64>| {
+        mirror::set_schedule(
+            &app,
+            &ctx,
+            vcsstar_types::SetMirrorScheduleRequest {
+                ctx: wire_ctx(),
+                repo: get().repo,
+                pull_sync_interval_s: pull,
+                ref_reconcile_interval_s: refs_s,
+            },
+        )
+    };
+    assert!(sched(Some(30), None).is_err(), "below the minimum");
+    let s = sched(Some(120), Some(3600)).unwrap();
+    assert_eq!(
+        (s.pull_sync_interval_s, s.ref_reconcile_interval_s),
+        (120, 3600)
+    );
+    let s = sched(Some(0), None).unwrap();
+    assert_eq!(
+        (s.pull_sync_interval_s, s.ref_reconcile_interval_s),
+        (900, 3600)
+    );
+}
+
+#[test]
+fn a_fork_in_another_org_is_listed_and_opens_a_pull_request_back() {
+    use vcsstar_core::services::{repos as repo_svc, vcs_ops};
+    let tmp = tempfile::tempdir().unwrap();
+    let Some(app) = app(tmp.path()) else {
+        eprintln!("DATABASE_URL unset or git missing; skipping");
+        return;
+    };
+    let p = principal(&app);
+    let ctx = ReqCtx {
+        request_id: "t".into(),
+        principal: Some(p.clone()),
+        peer: Peer::default(),
+    };
+    let suffix = uuid::Uuid::now_v7().simple().to_string();
+    let up = format!("ghup{}", &suffix[suffix.len() - 8..]);
+    let down = format!("ghdown{}", &suffix[suffix.len() - 8..]);
+    let _gh = fake_github(tmp.path(), &format!("{up}-gh"), "thing");
+    for (name, owner) in [(&up, Some(format!("{up}-gh"))), (&down, None)] {
+        orgs::create(
+            &app,
+            &ctx,
+            vcsstar_types::CreateOrgRequest {
+                ctx: wire_ctx(),
+                name: name.clone(),
+                display_name: None,
+                github_owner: owner,
+            },
+        )
+        .expect("org");
+    }
+    import_now(
+        &app,
+        mirror::import_repo(
+            &app,
+            &ctx,
+            vcsstar_types::ImportRequest {
+                ctx: wire_ctx(),
+                org: up.clone(),
+                name: "thing".into(),
+                github_repo: format!("{up}-gh/thing"),
+                mode: Some("import_drift".into()),
+                visibility: Some("public".into()),
+            },
+        ),
+    )
+    .expect("import");
+    let source = vcsstar_types::RepoRef {
+        org: up.clone(),
+        name: "thing".into(),
+        instance: None,
+    };
+    let fork = vcs_ops::fork(
+        &app,
+        &ctx,
+        vcsstar_types::ForkRequest {
+            ctx: wire_ctx(),
+            source: source.clone(),
+            org: down.clone(),
+            name: None,
+        },
+    )
+    .expect("fork");
+    let fork_ref = vcsstar_types::RepoRef {
+        org: fork.org.clone(),
+        name: fork.name.clone(),
+        instance: None,
+    };
+    let got = repo_svc::get(
+        &app,
+        &ctx,
+        vcsstar_types::GetRepoRequest {
+            ctx: wire_ctx(),
+            repo: fork_ref.clone(),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        got.fork_of
+            .as_ref()
+            .map(|r| (r.org.as_str(), r.name.as_str())),
+        Some((up.as_str(), "thing"))
+    );
+    let forks = repo_svc::list_forks(
+        &app,
+        &ctx,
+        vcsstar_types::GetRepoRequest {
+            ctx: wire_ctx(),
+            repo: source.clone(),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        forks
+            .repos
+            .iter()
+            .map(|r| r.org.as_str())
+            .collect::<Vec<_>>(),
+        vec![down.as_str()]
+    );
+    // A pull request from the fork's branch, in the other organization,
+    // into the source repository.
+    let pr = prs::open(
+        &app,
+        &ctx,
+        vcsstar_types::OpenPrRequest {
+            ctx: wire_ctx(),
+            repo: source.clone(),
+            title: "From the fork".into(),
+            body: None,
+            base_ref: "main".into(),
+            head: vcsstar_types::PrHead {
+                repo: fork_ref.clone(),
+                r#ref: "feat".into(),
+            },
+        },
+    )
+    .expect("cross-org pull request");
+    assert_eq!(
+        (pr.head.repo.org.as_str(), pr.repo.org.as_str()),
+        (down.as_str(), up.as_str())
+    );
 }

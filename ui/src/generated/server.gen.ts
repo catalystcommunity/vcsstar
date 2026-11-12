@@ -2,7 +2,7 @@
 // Source: <csil spec>
 // Target: typescript-server
 
-import type { ActAsExchangeRequest, ApiToken, BeginDeviceRequest, BeginLoginRequest, BeginLoginResponse, BlobRequest, BlobResponse, BranchProtection, CaptureReport, Comment, CommentRequest, Commit, CommitPage, CommitStatus, CompleteLoginRequest, ConfigureMirrorRequest, CreateEndpointRequest, CreateOrgRequest, CreateRepoRequest, CreateServiceAccountRequest, CreateServiceAccountTokenRequest, CreateTeamRequest, CreateTokenRequest, Credential, CredentialRef, DeleteRepoRequest, DeliveryPage, DeliveryQuery, DeliveryRef, DeviceApproveRequest, DeviceCode, DevicePollRequest, DevicePollResponse, DiffRequest, DiffResponse, Empty, Endpoint, EndpointRef, FedHello, FedHelloAck, ForkRequest, GetCommitRequest, GetOrgRequest, GetRepoRequest, GithubHealth, GithubLink, GithubRepoPage, Grant, HeadInfo, HeadQuery, ImportRequest, KeyRef, ListBlockedResponse, ListCommentsResponse, ListCredentialsRequest, ListCredentialsResponse, ListEndpointsRequest, ListEndpointsResponse, ListGithubReposRequest, ListGrantsResponse, ListKeysResponse, ListOrgMembersRequest, ListOrgsRequest, ListPrRequest, ListProtectionsResponse, ListRefsRequest, ListRefsResponse, ListReposRequest, ListReviewsResponse, ListServiceAccountsResponse, ListStatusRequest, ListStatusResponse, ListTeamsResponse, ListTokensResponse, LogRequest, MergeRequest, MergeResult, MirrorStatus, Ok, OpenPrRequest, Org, OrgMember, OrgMemberPage, OrgPage, PrPage, PrRef, PullRequest, ReconcileReport, RefInfo, RegisterKeyRequest, RemoveGrantRequest, RemoveOrgMemberRequest, RemoveProtectionRequest, ReplayRequest, ReplayResult, Repo, RepoPage, RetargetRequest, Review, ReviewRequest, RevokeServiceAccountTokenRequest, RevokeTokenRequest, ScopeSetRequest, ScopedBearer, ServerInfo, ServiceAccount, ServiceAccountRef, ServiceError, Session, SetCredentialRequest, SetGithubTokenRequest, SetGrantRequest, SetOrgMemberRequest, SetProtectionRequest, SetStatusRequest, SetTeamMemberRequest, SignedActAsScopeSet, SshKeyInfo, StreamControl, StreamMessage, Team, TeamRef, TreeRequest, TreeResponse, UpdateEndpointRequest, UpdateOrgRequest, UpdatePrRequest, UpdateRefRequest, UpdateRepoRequest, VerifyHeadRequest, WhoAmI } from "./types.gen.ts";
+import type { ActAsExchangeRequest, ApiToken, BeginDeviceRequest, BeginLoginRequest, BeginLoginResponse, BlobRequest, BlobResponse, BranchProtection, CaptureReport, Comment, CommentRequest, Commit, CommitPage, CommitStatus, CompleteLoginRequest, ConfigureMirrorRequest, CreateEndpointRequest, CreateOrgRequest, CreateRepoRequest, CreateServiceAccountRequest, CreateServiceAccountTokenRequest, CreateTeamRequest, CreateTokenRequest, Credential, CredentialRef, DeleteRepoRequest, DeliveryPage, DeliveryQuery, DeliveryRef, DeviceApproveRequest, DeviceCode, DevicePollRequest, DevicePollResponse, DiffRequest, DiffResponse, Empty, Endpoint, EndpointRef, FedHello, FedHelloAck, ForkRequest, GetCommitRequest, GetOrgRequest, GetRepoRequest, GithubHealth, GithubInstallationList, GithubLink, GithubRepoPage, Grant, HeadInfo, HeadQuery, ImportAllRequest, ImportAllResult, ImportRequest, InstanceRoleGrant, InstanceRoleList, KeyRef, ListBlockedResponse, ListCommentsResponse, ListCredentialsRequest, ListCredentialsResponse, ListEndpointsRequest, ListEndpointsResponse, ListGithubReposRequest, ListGrantsResponse, ListKeysResponse, ListOrgMembersRequest, ListOrgsRequest, ListPrRequest, ListProtectionsResponse, ListRefsRequest, ListRefsResponse, ListReposRequest, ListReviewsResponse, ListServiceAccountsResponse, ListStatusRequest, ListStatusResponse, ListTeamsResponse, ListTokensResponse, LogRequest, MergeRequest, MergeResult, MirrorStatus, Ok, OpenPrRequest, Org, OrgMember, OrgMemberPage, OrgPage, PrPage, PrRef, Preferences, PullRequest, ReconcileReport, RefInfo, RegisterKeyRequest, RemoveGrantRequest, RemoveInstanceRoleRequest, RemoveOrgMemberRequest, RemoveProtectionRequest, ReplayRequest, ReplayResult, Repo, RepoPage, RetargetRequest, Review, ReviewRequest, RevokeServiceAccountTokenRequest, RevokeTokenRequest, ScopeSetRequest, ScopedBearer, ServerInfo, ServiceAccount, ServiceAccountRef, ServiceError, Session, SetCredentialRequest, SetGithubTokenRequest, SetGrantRequest, SetInstanceRoleRequest, SetMirrorScheduleRequest, SetOrgMemberRequest, SetPreferencesRequest, SetProtectionRequest, SetStatusRequest, SetTeamMemberRequest, SignedActAsScopeSet, SshKeyInfo, StreamControl, StreamMessage, Team, TeamRef, TreeRequest, TreeResponse, UpdateEndpointRequest, UpdateOrgRequest, UpdatePrRequest, UpdateRefRequest, UpdateRepoRequest, VerifyHeadRequest, WhoAmI } from "./types.gen.ts";
 
 // The consumer-defined context carries auth, request id, etc. It is opaque to
 // generated code; the adapter defines its shape.
@@ -40,6 +40,14 @@ export interface AuthHandlers {
   githubLinkStatus(req: Empty, ctx: RequestContext): Promise<GithubLink>;
   setGithubToken(req: SetGithubTokenRequest, ctx: RequestContext): Promise<GithubLink>;
   unlinkGithub(req: Empty, ctx: RequestContext): Promise<Ok>;
+  /**
+   * The caller's display preferences (defaults when none are saved).
+   */
+  getPreferences(req: Empty, ctx: RequestContext): Promise<Preferences>;
+  /**
+   * Save the given fields; absent fields keep their value.
+   */
+  setPreferences(req: SetPreferencesRequest, ctx: RequestContext): Promise<Preferences>;
 }
 
 export const AuthWireIds = {
@@ -63,6 +71,8 @@ export const AuthWireIds = {
     githubLinkStatus: 15,
     setGithubToken: 16,
     unlinkGithub: 17,
+    getPreferences: 18,
+    setPreferences: 19,
   },
 } as const;
 
@@ -168,6 +178,24 @@ export const HooksWireIds = {
   },
 } as const;
 
+export interface InstanceHandlers {
+  /**
+   * Every instance role. Instance admins only.
+   */
+  listRoles(req: Empty, ctx: RequestContext): Promise<InstanceRoleList>;
+  setRole(req: SetInstanceRoleRequest, ctx: RequestContext): Promise<InstanceRoleGrant>;
+  removeRole(req: RemoveInstanceRoleRequest, ctx: RequestContext): Promise<Ok>;
+}
+
+export const InstanceWireIds = {
+  service: 12,
+  ops: {
+    listRoles: 0,
+    setRole: 1,
+    removeRole: 2,
+  },
+} as const;
+
 export interface MetaHandlers {
   serverInfo(req: Empty, ctx: RequestContext): Promise<ServerInfo>;
 }
@@ -187,6 +215,10 @@ export interface MirrorHandlers {
   reconcile(req: GetRepoRequest, ctx: RequestContext): Promise<ReconcileReport>;
   pause(req: GetRepoRequest, ctx: RequestContext): Promise<Ok>;
   resume(req: GetRepoRequest, ctx: RequestContext): Promise<Ok>;
+  /**
+   * Make the repository and queue its import. The answer comes before
+   * the branches are fetched; `status` reports `import_state`.
+   */
   importRepo(req: ImportRequest, ctx: RequestContext): Promise<Repo>;
   configure(req: ConfigureMirrorRequest, ctx: RequestContext): Promise<MirrorStatus>;
   listCredentials(req: ListCredentialsRequest, ctx: RequestContext): Promise<ListCredentialsResponse>;
@@ -201,6 +233,19 @@ export interface MirrorHandlers {
    * This node's view of GitHub availability and rate limits.
    */
   health(req: Empty, ctx: RequestContext): Promise<GithubHealth>;
+  /**
+   * Start the history import of the repository's GitHub pull requests
+   * again from the first one. A mirrored repository imports its history
+   * by itself; this is for a repository whose import must run again.
+   */
+  backfill(req: GetRepoRequest, ctx: RequestContext): Promise<MirrorStatus>;
+  /**
+   * Where the instance's GitHub Apps are installed, with the vcsstar
+   * organizations whose `github_owner` is each owner.
+   */
+  listGithubInstallations(req: Empty, ctx: RequestContext): Promise<GithubInstallationList>;
+  importAll(req: ImportAllRequest, ctx: RequestContext): Promise<ImportAllResult>;
+  setSchedule(req: SetMirrorScheduleRequest, ctx: RequestContext): Promise<MirrorStatus>;
 }
 
 export const MirrorWireIds = {
@@ -219,6 +264,10 @@ export const MirrorWireIds = {
     removeCredential: 10,
     listGithubRepos: 11,
     health: 12,
+    backfill: 13,
+    listGithubInstallations: 14,
+    importAll: 15,
+    setSchedule: 16,
   },
 } as const;
 
@@ -312,6 +361,11 @@ export interface ReposHandlers {
    * written before the object store existed. Repeatable; no-op when covered.
    */
   captureHistory(req: GetRepoRequest, ctx: RequestContext): Promise<CaptureReport>;
+  /**
+   * Direct forks of the repository that the caller can see, on this
+   * instance. A pull request into the repository may come from one.
+   */
+  listForks(req: GetRepoRequest, ctx: RequestContext): Promise<RepoPage>;
 }
 
 export const ReposWireIds = {
@@ -337,6 +391,7 @@ export const ReposWireIds = {
     removeProtection: 17,
     listProtections: 18,
     captureHistory: 19,
+    listForks: 20,
   },
 } as const;
 
@@ -385,6 +440,7 @@ export interface ServerHandlers {
   eventStream: EventStreamHandlers;
   federation: FederationHandlers;
   hooks: HooksHandlers;
+  instance: InstanceHandlers;
   meta: MetaHandlers;
   mirror: MirrorHandlers;
   orgs: OrgsHandlers;
@@ -500,6 +556,16 @@ export async function dispatch(
           const res = await handlers.auth.unlinkGithub(req, ctx);
           return codec.encode(res);
         }
+        case "get-preferences": {
+          const req = codec.decode<Empty>(reqBytes);
+          const res = await handlers.auth.getPreferences(req, ctx);
+          return codec.encode(res);
+        }
+        case "set-preferences": {
+          const req = codec.decode<SetPreferencesRequest>(reqBytes);
+          const res = await handlers.auth.setPreferences(req, ctx);
+          return codec.encode(res);
+        }
         default:
           throw { code: 404, message: `unknown method ${service}.${method}` } satisfies ServiceError;
       }
@@ -566,6 +632,27 @@ export async function dispatch(
         case "update-endpoint": {
           const req = codec.decode<UpdateEndpointRequest>(reqBytes);
           const res = await handlers.hooks.updateEndpoint(req, ctx);
+          return codec.encode(res);
+        }
+        default:
+          throw { code: 404, message: `unknown method ${service}.${method}` } satisfies ServiceError;
+      }
+    }
+    case "Instance": {
+      switch (method) {
+        case "list-roles": {
+          const req = codec.decode<Empty>(reqBytes);
+          const res = await handlers.instance.listRoles(req, ctx);
+          return codec.encode(res);
+        }
+        case "set-role": {
+          const req = codec.decode<SetInstanceRoleRequest>(reqBytes);
+          const res = await handlers.instance.setRole(req, ctx);
+          return codec.encode(res);
+        }
+        case "remove-role": {
+          const req = codec.decode<RemoveInstanceRoleRequest>(reqBytes);
+          const res = await handlers.instance.removeRole(req, ctx);
           return codec.encode(res);
         }
         default:
@@ -648,6 +735,26 @@ export async function dispatch(
         case "health": {
           const req = codec.decode<Empty>(reqBytes);
           const res = await handlers.mirror.health(req, ctx);
+          return codec.encode(res);
+        }
+        case "backfill": {
+          const req = codec.decode<GetRepoRequest>(reqBytes);
+          const res = await handlers.mirror.backfill(req, ctx);
+          return codec.encode(res);
+        }
+        case "list-github-installations": {
+          const req = codec.decode<Empty>(reqBytes);
+          const res = await handlers.mirror.listGithubInstallations(req, ctx);
+          return codec.encode(res);
+        }
+        case "import-all": {
+          const req = codec.decode<ImportAllRequest>(reqBytes);
+          const res = await handlers.mirror.importAll(req, ctx);
+          return codec.encode(res);
+        }
+        case "set-schedule": {
+          const req = codec.decode<SetMirrorScheduleRequest>(reqBytes);
+          const res = await handlers.mirror.setSchedule(req, ctx);
           return codec.encode(res);
         }
         default:
@@ -883,6 +990,11 @@ export async function dispatch(
           const res = await handlers.repos.captureHistory(req, ctx);
           return codec.encode(res);
         }
+        case "list-forks": {
+          const req = codec.decode<GetRepoRequest>(reqBytes);
+          const res = await handlers.repos.listForks(req, ctx);
+          return codec.encode(res);
+        }
         default:
           throw { code: 404, message: `unknown method ${service}.${method}` } satisfies ServiceError;
       }
@@ -1057,6 +1169,16 @@ export async function dispatchCompact(
           const res = await handlers.auth.unlinkGithub(req, ctx);
           return codec.encode(res);
         }
+        case 18: {
+          const req = codec.decode<Empty>(reqBytes);
+          const res = await handlers.auth.getPreferences(req, ctx);
+          return codec.encode(res);
+        }
+        case 19: {
+          const req = codec.decode<SetPreferencesRequest>(reqBytes);
+          const res = await handlers.auth.setPreferences(req, ctx);
+          return codec.encode(res);
+        }
         default:
           throw { code: 404, message: `unknown ordinal ${service}.${method}` } satisfies ServiceError;
       }
@@ -1123,6 +1245,27 @@ export async function dispatchCompact(
         case 5: {
           const req = codec.decode<UpdateEndpointRequest>(reqBytes);
           const res = await handlers.hooks.updateEndpoint(req, ctx);
+          return codec.encode(res);
+        }
+        default:
+          throw { code: 404, message: `unknown ordinal ${service}.${method}` } satisfies ServiceError;
+      }
+    }
+    case 12: {
+      switch (method) {
+        case 0: {
+          const req = codec.decode<Empty>(reqBytes);
+          const res = await handlers.instance.listRoles(req, ctx);
+          return codec.encode(res);
+        }
+        case 1: {
+          const req = codec.decode<SetInstanceRoleRequest>(reqBytes);
+          const res = await handlers.instance.setRole(req, ctx);
+          return codec.encode(res);
+        }
+        case 2: {
+          const req = codec.decode<RemoveInstanceRoleRequest>(reqBytes);
+          const res = await handlers.instance.removeRole(req, ctx);
           return codec.encode(res);
         }
         default:
@@ -1205,6 +1348,26 @@ export async function dispatchCompact(
         case 12: {
           const req = codec.decode<Empty>(reqBytes);
           const res = await handlers.mirror.health(req, ctx);
+          return codec.encode(res);
+        }
+        case 13: {
+          const req = codec.decode<GetRepoRequest>(reqBytes);
+          const res = await handlers.mirror.backfill(req, ctx);
+          return codec.encode(res);
+        }
+        case 14: {
+          const req = codec.decode<Empty>(reqBytes);
+          const res = await handlers.mirror.listGithubInstallations(req, ctx);
+          return codec.encode(res);
+        }
+        case 15: {
+          const req = codec.decode<ImportAllRequest>(reqBytes);
+          const res = await handlers.mirror.importAll(req, ctx);
+          return codec.encode(res);
+        }
+        case 16: {
+          const req = codec.decode<SetMirrorScheduleRequest>(reqBytes);
+          const res = await handlers.mirror.setSchedule(req, ctx);
           return codec.encode(res);
         }
         default:
@@ -1438,6 +1601,11 @@ export async function dispatchCompact(
         case 19: {
           const req = codec.decode<GetRepoRequest>(reqBytes);
           const res = await handlers.repos.captureHistory(req, ctx);
+          return codec.encode(res);
+        }
+        case 20: {
+          const req = codec.decode<GetRepoRequest>(reqBytes);
+          const res = await handlers.repos.listForks(req, ctx);
           return codec.encode(res);
         }
         default:

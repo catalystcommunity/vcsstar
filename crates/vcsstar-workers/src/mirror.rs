@@ -1,6 +1,8 @@
 //! The mirror worker role: claim one action wake-up at a time from the
 //! `mirror:{org}/{repo}` queues, converge it, and schedule the periodic
 //! reconcile pass (oldest `last_full_reconcile_at` first, a few per tick).
+//! A second thread runs the history import (`crate::backfill`); two more
+//! run repository imports (`crate::import`).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -16,14 +18,47 @@ use vcsstar_db::schema::{mirror_state, orgs, repos};
 use crate::queue::{Claimed, Queue};
 
 const LEASE: Duration = Duration::from_secs(600);
-const RECONCILE_EVERY: chrono::Duration = chrono::Duration::minutes(15);
-/// Pull-based GitHub sync cadence per repository (see
-/// `github_sync::reconcile_pulls`).
-const PULL_SYNC_EVERY: chrono::Duration = chrono::Duration::minutes(15);
 /// Repositories whose pull requests are synced per pass, per node.
 const PULL_SYNC_PER_PASS: i64 = 2;
 
 pub fn run(app: App, stop: Arc<AtomicBool>) -> anyhow::Result<()> {
+    // The history import runs beside the action loop, so a long import
+    // never delays a push or a comment.
+    let backfill = {
+        let (app, stop) = (app.clone(), stop.clone());
+        std::thread::Builder::new()
+            .name("history-import".into())
+            .spawn(move || {
+                if let Err(e) = crate::backfill::run(app, stop) {
+                    tracing::warn!(error = %e, "history import thread ended");
+                }
+            })?
+    };
+    // Repository imports (queue `import:github`) on their own threads, so
+    // a long fetch never delays live mirror work. The first one also
+    // sweeps for imports whose task was never submitted.
+    let mut imports = Vec::new();
+    for i in 0..crate::import::THREADS {
+        let (app, stop) = (app.clone(), stop.clone());
+        imports.push(
+            std::thread::Builder::new()
+                .name(format!("import-{i}"))
+                .spawn(move || {
+                    if let Err(e) = crate::import::run(app, stop, i == 0) {
+                        tracing::warn!(error = %e, "import thread ended");
+                    }
+                })?,
+        );
+    }
+    let result = run_actions(app, stop);
+    let _ = backfill.join();
+    for t in imports {
+        let _ = t.join();
+    }
+    result
+}
+
+fn run_actions(app: App, stop: Arc<AtomicBool>) -> anyhow::Result<()> {
     let mut queue: Option<Queue> = None;
     let mut queues: Vec<String> = Vec::new();
     let mut refreshed = Instant::now() - Duration::from_secs(3600);
@@ -180,21 +215,19 @@ fn reconcile_pass(app: &App) -> anyhow::Result<()> {
                 .execute(&mut conn)?;
         }
     }
-    // A repository is due on the schedule, or when its last pass predates
-    // the moment the git lane came back from an outage.
-    let cutoff = std::cmp::max(
-        Utc::now() - RECONCILE_EVERY,
-        health::recovered_at(Lane::Git).unwrap_or(Utc::now() - RECONCILE_EVERY),
-    );
+    // A repository is due on its own schedule (`ref_reconcile_interval_s`,
+    // default 15 minutes), or when its last pass predates the moment the
+    // git lane came back from an outage.
+    let recovered = health::recovered_at(Lane::Git);
     let due: Vec<(uuid::Uuid, String, String)> = mirror_state::table
         .inner_join(repos::table.inner_join(orgs::table))
         .filter(repos::mirror_enabled.eq(true))
         .filter(mirror_state::paused.eq(false))
-        .filter(
-            mirror_state::last_full_reconcile_at
-                .is_null()
-                .or(mirror_state::last_full_reconcile_at.lt(cutoff)),
-        )
+        .filter(due_filter(
+            "last_full_reconcile_at",
+            "ref_reconcile_interval_s",
+            recovered,
+        ))
         .order(mirror_state::last_full_reconcile_at.asc().nulls_first())
         .limit(3)
         .select((repos::id, orgs::name, repos::name))
@@ -202,13 +235,11 @@ fn reconcile_pass(app: &App) -> anyhow::Result<()> {
     for (repo_id, org, repo) in due {
         // Claim the pass: with several worker nodes only the one whose
         // update lands runs it (`reconcile` stamps the time again at the end).
-        let claimed = diesel::update(
-            mirror_state::table.find(repo_id).filter(
-                mirror_state::last_full_reconcile_at
-                    .is_null()
-                    .or(mirror_state::last_full_reconcile_at.lt(cutoff)),
-            ),
-        )
+        let claimed = diesel::update(mirror_state::table.find(repo_id).filter(due_filter(
+            "last_full_reconcile_at",
+            "ref_reconcile_interval_s",
+            recovered,
+        )))
         .set(mirror_state::last_full_reconcile_at.eq(Utc::now()))
         .execute(&mut conn)?;
         if claimed == 0 {
@@ -250,31 +281,26 @@ fn pull_sync_pass(app: &App) -> anyhow::Result<()> {
         return Ok(());
     }
     let mut conn = app.conn()?;
-    let cutoff = std::cmp::max(
-        Utc::now() - PULL_SYNC_EVERY,
-        health::recovered_at(Lane::Api).unwrap_or(Utc::now() - PULL_SYNC_EVERY),
-    );
+    let recovered = health::recovered_at(Lane::Api);
     let due: Vec<(uuid::Uuid, String, String)> = mirror_state::table
         .inner_join(repos::table.inner_join(orgs::table))
         .filter(repos::mirror_enabled.eq(true))
         .filter(mirror_state::paused.eq(false))
-        .filter(
-            mirror_state::last_pull_pass_at
-                .is_null()
-                .or(mirror_state::last_pull_pass_at.lt(cutoff)),
-        )
+        .filter(due_filter(
+            "last_pull_pass_at",
+            "pull_sync_interval_s",
+            recovered,
+        ))
         .order(mirror_state::last_pull_pass_at.asc().nulls_first())
         .limit(PULL_SYNC_PER_PASS)
         .select((repos::id, orgs::name, repos::name))
         .load(&mut conn)?;
     for (repo_id, org_name, repo_name) in due {
-        let claimed = diesel::update(
-            mirror_state::table.find(repo_id).filter(
-                mirror_state::last_pull_pass_at
-                    .is_null()
-                    .or(mirror_state::last_pull_pass_at.lt(cutoff)),
-            ),
-        )
+        let claimed = diesel::update(mirror_state::table.find(repo_id).filter(due_filter(
+            "last_pull_pass_at",
+            "pull_sync_interval_s",
+            recovered,
+        )))
         .set(mirror_state::last_pull_pass_at.eq(Utc::now()))
         .execute(&mut conn)?;
         if claimed == 0 {
@@ -302,11 +328,12 @@ fn pull_sync_pass(app: &App) -> anyhow::Result<()> {
             Ok(o) => {
                 tracing::info!(repo = %format!("{org_name}/{repo_name}"), checked = o.checked, changed = o.changed, calls = o.calls, complete = o.complete, "pull sync pass");
                 if !o.complete {
-                    // Continue in about a minute, not in fifteen.
+                    // Continue in about a minute, not after the full interval.
+                    let every = mirror::pull_sync_interval(&state);
                     diesel::update(mirror_state::table.find(repo_id))
                         .set(
                             mirror_state::last_pull_pass_at
-                                .eq(Utc::now() - PULL_SYNC_EVERY + chrono::Duration::seconds(60)),
+                                .eq(Utc::now() - every + chrono::Duration::seconds(60)),
                         )
                         .execute(&mut conn)?;
                 }
@@ -321,4 +348,28 @@ fn pull_sync_pass(app: &App) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+/// SQL condition "this pass is due": never ran, or ran longer ago than the
+/// repository's interval (`mirror::DEFAULT_PASS_INTERVAL_S` when NULL),
+/// or ran before the lane came back from an outage. The column names are
+/// constants of this file and the time is our own value, never input.
+fn due_filter(
+    last: &'static str,
+    interval: &'static str,
+    recovered: Option<chrono::DateTime<Utc>>,
+) -> diesel::expression::SqlLiteral<diesel::sql_types::Bool> {
+    let recovered = recovered
+        .map(|t| {
+            format!(
+                " OR mirror_state.{last} < '{}'::timestamptz",
+                t.to_rfc3339()
+            )
+        })
+        .unwrap_or_default();
+    diesel::dsl::sql::<diesel::sql_types::Bool>(&format!(
+        "(mirror_state.{last} IS NULL \
+         OR mirror_state.{last} < now() - make_interval(secs => COALESCE(mirror_state.{interval}, {})){recovered})",
+        mirror::DEFAULT_PASS_INTERVAL_S
+    ))
 }

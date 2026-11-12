@@ -129,13 +129,23 @@ ApiToken = {
 RevokeTokenRequest = { ctx: Ctx, token_id: text }
 ListTokensResponse = { tokens: [* ApiToken] }
 
+;;; Display preferences of one identity. Clients use the defaults for an
+;;; anonymous viewer.
+Preferences = {
+    ;;; "split" (side by side, the default) | "unified" (in-line).
+    diff_layout: text
+}
+SetPreferencesRequest = { ctx: Ctx, ? diff_layout: text }
+
 WhoAmI = {
     identity: Identity,
     scopes: [* text],
     ;;; "session" | "api_token" | "act_as"
     credential_kind: text,
     ? acting_via: text,
-    ? expires_at: Timestamp
+    ? expires_at: Timestamp,
+    ;;; "admin" | "viewer" when the identity has an instance role.
+    ? instance_role: text
 }
 
 ;;; CLI device flow.
@@ -270,7 +280,13 @@ service Auth {
     @wire-id(16)
     set-github-token: SetGithubTokenRequest -> GithubLink / ServiceError,
     @wire-id(17)
-    unlink-github: Empty -> Ok / ServiceError
+    unlink-github: Empty -> Ok / ServiceError,
+    ;;; The caller's display preferences (defaults when none are saved).
+    @wire-id(18)
+    get-preferences: Empty -> Preferences / ServiceError,
+    ;;; Save the given fields; absent fields keep their value.
+    @wire-id(19)
+    set-preferences: SetPreferencesRequest -> Preferences / ServiceError
 }
 
 ;; ---------------------------------------------------------------------
@@ -281,7 +297,11 @@ Org = {
     name: text,
     ? display_name: text,
     ? github_owner: text,
-    created_at: Timestamp
+    created_at: Timestamp,
+    ;;; The caller's role in the organization: "owner" | "admin" |
+    ;;; "member". Absent for an anonymous caller or a non-member. An
+    ;;; instance admin is "owner". Clients show only what the role allows.
+    ? viewer_role: text
 }
 CreateOrgRequest = { ctx: Ctx, name: text, ? display_name: text, ? github_owner: text }
 GetOrgRequest = { ctx: Ctx, org: text }
@@ -353,7 +373,10 @@ Repo = {
     created_at: Timestamp,
     ;;; Clone URLs for this instance.
     https_url: text,
-    ? ssh_url: text
+    ? ssh_url: text,
+    ;;; The caller's effective role on the repository: "admin" |
+    ;;; "maintain" | "write" | "read". Set by `get` and `list`.
+    ? viewer_role: text
 }
 CreateRepoRequest = {
     ctx: Ctx,
@@ -526,7 +549,11 @@ service Repos {
     ;;; holds, and upload it as one new segment. Use it for history that was
     ;;; written before the object store existed. Repeatable; no-op when covered.
     @wire-id(19)
-    capture-history: GetRepoRequest -> CaptureReport / ServiceError
+    capture-history: GetRepoRequest -> CaptureReport / ServiceError,
+    ;;; Direct forks of the repository that the caller can see, on this
+    ;;; instance. A pull request into the repository may come from one.
+    @wire-id(20)
+    list-forks: GetRepoRequest -> RepoPage / ServiceError
 }
 
 ;; ---------------------------------------------------------------------
@@ -777,7 +804,45 @@ MirrorStatus = {
     ? last_error: text,
     ? last_full_reconcile_at: Timestamp,
     ;;; Newest GitHub `updated_at` the pull request sync pass has processed.
-    ? last_pull_sync_at: Timestamp
+    ? last_pull_sync_at: Timestamp,
+    ;;; History import of every GitHub pull request, oldest first:
+    ;;; "pending" (not started), "running", or "done".
+    ? backfill_state: text,
+    ;;; Pull requests the history import went through so far.
+    ? backfill_pulls: uint,
+    ? backfill_started_at: Timestamp,
+    ? backfill_done_at: Timestamp,
+    ;;; Import of the branches and tags from GitHub, run by a mirror
+    ;;; worker: "queued", "failed" (stopped retrying; see last_error), or
+    ;;; "done".
+    ? import_state: text,
+    ;;; Seconds between pull request passes and between ref reconcile
+    ;;; passes for this repository (the instance default when not set).
+    pull_sync_interval_s: uint,
+    ref_reconcile_interval_s: uint
+}
+;;; Cadence of the pull-based passes of one repository. 0 or absent
+;;; sets the instance default (900 s). Allowed: 60 to 604800.
+SetMirrorScheduleRequest = {
+    ctx: Ctx,
+    repo: RepoRef,
+    ? pull_sync_interval_s: uint,
+    ? ref_reconcile_interval_s: uint
+}
+;;; Queue the import of every GitHub repository under the organization's
+;;; `github_owner` that has no mirror here yet.
+ImportAllRequest = {
+    ctx: Ctx,
+    org: text,
+    ? mode: text,
+    ;;; Leave out archived GitHub repositories (default false).
+    ? skip_archived: bool
+}
+ImportAllResult = {
+    ;;; "owner/name" of each queued import.
+    queued: [* text],
+    ;;; "owner/name: reason" for each one not queued.
+    skipped: [* text]
 }
 BlockedAction = {
     id: text,
@@ -881,7 +946,28 @@ GithubRepoInfo = {
     html_url: text,
     ? pushed_at: Timestamp,
     ;;; Name of the vcsstar repository that mirrors it, when one does.
-    ? mirrored_as: text
+    ? mirrored_as: text,
+    ;;; Its import state when it mirrors one ("queued", "failed", "done").
+    ? import_state: text
+}
+GithubInstallation = {
+    ;;; Numeric id of the instance GitHub App.
+    app_id: text,
+    ? app_slug: text,
+    installation_id: uint,
+    ;;; GitHub login of the account the App is installed on.
+    owner: text,
+    ;;; "Organization" | "User"
+    owner_type: text,
+    ;;; "all" | "selected"
+    repository_selection: text,
+    ;;; vcsstar organizations whose `github_owner` is this owner.
+    vcsstar_orgs: [* text]
+}
+GithubInstallationList = {
+    installations: [* GithubInstallation],
+    ;;; Apps whose installations could not be read, with the reason.
+    errors: [* text]
 }
 GithubRepoPage = {
     repos: [* GithubRepoInfo],
@@ -941,6 +1027,8 @@ service Mirror {
     pause: GetRepoRequest -> Ok / ServiceError,
     @wire-id(6)
     resume: GetRepoRequest -> Ok / ServiceError,
+    ;;; Make the repository and queue its import. The answer comes before
+    ;;; the branches are fetched; `status` reports `import_state`.
     @wire-id(7)
     import-repo: ImportRequest -> Repo / ServiceError,
     @wire-id(8)
@@ -956,7 +1044,20 @@ service Mirror {
     list-github-repos: ListGithubReposRequest -> GithubRepoPage / ServiceError,
     ;;; This node's view of GitHub availability and rate limits.
     @wire-id(12)
-    health: Empty -> GithubHealth / ServiceError
+    health: Empty -> GithubHealth / ServiceError,
+    ;;; Start the history import of the repository's GitHub pull requests
+    ;;; again from the first one. A mirrored repository imports its history
+    ;;; by itself; this is for a repository whose import must run again.
+    @wire-id(13)
+    backfill: GetRepoRequest -> MirrorStatus / ServiceError,
+    ;;; Where the instance's GitHub Apps are installed, with the vcsstar
+    ;;; organizations whose `github_owner` is each owner.
+    @wire-id(14)
+    list-github-installations: Empty -> GithubInstallationList / ServiceError,
+    @wire-id(15)
+    import-all: ImportAllRequest -> ImportAllResult / ServiceError,
+    @wire-id(16)
+    set-schedule: SetMirrorScheduleRequest -> MirrorStatus / ServiceError
 }
 
 ;; ---------------------------------------------------------------------
@@ -991,6 +1092,43 @@ CreateServiceAccountTokenRequest = {
     ? expires_at: Timestamp
 }
 RevokeServiceAccountTokenRequest = { ctx: Ctx, org: text, name: text, token_id: text }
+
+;; ---------------------------------------------------------------------
+;; Instance roles
+;; ---------------------------------------------------------------------
+
+;;; A role on the whole instance. "admin": everything an instance admin
+;;; may do (as `INSTANCE_ADMINS`). "viewer": read every organization's
+;;; repositories, private ones too; no writes. `source` is "manual" (set
+;;; by an admin) or "claims" (from a LinkKeys claim policy; reserved).
+InstanceRoleGrant = {
+    identity: Identity,
+    role: text,
+    source: text,
+    ? granted_by: Identity,
+    granted_at: Timestamp
+}
+InstanceRoleList = {
+    grants: [* InstanceRoleGrant],
+    ;;; `user_id@domain` of the admins from the configuration; they cannot
+    ;;; be removed here.
+    configured_admins: [* text]
+}
+;;; `identity` is `user_id@domain` of an identity this instance has seen
+;;; (it signed in at least once, or is a service account).
+SetInstanceRoleRequest = { ctx: Ctx, identity: text, role: text }
+RemoveInstanceRoleRequest = { ctx: Ctx, identity: text }
+
+@wire-id(12)
+service Instance {
+    ;;; Every instance role. Instance admins only.
+    @wire-id(0)
+    list-roles: Empty -> InstanceRoleList / ServiceError,
+    @wire-id(1)
+    set-role: SetInstanceRoleRequest -> InstanceRoleGrant / ServiceError,
+    @wire-id(2)
+    remove-role: RemoveInstanceRoleRequest -> Ok / ServiceError
+}
 
 @wire-id(11)
 service ServiceAccounts {

@@ -8,8 +8,8 @@ use vcsstar_types as t;
 
 use crate::principal::{self, ReqCtx};
 use crate::services::{
-    actas, auth, hooks, keys, login, meta, mirror, orgs, prs, repos, service_accounts, statuses,
-    vcs_ops,
+    actas, auth, hooks, instance, keys, login, meta, mirror, orgs, prs, repos, service_accounts,
+    statuses, vcs_ops,
 };
 use crate::{App, Error};
 
@@ -158,6 +158,16 @@ pub const IMPLEMENTED: &[(&str, &str)] = &[
     ("Mirror", "remove-credential"),
     ("Mirror", "list-github-repos"),
     ("Mirror", "health"),
+    ("Mirror", "backfill"),
+    ("Mirror", "list-github-installations"),
+    ("Repos", "list-forks"),
+    ("Auth", "get-preferences"),
+    ("Auth", "set-preferences"),
+    ("Mirror", "import-all"),
+    ("Mirror", "set-schedule"),
+    ("Instance", "list-roles"),
+    ("Instance", "set-role"),
+    ("Instance", "remove-role"),
     ("ServiceAccounts", "create"),
     ("ServiceAccounts", "list"),
     ("ServiceAccounts", "disable"),
@@ -830,6 +840,96 @@ impl Dispatcher for AppDispatcher {
                 encode_github_health,
                 "GithubHealth",
                 mirror::health
+            ),
+            ("Mirror", "backfill") => op!(
+                app,
+                peer,
+                payload,
+                decode_get_repo_request,
+                encode_mirror_status,
+                "MirrorStatus",
+                mirror::backfill
+            ),
+            ("Mirror", "list-github-installations") => op!(
+                app,
+                peer,
+                payload,
+                decode_empty,
+                encode_github_installation_list,
+                "GithubInstallationList",
+                mirror::list_github_installations
+            ),
+            ("Auth", "get-preferences") => op!(
+                app,
+                peer,
+                payload,
+                decode_empty,
+                encode_preferences,
+                "Preferences",
+                auth::get_preferences
+            ),
+            ("Auth", "set-preferences") => op!(
+                app,
+                peer,
+                payload,
+                decode_set_preferences_request,
+                encode_preferences,
+                "Preferences",
+                auth::set_preferences
+            ),
+            ("Repos", "list-forks") => op!(
+                app,
+                peer,
+                payload,
+                decode_get_repo_request,
+                encode_repo_page,
+                "RepoPage",
+                repos::list_forks
+            ),
+            ("Mirror", "import-all") => op!(
+                app,
+                peer,
+                payload,
+                decode_import_all_request,
+                encode_import_all_result,
+                "ImportAllResult",
+                mirror::import_all
+            ),
+            ("Instance", "list-roles") => op!(
+                app,
+                peer,
+                payload,
+                decode_empty,
+                encode_instance_role_list,
+                "InstanceRoleList",
+                instance::list_roles
+            ),
+            ("Instance", "set-role") => op!(
+                app,
+                peer,
+                payload,
+                decode_set_instance_role_request,
+                encode_instance_role_grant,
+                "InstanceRoleGrant",
+                instance::set_role
+            ),
+            ("Instance", "remove-role") => op!(
+                app,
+                peer,
+                payload,
+                decode_remove_instance_role_request,
+                encode_ok,
+                "Ok",
+                instance::remove_role
+            ),
+            ("Mirror", "set-schedule") => op!(
+                app,
+                peer,
+                payload,
+                decode_set_mirror_schedule_request,
+                encode_mirror_status,
+                "MirrorStatus",
+                mirror::set_schedule
             ),
 
             ("ServiceAccounts", "create") => op!(

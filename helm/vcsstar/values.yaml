@@ -70,13 +70,15 @@ corndogs:
 # instance and never rotate it without re-entering the credentials.
 credentialKeySecret: ""
 
-# The GitHub App of this instance (optional). A Secret with
-# SECRET_VCSSTAR__GITHUB_APP_ID, SECRET_VCSSTAR__GITHUB_APP_CLIENT_ID,
-# SECRET_VCSSTAR__GITHUB_APP_CLIENT_SECRET, and
-# SECRET_VCSSTAR__GITHUB_APP_PRIVATE_KEY (the PEM). With it, users connect
-# their GitHub account on the Account page and vcsstar acts as them on
-# GitHub; a mirrored repository whose owner installed the App needs no
-# stored credential. The App's callback URL is <publicUrl>/auth/github/callback.
+# The GitHub Apps of this instance (optional). A Secret with
+# SECRET_VCSSTAR__GITHUB_APPS: a JSON list of objects with app_id,
+# client_id, client_secret, private_key (the PEM), and optional slug. The
+# older single-App keys SECRET_VCSSTAR__GITHUB_APP_ID, _CLIENT_ID,
+# _CLIENT_SECRET, and _PRIVATE_KEY still work and add one more App.
+# GitHub limits the rate per App installation, so the mirror spreads its
+# calls over every App installed for a repository. The first App also
+# links user accounts (Account page); vcsstar then acts as the user on
+# GitHub. Each App's callback URL is <publicUrl>/auth/github/callback.
 githubApp:
   existingSecret: ""
   # Public slug of the App (github.com/apps/<slug>), shown on the account page.

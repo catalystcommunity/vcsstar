@@ -40,6 +40,7 @@ pub fn to_wire(app: &App, org: &OrgRow, r: &RepoRow) -> Repo {
             r.name
         ),
         ssh_url: crate::vcs::ssh_url(app, org, r),
+        viewer_role: None,
     }
 }
 
@@ -120,9 +121,65 @@ pub fn create(app: &App, ctx: &ReqCtx, req: CreateRepoRequest) -> Result<Repo, E
 
 pub fn get(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<Repo, Error> {
     let mut conn = app.conn()?;
+    let (org, repo, role) =
+        authz::load_repo_visible(app, &mut conn, ctx, &req.repo.org, &req.repo.name)?;
+    let mut out = to_wire(app, &org, &repo);
+    out.viewer_role = Some(role.as_str().into());
+    out.fork_of = fork_ref(&mut conn, &repo)?;
+    Ok(out)
+}
+
+/// The parent of a fork, as a reference (`Repo.fork_of`).
+fn fork_ref(conn: &mut DbConn, r: &RepoRow) -> Result<Option<vcsstar_types::RepoRef>, Error> {
+    let Some(parent) = r.fork_of_repo_id else {
+        return Ok(None);
+    };
+    let found: Option<(String, String)> = repos::table
+        .inner_join(vcsstar_db::schema::orgs::table)
+        .filter(repos::id.eq(parent))
+        .select((vcsstar_db::schema::orgs::name, repos::name))
+        .first(conn)
+        .optional()?;
+    Ok(found.map(|(org, name)| vcsstar_types::RepoRef {
+        org,
+        name,
+        instance: None,
+    }))
+}
+
+/// Direct forks of a repository that the caller can see.
+pub fn list_forks(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<RepoPage, Error> {
+    let mut conn = app.conn()?;
     let (org, repo, _role) =
         authz::load_repo_visible(app, &mut conn, ctx, &req.repo.org, &req.repo.name)?;
-    Ok(to_wire(app, &org, &repo))
+    let rows: Vec<(RepoRow, OrgRow)> = repos::table
+        .inner_join(vcsstar_db::schema::orgs::table)
+        .filter(repos::fork_of_repo_id.eq(repo.id))
+        .order((vcsstar_db::schema::orgs::name.asc(), repos::name.asc()))
+        .select((RepoRow::as_select(), OrgRow::as_select()))
+        .limit(500)
+        .load(&mut conn)?;
+    let parent = vcsstar_types::RepoRef {
+        org: org.name.clone(),
+        name: repo.name.clone(),
+        instance: None,
+    };
+    let mut out = Vec::new();
+    for (fork, fork_org) in rows {
+        let Some(role) =
+            authz::repo_role(app, &mut conn, &fork_org, &fork, ctx.principal.as_ref())?
+        else {
+            continue;
+        };
+        let mut r = to_wire(app, &fork_org, &fork);
+        r.viewer_role = Some(role.as_str().into());
+        r.fork_of = Some(parent.clone());
+        out.push(r);
+    }
+    Ok(RepoPage {
+        repos: out,
+        next_cursor: None,
+    })
 }
 
 pub fn list(app: &App, ctx: &ReqCtx, req: ListReposRequest) -> Result<RepoPage, Error> {
@@ -158,14 +215,18 @@ pub fn list(app: &App, ctx: &ReqCtx, req: ListReposRequest) -> Result<RepoPage, 
     let mut out = Vec::new();
     let mut next_cursor = None;
     for (repo, org) in rows {
-        if authz::repo_role(app, &mut conn, &org, &repo, ctx.principal.as_ref())?.is_none() {
+        let Some(role) = authz::repo_role(app, &mut conn, &org, &repo, ctx.principal.as_ref())?
+        else {
             continue;
-        }
+        };
         if out.len() == limit {
             next_cursor = out.last().map(|r: &Repo| format!("{}/{}", r.org, r.name));
             break;
         }
-        out.push(to_wire(app, &org, &repo));
+        let mut r = to_wire(app, &org, &repo);
+        r.viewer_role = Some(role.as_str().into());
+        r.fork_of = fork_ref(&mut conn, &repo)?;
+        out.push(r);
     }
     Ok(RepoPage {
         repos: out,

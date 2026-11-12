@@ -5,7 +5,7 @@ import { button, comboBox, fill, form, h, link, external, show, textArea, textBu
 import { Page } from "../page";
 import { act, badge, confirmDanger, csv, empty, Feedback, loading, meta, mono, pageHead, panel, section, showSecretOnce, table, td, tr } from "../ui";
 import { hooksSection } from "./hooks";
-import type { GithubRepoPage, Org } from "../generated/types.gen.ts";
+import type { GithubRepoInfo, GithubRepoPage, Org } from "../generated/types.gen.ts";
 
 export class OrgPage extends Page {
   private org = "";
@@ -16,6 +16,7 @@ export class OrgPage extends Page {
   private readonly repoList = h("ul", { class: "plain-list" });
   private readonly repoStatus = h("div");
   private readonly githubSection = h("div");
+  private readonly webhookBox = h("div");
   private readonly members = table(["Person", "Role", ""]);
   private readonly membersBox = h("div");
   private readonly teamsBox = h("div");
@@ -27,10 +28,20 @@ export class OrgPage extends Page {
   protected build() {
     this.org = this.context.path.split("/").filter(Boolean).map(decodeURIComponent)[0] ?? "";
     this.title = this.org;
+    const signedIn = Boolean(this.context.session);
     return [
       pageHead([["Repositories", "/"]], this.titleText, this.facts),
       this.feedback.element,
       section("Repositories", null, this.repoList, this.repoStatus),
+      // Everything below needs a signed-in member; it is not built, and not
+      // requested, for an anonymous viewer.
+      ...(signedIn ? this.memberSections() : []),
+    ];
+  }
+
+  private memberSections() {
+    return [
+      this.webhookBox,
       this.githubSection,
       this.membersBox,
       this.teamsBox,
@@ -44,8 +55,23 @@ export class OrgPage extends Page {
     this.titleText.data = this.org;
     fill(this.repoStatus, loading());
     await this.loadInfo();
-    await Promise.all([this.loadRepos(), this.loadGithub(), this.loadMembers(), this.loadTeams(), this.loadCreds(), this.loadAccounts()]);
-    if (this.isActive()) fill(this.hooksBox, hooksSection(this.org));
+    // What the caller's role allows decides what is requested and shown:
+    // members see the members and teams; admins also manage GitHub,
+    // credentials, service accounts, and webhooks.
+    const role = this.info?.viewerRole;
+    const member = role === "member" || this.isAdmin();
+    const admin = this.isAdmin();
+    const loads: Promise<void>[] = [this.loadRepos()];
+    if (member) loads.push(this.loadMembers(), this.loadTeams());
+    if (admin) loads.push(this.loadGithub(), this.loadCreds(), this.loadAccounts(), this.loadWebhookSecret());
+    await Promise.all(loads);
+    if (admin && this.isActive()) fill(this.hooksBox, hooksSection(this.org));
+  }
+
+  /** Owner or admin of this organization (an instance admin is owner). */
+  private isAdmin() {
+    const role = this.info?.viewerRole;
+    return role === "admin" || role === "owner";
   }
 
   private async loadInfo() {
@@ -90,17 +116,30 @@ export class OrgPage extends Page {
     }
     if (!this.isActive()) return;
     fill(lead, "Repositories under ", mono(owner), " on GitHub, as seen by ", mono(page.source), page.installationId ? ` (installation ${page.installationId})` : "", ". Enable one to import it and keep both sides in step.");
+    // The "Here" cell of each GitHub repository, updated in place while
+    // imports are queued (the mirror workers run them).
+    const cells = new Map<string, HTMLTableCellElement>();
+    const showHere = (r: GithubRepoInfo) => {
+      const here = cells.get(r.fullName)!;
+      if (r.mirroredAs) {
+        const state = r.importState;
+        fill(here, link(`/${this.org}/${r.mirroredAs}`, r.mirroredAs), " ",
+          state === "queued" && badge("importing", "info"),
+          state === "failed" && badge("import failed", "bad"),
+          state === "failed" && textButton("Retry", () => void act(() => api.mirror.importRepo(importOf(r)), { feedback, done: `${r.fullName} is queued again.`, after: () => void poll() })));
+        return;
+      }
+      const enable = button("Enable", { variant: "default", onClick: async () => {
+        enable.disabled = true;
+        const ok = await act(() => api.mirror.importRepo(importOf(r)), { feedback, done: `${r.fullName} is queued for import.` });
+        if (ok) { void this.loadRepos(); void poll(); } else enable.disabled = false;
+      } });
+      fill(here, enable);
+    };
+    const importOf = (r: GithubRepoInfo) => ({ ctx: ctx(), org: this.org, name: r.fullName.split("/")[1]!, githubRepo: r.fullName, mode: "import_drift", visibility: r.private ? "private" : "public" });
     fill(t.body, ...page.repos.map((r) => {
       const here = h("td");
-      if (r.mirroredAs) fill(here, link(`/${this.org}/${r.mirroredAs}`, r.mirroredAs));
-      else {
-        const enable = button("Enable", { variant: "default", onClick: async () => {
-          enable.disabled = true;
-          const ok = await act(() => api.mirror.importRepo({ ctx: ctx(), org: this.org, name: r.fullName.split("/")[1]!, githubRepo: r.fullName, mode: "import_drift", visibility: r.private ? "private" : "public" }), { done: `${r.fullName} is being imported.` });
-          if (ok) { void this.loadRepos(); void this.loadGithub(); } else enable.disabled = false;
-        } });
-        fill(here, enable);
-      }
+      cells.set(r.fullName, here);
       return tr(
         td("", external(r.htmlUrl, r.fullName), r.description && h("div", { class: "hint" }, r.description)),
         td("", badge(r.private ? "private" : "public"), r.archived && badge("archived", "warn"), r.fork && badge("fork")),
@@ -109,8 +148,83 @@ export class OrgPage extends Page {
         here,
       );
     }));
+    page.repos.forEach(showHere);
     fill(status, page.repos.length === 0 && empty("GitHub lists no repositories for this owner with the current credential."));
-    fill(paging, this.ghCursor && textButton("First page", () => { this.ghCursor = undefined; void this.loadGithub(); }), page.nextCursor && textButton("More", () => { this.ghCursor = page.nextCursor!; void this.loadGithub(); }));
+    const progress = h("span", { class: "muted" });
+    const cursor = this.ghCursor;
+    let polling = false;
+    // Ask again every five seconds while an import of this page is queued.
+    const poll = async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        while (this.isActive() && this.ghCursor === cursor) {
+          let fresh: GithubRepoPage;
+          try {
+            fresh = await api.mirror.listGithubRepos({ ctx: ctx(), org: this.org, page: { cursor, limit: 100 } });
+          } catch { break; }
+          if (!this.isActive() || this.ghCursor !== cursor) break;
+          fresh.repos.filter((r) => cells.has(r.fullName)).forEach(showHere);
+          const queued = fresh.repos.filter((r) => r.importState === "queued").length;
+          const left = fresh.repos.filter((r) => !r.mirroredAs).length;
+          enableAll.textContent = `Enable all ${left}`;
+          enableAll.disabled = left === 0;
+          progress.textContent = queued ? `${queued} importing` : "";
+          if (!queued) { void this.loadRepos(); break; }
+          await new Promise((done) => setTimeout(done, 5000));
+        }
+      } finally { polling = false; }
+    };
+    // Queue every repository under the owner that has no mirror yet (all
+    // pages). The mirror workers import them; a restart only delays them.
+    const todo = page.repos.filter((r) => !r.mirroredAs);
+    const enableAll = button(`Enable all ${todo.length}`, { variant: "default", disabled: todo.length === 0 && !page.nextCursor, onClick: async () => {
+      enableAll.disabled = true;
+      const ok = await act(async () => {
+        const res = await api.mirror.importAll({ ctx: ctx(), org: this.org, mode: "import_drift", skipArchived: false });
+        if (res.skipped.length) feedback.error(`Not queued: ${res.skipped.join("; ")}`);
+        return res;
+      }, { feedback, done: "The imports are queued. The pull request history of each repository imports after its branches." });
+      if (!ok) enableAll.disabled = false;
+      void this.loadRepos();
+      void poll();
+    } });
+    if (page.repos.some((r) => r.importState === "queued")) void poll();
+    fill(paging, enableAll, progress, this.ghCursor && textButton("First page", () => { this.ghCursor = undefined; void this.loadGithub(); }), page.nextCursor && textButton("More", () => { this.ghCursor = page.nextCursor!; void this.loadGithub(); }));
+  }
+
+  // --- GitHub webhook secret ----------------------------------------------
+
+  // GitHub signs every delivery to /hooks/github; the receiver accepts a
+  // signature by any member of the organization's `webhook_inbound` set.
+  // Without one, every delivery answers 401.
+  private async loadWebhookSecret() {
+    if (!this.info?.githubOwner) { fill(this.webhookBox); return; }
+    const feedback = new Feedback();
+    let count = 0;
+    try {
+      const page = await api.mirror.listCredentials({ ctx: ctx(), target: { org: this.org } });
+      count = page.credentials.filter((c) => c.purpose === "webhook_inbound" && !c.repo).length;
+    } catch (error) {
+      if (!this.isActive()) return;
+      fill(this.webhookBox, section("GitHub webhook secret", null, feedback.element));
+      feedback.error(error);
+      return;
+    }
+    if (!this.isActive()) return;
+    const secret = textField("Webhook secret", { type: "password", autocomplete: "off", required: true, class: "w-lg", helper: "The secret set on the GitHub App (or repository hook). Kept sealed; never shown again." });
+    const url = `${location.origin}/hooks/github`;
+    fill(this.webhookBox, section("GitHub webhook secret",
+      h("span", null, "GitHub signs each delivery to ", mono(url), ". vcsstar accepts a signature made with any secret in this list."),
+      feedback.element,
+      count
+        ? h("p", null, badge(`${count} secret${count === 1 ? "" : "s"} set`, "ok"), " Add another one to rotate; remove old ones under Mirror credentials.")
+        : h("p", { class: "problem" }, "No webhook secret yet: GitHub deliveries are refused (401) until you set one."),
+      form({ class: "form-row", onSubmit: () => void act(async () => {
+        await api.mirror.setCredential({ ctx: ctx(), org: this.org, provider: "github", purpose: "webhook_inbound", authMethod: "pat", host: "github.com", secretRef: "stored", secret: secret.value });
+        clear(secret);
+      }, { done: "Webhook secret added.", feedback, after: () => { void this.loadWebhookSecret(); void this.loadCreds(); } }) }, secret, button("Add secret", { type: "submit", variant: "default" })),
+    ));
   }
 
   // --- Members and teams ---------------------------------------------------
@@ -127,7 +241,7 @@ export class OrgPage extends Page {
     fill(this.members.body, ...page.members.map((m) => tr(
       td("", who(m.identity), h("div", { class: "hint mono" }, `${m.identity.userId}@${m.identity.domain}`)),
       m.role,
-      td("actions", textButton("Remove", async () => {
+      td("actions", this.isAdmin() && textButton("Remove", async () => {
         if (await confirmDanger(`Remove ${who(m.identity)}?`, "They keep nothing in this organization except repository grants made to them directly.", "Remove member")) {
           void act(() => api.orgs.removeMember({ ctx: ctx(), org: this.org, identity: `${m.identity.userId}@${m.identity.domain}` }), { done: "Member removed.", after: () => void this.loadMembers() });
         }
@@ -137,7 +251,7 @@ export class OrgPage extends Page {
     const identity = textField("Identity", { required: true, placeholder: "user_id@domain", class: "w-lg", autocapitalize: "none", spellcheck: false, helper: "A person appears after one sign-in. The key is user_id@domain, never the handle." });
     const role = comboBox("Role", ["member", "admin", "owner"], { value: "member" });
     fill(this.membersBox, section("Members", null, this.members.wrap,
-      form({ class: "form-row", onSubmit: () => void act(async () => { await api.orgs.setMember({ ctx: ctx(), org: this.org, identity: identity.value, role: role.value }); clear(identity); }, { done: "Member set.", after: () => void this.loadMembers() }) }, identity, role, button("Add member", { type: "submit", variant: "default" })),
+      this.isAdmin() && form({ class: "form-row", onSubmit: () => void act(async () => { await api.orgs.setMember({ ctx: ctx(), org: this.org, identity: identity.value, role: role.value }); clear(identity); }, { done: "Member set.", after: () => void this.loadMembers() }) }, identity, role, button("Add member", { type: "submit", variant: "default" })),
     ));
   }
 
@@ -154,7 +268,7 @@ export class OrgPage extends Page {
       h("strong", null, t.name),
       h("span", { class: "muted" }, t.members.map(who).join(", ") || "no members"),
       h("span", { class: "grow" }),
-      textButton("Delete", async () => {
+      this.isAdmin() && textButton("Delete", async () => {
         if (await confirmDanger(`Delete the team ${t.name}?`, "Grants made to the team end.", "Delete team")) {
           void act(() => api.orgs.deleteTeam({ ctx: ctx(), org: this.org, team: t.name }), { done: "Team deleted.", after: () => void this.loadTeams() });
         }
@@ -162,7 +276,7 @@ export class OrgPage extends Page {
     )), page.teams.length === 0 && empty("No teams yet."));
     const name = textField("Team name", { required: true, class: "w-md" });
     fill(this.teamsBox, section("Teams", null, list,
-      form({ class: "form-row", onSubmit: () => void act(async () => { await api.orgs.createTeam({ ctx: ctx(), org: this.org, name: name.value }); clear(name); }, { done: "Team created.", after: () => void this.loadTeams() }) }, name, button("Create team", { type: "submit", variant: "default" })),
+      this.isAdmin() && form({ class: "form-row", onSubmit: () => void act(async () => { await api.orgs.createTeam({ ctx: ctx(), org: this.org, name: name.value }); clear(name); }, { done: "Team created.", after: () => void this.loadTeams() }) }, name, button("Create team", { type: "submit", variant: "default" })),
     ));
   }
 
@@ -170,10 +284,13 @@ export class OrgPage extends Page {
 
   private async loadCreds() {
     let page;
+    const feedback = new Feedback();
     try {
       page = await api.mirror.listCredentials({ ctx: ctx(), target: { org: this.org } });
-    } catch {
-      fill(this.credsBox);
+    } catch (error) {
+      if (!this.isActive()) return;
+      fill(this.credsBox, section("Mirror credentials", null, feedback.element));
+      feedback.error(error);
       return;
     }
     if (!this.isActive()) return;

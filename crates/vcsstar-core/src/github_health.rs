@@ -59,6 +59,8 @@ const PROBE_TIMEOUT: chrono::Duration = chrono::Duration::seconds(90);
 /// Calls per token kept in reserve for interactive use; a token below it
 /// is held until its window resets.
 const RESERVE_FLOOR: i64 = 50;
+/// Calls bulk work leaves in a window at least (see `bulk_hold`).
+const BULK_RESERVE_FLOOR: i64 = 250;
 /// A healthy lane's `last_success_at` is refreshed at most this often, so
 /// a busy mirror does not write a row per GitHub call.
 const SUCCESS_STAMP_EVERY: chrono::Duration = chrono::Duration::seconds(60);
@@ -417,7 +419,6 @@ pub fn note_rate_limit(token: &str, remaining: u64, limit: u64, reset_at: DateTi
         row.hold_until = Some(reset_at);
     }
     put_rate(row);
-    crate::metrics::github_rate_limit_remaining(token, remaining);
 }
 
 /// GitHub asked for a pause on this token (`Retry-After`, secondary limit).
@@ -445,6 +446,31 @@ pub fn note_retry_after(token: &str, wait: Duration) {
 /// the window has not reset.
 pub fn rate_hold(token: &str) -> Option<Duration> {
     rate_row(token)?.hold(Utc::now())
+}
+
+/// Calls left on `token` in its current window, when GitHub reported one
+/// that has not reset yet (`None`: unknown, or the window is over).
+pub fn rate_remaining(token: &str) -> Option<i64> {
+    rate_row(token)
+        .filter(|r| r.limit > 0 && r.reset_at > Utc::now())
+        .map(|r| r.remaining)
+}
+
+/// Whether bulk work (the history import) should wait on `token`. Bulk
+/// work keeps a larger reserve than live work (a tenth of the window, at
+/// least `BULK_RESERVE_FLOOR` calls), so pushes, pull requests, and
+/// comments made while an import runs still go through at once.
+pub fn bulk_hold(token: &str) -> Option<Duration> {
+    let row = rate_row(token)?;
+    let now = Utc::now();
+    if let Some(d) = row.hold(now) {
+        return Some(d);
+    }
+    let reserve = std::cmp::max(BULK_RESERVE_FLOOR, row.limit / 10);
+    if row.limit > 0 && row.remaining < reserve && row.reset_at > now {
+        return Some(to_std(row.reset_at - now));
+    }
+    None
 }
 
 /// The longest hold in force on any lane or token, for a worker that

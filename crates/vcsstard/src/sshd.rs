@@ -142,12 +142,19 @@ impl russh::server::Handler for SshSession {
         let app = self.app.clone();
         let found = tokio::task::spawn_blocking(move || {
             let mut conn = app.conn()?;
-            keys::identity_for_auth_key(&mut conn, &fingerprint)
+            match keys::identity_for_auth_key(&mut conn, &fingerprint)? {
+                Some((identity, key_row)) => {
+                    let role = vcsstar_core::principal::load_instance_role(&mut conn, identity.id)?;
+                    Ok::<_, vcsstar_core::Error>(Some((identity, key_row, role)))
+                }
+                None => Ok(None),
+            }
         })
         .await??;
         match found {
-            Some((identity, key_row)) => {
+            Some((identity, key_row, instance_role)) => {
                 self.principal = Some(Principal {
+                    instance_role,
                     identity,
                     scopes: vec!["repo:write".into(), "repo:read".into()],
                     kind: CredentialKind::ApiToken,

@@ -141,6 +141,7 @@ pub fn shadow_principal(identity: Identity) -> Principal {
         acting_via: Some("github".into()),
         credential_id: None,
         expires_at: None,
+        instance_role: None,
     }
 }
 
@@ -398,6 +399,41 @@ fn import_head_branch(
     Ok(())
 }
 
+/// The vcsstar number of a pull request imported from GitHub: GitHub's
+/// own number when it is free here (so "#123" in a commit message points
+/// at the same pull request on both sides), else the next free one. The
+/// counter moves past an adopted number, so later vcsstar pull requests
+/// never take it.
+fn number_for_import(
+    conn: &mut PgConnection,
+    repo_id: Uuid,
+    github_number: i64,
+) -> Result<i32, Error> {
+    let Ok(n) = i32::try_from(github_number) else {
+        return next_number(conn, repo_id);
+    };
+    if n < 1 || n == i32::MAX {
+        return next_number(conn, repo_id);
+    }
+    let taken: bool = diesel::select(diesel::dsl::exists(
+        pull_requests::table
+            .filter(pull_requests::repo_id.eq(repo_id))
+            .filter(pull_requests::number.eq(n)),
+    ))
+    .get_result(conn)?;
+    if taken {
+        return next_number(conn, repo_id);
+    }
+    diesel::sql_query(
+        "INSERT INTO pr_counters (repo_id, next_number) VALUES ($1, $2) \
+         ON CONFLICT (repo_id) DO UPDATE SET next_number = GREATEST(pr_counters.next_number, EXCLUDED.next_number)",
+    )
+    .bind::<diesel::sql_types::Uuid, _>(repo_id)
+    .bind::<diesel::sql_types::Integer, _>(n + 1)
+    .execute(conn)?;
+    Ok(n)
+}
+
 fn next_number(conn: &mut PgConnection, repo_id: Uuid) -> Result<i32, Error> {
     Ok(diesel::insert_into(pr_counters::table)
         .values((
@@ -456,8 +492,19 @@ pub fn upsert_pull(
     let dir = vcs::hydrate(app, conn, repo)?;
     let needs_objects = gh.state == "open" || existing.is_none();
     if needs_objects {
-        ensure_pull_objects(app, conn, org, repo, state, &dir, gh.number, &head)?;
-        if same_repo {
+        match ensure_pull_objects(app, conn, org, repo, state, &dir, gh.number, &head) {
+            Ok(()) => {}
+            // A closed pull request is history: its row is worth having
+            // even when GitHub no longer serves its head commit.
+            Err(e) if gh.state != "open" => {
+                tracing::warn!(pr = gh.number, error = %e.message, "head of a closed pull request not fetched; imported without it");
+            }
+            Err(e) => return Err(e),
+        }
+        // Only an open pull request brings its branch: a closed one's
+        // branch is usually deleted on GitHub, and recreating it here
+        // would push it back there.
+        if same_repo && gh.state == "open" {
             import_head_branch(app, conn, org, repo, state, &dir, actor, &head_ref, &head)?;
         }
     }
@@ -472,7 +519,13 @@ pub fn upsert_pull(
                 (Some(u), "merged") => Some(github_link::identity_for_user(conn, u)?.id),
                 _ => None,
             };
-            let number = next_number(conn, repo.id)?;
+            let number = number_for_import(conn, repo.id, gh.number)?;
+            let created = rfc3339(j, "created_at").unwrap_or_else(Utc::now);
+            let closed = (gh.state != "open").then(|| {
+                rfc3339(j, "merged_at")
+                    .or_else(|| rfc3339(j, "closed_at"))
+                    .unwrap_or_else(Utc::now)
+            });
             let row: PrRow = diesel::insert_into(pull_requests::table)
                 .values((
                     pull_requests::id.eq(vcsstar_db::new_id()),
@@ -491,13 +544,21 @@ pub fn upsert_pull(
                     pull_requests::head_ref.eq(&head_ref),
                     pull_requests::base_ref.eq(&base_ref),
                     pull_requests::head_sha.eq(&gh.head_sha),
-                    pull_requests::base_sha.eq(&base_now),
+                    // A closed one keeps GitHub's base of its time, not
+                    // today's base branch.
+                    pull_requests::base_sha.eq(if gh.state == "open" || gh.base_sha.is_empty() {
+                        &base_now
+                    } else {
+                        &gh.base_sha
+                    }),
                     pull_requests::state.eq(gh.state),
                     pull_requests::merged_commit_sha.eq((gh.state == "merged")
                         .then(|| gh.merge_commit_sha.clone())
                         .flatten()),
                     pull_requests::merged_by.eq(merged_by),
-                    pull_requests::closed_at.eq((gh.state != "open").then(Utc::now)),
+                    pull_requests::closed_at.eq(closed),
+                    pull_requests::created_at.eq(created),
+                    pull_requests::updated_at.eq(incoming.unwrap_or(created)),
                     pull_requests::github_number.eq(gh.number as i32),
                     pull_requests::github_updated_at.eq(incoming),
                 ))
@@ -518,7 +579,7 @@ pub fn upsert_pull(
                     prs::trial_merge(app, conn, repo, &dir, &row)
                 })?
             } else {
-                row
+                prs::settle_history_base(app, conn, &dir, &row)?
             };
             events.push(match gh.state {
                 "open" => "pr_opened",
@@ -719,10 +780,9 @@ fn pr_for_github_number(
     if let Some(row) = pr_by_github_number(conn, repo.id, number)? {
         return Ok(row);
     }
-    let token = mirror::cred::token_for(app, conn, org.id, repo.id, "mirror_api")
-        .map_err(Error::from)?
-        .1;
-    let gh = github::Client::new(&app.config.github_api_base, &token);
+    let (label, token) =
+        mirror::cred::token_for(app, conn, org.id, repo.id, "mirror_api").map_err(Error::from)?;
+    let gh = github::Client::new(&app.config.github_api_base, &token).with_label(&label);
     let j = gh
         .get_pull(&state.github_repo, number)?
         .ok_or_else(|| Error::not_found(&format!("GitHub pull request #{number}")))?;
@@ -752,6 +812,24 @@ fn ingest_review(
         .get("review")
         .ok_or_else(|| Error::invalid("payload without review"))?;
     upsert_review(conn, org, repo, &pr, review)
+}
+
+/// Move a pull request's `updated_at` forward to `at`, never back: an
+/// imported old review or comment does not make the pull request look
+/// recent.
+fn touch_pull(
+    conn: &mut PgConnection,
+    pr_id: Uuid,
+    at: chrono::DateTime<Utc>,
+) -> Result<(), Error> {
+    diesel::update(
+        pull_requests::table
+            .find(pr_id)
+            .filter(pull_requests::updated_at.lt(at)),
+    )
+    .set(pull_requests::updated_at.eq(at))
+    .execute(conn)?;
+    Ok(())
 }
 
 /// Import one GitHub review object (webhook `review` or a REST list item)
@@ -808,6 +886,7 @@ fn upsert_review(
         .unwrap_or(&pr.head_sha)
         .to_string();
     let text = strip_vcsstar(raw);
+    let submitted = rfc3339(review, "submitted_at").unwrap_or_else(Utc::now);
     if st == "comment" && text.is_empty() {
         // The review GitHub makes around an inline comment carries nothing
         // of its own; the comment arrives as pull_request_review_comment.
@@ -825,12 +904,11 @@ fn upsert_review(
                 pr_reviews::head_sha_at_review.eq(&head_sha),
                 pr_reviews::body.eq((!text.is_empty()).then_some(text.as_str())),
                 pr_reviews::github_id.eq(gh_id),
+                pr_reviews::created_at.eq(submitted),
             ))
             .returning(ReviewRow::as_returning())
             .get_result(conn)?;
-        diesel::update(pull_requests::table.find(pr.id))
-            .set(pull_requests::updated_at.eq(Utc::now()))
-            .execute(conn)?;
+        touch_pull(conn, pr.id, submitted)?;
         let reviewer_p = shadow_principal(reviewer.clone());
         outbox::emit(
             conn,
@@ -964,6 +1042,7 @@ fn upsert_comment(
                 return Ok(format!("comment {gh_id} is empty; ignored"));
             }
             let (path, line, commit_sha) = location.unwrap_or((String::new(), None, None));
+            let created = rfc3339(comment, "created_at").unwrap_or_else(Utc::now);
             let row: CommentRow = conn.transaction::<CommentRow, Error, _>(|conn| {
                 let row: CommentRow = diesel::insert_into(pr_comments::table)
                     .values((
@@ -977,12 +1056,11 @@ fn upsert_comment(
                         pr_comments::github_id.eq(gh_id),
                         pr_comments::github_kind.eq(kind),
                         pr_comments::github_updated_at.eq(incoming),
+                        pr_comments::created_at.eq(created),
                     ))
                     .returning(CommentRow::as_returning())
                     .get_result(conn)?;
-                diesel::update(pull_requests::table.find(pr.id))
-                    .set(pull_requests::updated_at.eq(Utc::now()))
-                    .execute(conn)?;
+                touch_pull(conn, pr.id, created)?;
                 outbox::emit(
                     conn,
                     prs::pr_event_about(
@@ -1259,6 +1337,8 @@ struct Meter<'a> {
     gh: &'a github::Client,
     calls: usize,
     budget: usize,
+    /// Bulk work (the history import) keeps a larger rate reserve.
+    bulk: bool,
 }
 
 impl Meter<'_> {
@@ -1267,7 +1347,12 @@ impl Meter<'_> {
         if self.calls >= self.budget {
             return Err(Budget::Spent);
         }
-        if let Some(wait) = self.gh.rate_hold() {
+        let hold = if self.bulk {
+            crate::github_health::bulk_hold(self.gh.label())
+        } else {
+            self.gh.rate_hold()
+        };
+        if let Some(wait) = hold {
             return Err(Budget::RateHeld(wait));
         }
         self.calls += 1;
@@ -1328,6 +1413,7 @@ fn reconcile_pulls_inner(
         gh: &gh,
         calls: 0,
         budget,
+        bulk: false,
     };
     let list_state = if since.is_some() { "all" } else { "open" };
     // Collect the pull requests newer than the watermark, newest first.
@@ -1356,6 +1442,10 @@ fn reconcile_pulls_inner(
     // Oldest first, so the events land in the order GitHub saw them.
     pulls.reverse();
     let since_text = since.map(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
+    // Newest `updated_at` fully replayed in this pass. The list is oldest
+    // first, so a pass that stops early may still move the watermark up
+    // to here, and a long backlog drains over several passes.
+    let mut replayed: Option<chrono::DateTime<Utc>> = None;
     if stopped.is_none() {
         for j in &pulls {
             match sync_one_pull(
@@ -1372,12 +1462,25 @@ fn reconcile_pulls_inner(
                 Ok(changed) => {
                     out.checked += 1;
                     out.changed += changed;
+                    replayed = std::cmp::max(replayed, rfc3339(j, "updated_at"));
                 }
                 Err(SyncStop::Budget(b)) => {
                     stopped = Some(b);
                     break;
                 }
                 Err(SyncStop::Error(e)) => return Err(e),
+            }
+        }
+    }
+    if stopped.is_some() {
+        // Keep what was done (a later pass redoes only the rest). Not on a
+        // first pass: it lists open pull requests only, so a partial one
+        // proves nothing about the others.
+        if let (Some(w), Some(r)) = (since, replayed) {
+            if r > w {
+                diesel::update(mirror::mirror_state_table().find(repo.id))
+                    .set(vcsstar_db::schema::mirror_state::last_pull_sync_at.eq(r))
+                    .execute(conn)?;
             }
         }
     }
@@ -1408,6 +1511,227 @@ fn reconcile_pulls_inner(
         }
     }
     Ok(out)
+}
+
+// ---------------------------------------------------------------------
+// History import: every pull request GitHub has, oldest first
+// ---------------------------------------------------------------------
+
+/// What one history import pass did.
+#[derive(Debug, Default, Clone)]
+pub struct BackfillOutcome {
+    /// Pull requests gone through in this pass.
+    pub pulls: usize,
+    /// Rows that changed here.
+    pub changed: usize,
+    /// GitHub API calls spent.
+    pub calls: usize,
+    /// The import reached the end of GitHub's list.
+    pub done: bool,
+    /// A rate limit stopped the pass: start again after this long.
+    pub held: Option<std::time::Duration>,
+    /// Pull requests skipped because they could not be imported.
+    pub skipped: usize,
+}
+
+/// Calls one history import pass may spend before it lets the next
+/// repository have a turn. The rate reserve, not this budget, decides how
+/// fast an import goes.
+pub const BACKFILL_BUDGET: usize = 300;
+
+/// A position that fails this many passes in a row is skipped.
+const BACKFILL_STUCK_AFTER: u32 = 3;
+
+/// Import a repository's GitHub pull requests from the first one ever
+/// opened, with their reviews, comments, and (for open ones) statuses and
+/// check runs, through the same upserts as webhooks. The position is kept
+/// in `mirror_state` after every pull request, so a pass that stops (call
+/// budget, rate limit reserve, restart) loses nothing; the next pass goes
+/// on from there. Rows that already match change nothing. Everything it
+/// writes carries origin `github`, so nothing is sent back. Live work has
+/// priority: the import keeps a larger rate reserve (`bulk_hold`).
+///
+/// Before the first page every `refs/pull/*/head` is fetched in one go and
+/// recorded as one segment, so old pull requests need no fetch each.
+pub fn backfill_pulls(
+    app: &App,
+    conn: &mut DbConn,
+    org: &Org,
+    repo: &Repo,
+    state: &StateRow,
+    budget: usize,
+) -> Result<BackfillOutcome, Error> {
+    outbox::with_origin("github", || {
+        backfill_inner(app, conn, org, repo, state, budget)
+    })
+}
+
+fn backfill_inner(
+    app: &App,
+    conn: &mut DbConn,
+    org: &Org,
+    repo: &Repo,
+    state: &StateRow,
+    budget: usize,
+) -> Result<BackfillOutcome, Error> {
+    use vcsstar_db::schema::mirror_state as ms;
+    let (label, token) = mirror::cred::token_for(app, conn, org.id, repo.id, "mirror_api")?;
+    let gh = github::Client::new(&app.config.github_api_base, &token).with_label(&label);
+    let full = state.github_repo.as_str();
+    let mut out = BackfillOutcome::default();
+    if state.backfill_started_at.is_none() {
+        diesel::update(mirror::mirror_state_table().find(repo.id))
+            .set(ms::backfill_started_at.eq(Some(Utc::now())))
+            .execute(conn)?;
+    }
+    if state.backfill_heads_at.is_none() {
+        let dir = vcs::hydrate(app, conn, repo)?;
+        let fetch_token = mirror_token(app, conn, org, repo);
+        let url = mirror::github_url(app, full);
+        let heads = mirror::fetch_pull_heads(&dir, &url, fetch_token.as_deref())?;
+        if !heads.is_empty() {
+            let have: Vec<RevId> = refs::load(conn, repo.id)?
+                .into_iter()
+                .map(|(_, t)| t)
+                .collect();
+            vcs::capture(app, conn, repo.id, &dir, &have, &heads)?;
+        }
+        tracing::info!(repo = %full, heads = heads.len(), "history import: pull request heads fetched");
+        diesel::update(mirror::mirror_state_table().find(repo.id))
+            .set(ms::backfill_heads_at.eq(Some(Utc::now())))
+            .execute(conn)?;
+    }
+    let mut meter = Meter {
+        gh: &gh,
+        calls: 0,
+        budget,
+        bulk: true,
+    };
+    let mut page = state.backfill_page.max(1) as u32;
+    let mut index = state.backfill_index.max(0) as usize;
+    let mut total = state.backfill_pulls.max(0);
+    let save = |conn: &mut DbConn, page: u32, index: usize, total: i32| {
+        diesel::update(mirror::mirror_state_table().find(repo.id))
+            .set((
+                ms::backfill_page.eq(page as i32),
+                ms::backfill_index.eq(index as i32),
+                ms::backfill_pulls.eq(total),
+            ))
+            .execute(conn)
+    };
+    let mut stopped: Option<Budget> = None;
+    'pages: loop {
+        if let Err(b) = meter.spend() {
+            stopped = Some(b);
+            break;
+        }
+        let (items, more) = gh.list_pulls_created(full, page, 100)?;
+        while index < items.len() {
+            match sync_one_pull(
+                app,
+                conn,
+                org,
+                repo,
+                state,
+                &gh,
+                &mut meter,
+                &items[index],
+                None,
+            ) {
+                Ok(changed) => {
+                    out.pulls += 1;
+                    out.changed += changed;
+                }
+                Err(SyncStop::Budget(b)) => {
+                    stopped = Some(b);
+                    break 'pages;
+                }
+                Err(SyncStop::Error(e)) => {
+                    let number = items[index]
+                        .get("number")
+                        .and_then(Json::as_i64)
+                        .unwrap_or(0);
+                    // GitHub or the store is unavailable: try this one
+                    // again in the next pass. A pull request that keeps
+                    // failing (or fails for good) is skipped and named in
+                    // `last_error`, so one bad item never wedges the import.
+                    let marker = format!("history import stuck at #{number}");
+                    let attempts = state
+                        .last_error
+                        .as_deref()
+                        .filter(|m| m.starts_with(&marker))
+                        .and_then(|m| m.rsplit("attempt ").next())
+                        .and_then(|n| n.trim_end_matches(')').parse::<u32>().ok())
+                        .unwrap_or(0)
+                        + 1;
+                    if e.code == Code::Unavailable && attempts < BACKFILL_STUCK_AFTER {
+                        diesel::update(mirror::mirror_state_table().find(repo.id))
+                            .set(
+                                ms::last_error
+                                    .eq(format!("{marker}: {} (attempt {attempts})", e.message)),
+                            )
+                            .execute(conn)?;
+                        save(conn, page, index, total)?;
+                        return Err(e);
+                    }
+                    tracing::warn!(repo = %full, pr = number, error = %e.message, "history import skipped a pull request");
+                    diesel::update(mirror::mirror_state_table().find(repo.id))
+                        .set(
+                            ms::last_error
+                                .eq(format!("history import skipped #{number}: {}", e.message)),
+                        )
+                        .execute(conn)?;
+                    out.skipped += 1;
+                }
+            }
+            index += 1;
+            total += 1;
+            save(conn, page, index, total)?;
+        }
+        if !more {
+            out.done = true;
+            diesel::update(mirror::mirror_state_table().find(repo.id))
+                .set(ms::backfill_done_at.eq(Some(Utc::now())))
+                .execute(conn)?;
+            break;
+        }
+        page += 1;
+        index = 0;
+        save(conn, page, index, total)?;
+    }
+    out.calls = meter.calls;
+    match stopped {
+        None => {
+            tracing::info!(repo = %full, pulls = total, "history import complete");
+            crate::metrics::github_backfill("done");
+        }
+        Some(Budget::Spent) => crate::metrics::github_backfill("partial"),
+        Some(Budget::RateHeld(wait)) => {
+            tracing::info!(repo = %full, wait_s = wait.as_secs(), token = %gh.label(), "history import paused: rate limit reserve reached");
+            out.held = Some(wait);
+            crate::metrics::github_backfill("held");
+        }
+    }
+    crate::metrics::github_backfill_pulls(out.pulls as u64);
+    Ok(out)
+}
+
+/// Start the history import of a repository again from the first pull
+/// request (`Mirror/backfill`). Rows already imported are kept and match.
+pub fn restart_backfill(conn: &mut PgConnection, repo_id: Uuid) -> Result<(), Error> {
+    use vcsstar_db::schema::mirror_state as ms;
+    diesel::update(mirror::mirror_state_table().find(repo_id))
+        .set((
+            ms::backfill_page.eq(1),
+            ms::backfill_index.eq(0),
+            ms::backfill_pulls.eq(0),
+            ms::backfill_heads_at.eq(None::<chrono::DateTime<Utc>>),
+            ms::backfill_pass_at.eq(None::<chrono::DateTime<Utc>>),
+            ms::backfill_started_at.eq(None::<chrono::DateTime<Utc>>),
+            ms::backfill_done_at.eq(None::<chrono::DateTime<Utc>>),
+        ))
+        .execute(conn)?;
+    Ok(())
 }
 
 enum SyncStop {
@@ -1462,25 +1786,51 @@ fn sync_one_pull(
     let open = pr.state == "open";
     let counts = |note: &str| -> usize {
         usize::from(
-            note.contains("imported")
+            (note.contains("imported") && !note.contains("already imported"))
                 || note.contains("edited")
                 || note.contains("linked")
                 || note.contains("deleted"),
         )
     };
 
-    meter.spend()?;
-    for review in gh.list_reviews(full, number)? {
-        changed += counts(&upsert_review(conn, org, repo, &pr, &review)?);
+    let mut page = 1u32;
+    loop {
+        meter.spend()?;
+        let (items, more) = gh.list_reviews(full, number, page)?;
+        for review in items {
+            changed += counts(&upsert_review(conn, org, repo, &pr, &review)?);
+        }
+        if !more {
+            break;
+        }
+        page += 1;
     }
-    meter.spend()?;
-    for c in gh.list_issue_comments(full, number, since)? {
-        changed += counts(&upsert_comment(
-            conn, org, repo, &pr, "synced", &c, "issue", None,
-        )?);
+    let mut page = 1u32;
+    loop {
+        meter.spend()?;
+        let (items, more) = gh.list_issue_comments(full, number, since, page)?;
+        for c in items {
+            changed += counts(&upsert_comment(
+                conn, org, repo, &pr, "synced", &c, "issue", None,
+            )?);
+        }
+        if !more {
+            break;
+        }
+        page += 1;
     }
-    meter.spend()?;
-    for c in gh.list_review_comments(full, number, since)? {
+    let mut review_comments: Vec<Json> = Vec::new();
+    let mut page = 1u32;
+    loop {
+        meter.spend()?;
+        let (items, more) = gh.list_review_comments(full, number, since, page)?;
+        review_comments.extend(items);
+        if !more {
+            break;
+        }
+        page += 1;
+    }
+    for c in review_comments {
         let path = c
             .get("path")
             .and_then(Json::as_str)
@@ -1624,7 +1974,8 @@ fn client(
         actor,
     )?;
     tracing::info!(action = %action.object_key, source = %token.label(), "GitHub credential chosen");
-    let client = github::Client::new(&app.config.github_api_base, &token.value);
+    let client =
+        github::Client::new(&app.config.github_api_base, &token.value).with_label(&token.label());
     *used = Some(token);
     Ok(client)
 }

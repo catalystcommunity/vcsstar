@@ -90,14 +90,27 @@ pub struct Config {
     /// Base of GitHub's web pages (`VCSSTAR__GITHUB_WEB_BASE`, default
     /// `https://github.com`): the OAuth authorize and token endpoints.
     pub github_web_base: String,
-    /// The instance's GitHub App, when one is registered. It serves two
-    /// purposes: installation tokens for mirrored repositories whose owner
-    /// installed it, and user authorization so vcsstar acts as a linked
-    /// user.
-    pub github_app: Option<GithubAppConfig>,
+    /// The instance's GitHub Apps, in order. Every App serves installation
+    /// tokens for the repositories whose owner installed it; GitHub limits
+    /// the rate per installation, so work spreads over every App that can
+    /// see a repository. The first App also serves user authorization
+    /// (account links). Empty when no App is registered.
+    pub github_apps: Vec<GithubAppConfig>,
 }
 
-#[derive(Debug, Clone)]
+impl Config {
+    /// The App that links user accounts: the first one.
+    pub fn github_app(&self) -> Option<&GithubAppConfig> {
+        self.github_apps.first()
+    }
+
+    /// The App with this numeric id.
+    pub fn github_app_by_id(&self, app_id: &str) -> Option<&GithubAppConfig> {
+        self.github_apps.iter().find(|a| a.app_id == app_id)
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct GithubAppConfig {
     /// Numeric App id (`SECRET_VCSSTAR__GITHUB_APP_ID` or `VCSSTAR__GITHUB_APP_ID`).
     pub app_id: String,
@@ -108,7 +121,14 @@ pub struct GithubAppConfig {
     /// PEM private key of the App (`SECRET_VCSSTAR__GITHUB_APP_PRIVATE_KEY`).
     pub private_key: String,
     /// Public slug, for display (`VCSSTAR__GITHUB_APP_SLUG`); optional.
+    #[serde(default)]
     pub slug: Option<String>,
+    /// The App's webhook secret (`SECRET_VCSSTAR__GITHUB_APP_WEBHOOK_SECRET`
+    /// for the single App); optional. `POST /hooks/github` accepts a
+    /// delivery signed with it for any repository, in addition to the
+    /// organizations' `webhook_inbound` sets.
+    #[serde(default)]
+    pub webhook_secret: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -199,7 +219,8 @@ impl Config {
                     })
                     .unwrap_or_default(),
                 rp_domain: var("LINKKEYS_RP_DOMAIN"),
-                api_key: secret("LINKKEYS_API_KEY"),
+                // Trimmed: a key pasted or stored from a file often ends in a newline.
+                api_key: secret("LINKKEYS_API_KEY").map(|v| v.trim().to_string()),
             },
             corndogs_addr: var("CORNDOGS_ADDR"),
             corndogs_tls: var("CORNDOGS_TLS").map(|v| v == "true").unwrap_or(true),
@@ -274,14 +295,69 @@ impl Config {
             github_web_base: var("GITHUB_WEB_BASE")
                 .map(|v| v.trim_end_matches('/').to_string())
                 .unwrap_or_else(|| "https://github.com".into()),
-            github_app: github_app_from_env(),
+            github_apps: github_apps_from_env(),
         })
     }
 }
 
-/// The GitHub App is configured when all four values are present; a
-/// partial set is logged and ignored, so a missing Secret key cannot pass
-/// as "no App".
+/// Every GitHub App of the instance: the JSON list in
+/// `SECRET_VCSSTAR__GITHUB_APPS` (objects with `app_id`, `client_id`,
+/// `client_secret`, `private_key`, and an optional `slug`), then the
+/// single App of `SECRET_VCSSTAR__GITHUB_APP_*` when its id is not in the
+/// list. A list that does not parse, or an incomplete single App, is
+/// logged and ignored, so a broken Secret cannot pass as "no App".
+fn github_apps_from_env() -> Vec<GithubAppConfig> {
+    let mut apps = secret("GITHUB_APPS")
+        .map(|raw| parse_github_apps(&raw))
+        .unwrap_or_default();
+    if let Some(single) = github_app_from_env() {
+        if !apps.iter().any(|a| a.app_id == single.app_id) {
+            apps.push(single);
+        }
+    }
+    apps
+}
+
+/// Parse the JSON list of Apps; entries with an empty field are dropped
+/// with a warning.
+pub fn parse_github_apps(raw: &str) -> Vec<GithubAppConfig> {
+    let list: Vec<GithubAppConfig> = match serde_json::from_str(raw) {
+        Ok(l) => l,
+        Err(e) => {
+            tracing::warn!(error = %e, "SECRET_VCSSTAR__GITHUB_APPS is not a JSON list of Apps; it is ignored");
+            return vec![];
+        }
+    };
+    let mut out: Vec<GithubAppConfig> = Vec::new();
+    for mut a in list {
+        a.app_id = a.app_id.trim().to_string();
+        a.client_id = a.client_id.trim().to_string();
+        a.client_secret = a.client_secret.trim().to_string();
+        a.private_key = a.private_key.replace("\\n", "\n");
+        a.slug = a.slug.filter(|s| !s.trim().is_empty());
+        a.webhook_secret = a
+            .webhook_secret
+            .map(|w| w.trim().to_string())
+            .filter(|w| !w.is_empty());
+        if a.app_id.is_empty()
+            || a.client_id.is_empty()
+            || a.client_secret.is_empty()
+            || a.private_key.trim().is_empty()
+        {
+            tracing::warn!(app_id = %a.app_id, "a GitHub App in SECRET_VCSSTAR__GITHUB_APPS has an empty field; it is ignored");
+            continue;
+        }
+        if out.iter().any(|o| o.app_id == a.app_id) {
+            tracing::warn!(app_id = %a.app_id, "a GitHub App is listed twice; the second entry is ignored");
+            continue;
+        }
+        out.push(a);
+    }
+    out
+}
+
+/// The single App of `SECRET_VCSSTAR__GITHUB_APP_*`: configured when all
+/// four values are present; a partial set is logged and ignored.
 fn github_app_from_env() -> Option<GithubAppConfig> {
     let app_id = secret("GITHUB_APP_ID").or_else(|| var("GITHUB_APP_ID"));
     let client_id = secret("GITHUB_APP_CLIENT_ID").or_else(|| var("GITHUB_APP_CLIENT_ID"));
@@ -295,6 +371,7 @@ fn github_app_from_env() -> Option<GithubAppConfig> {
                 client_secret: client_secret.trim().to_string(),
                 private_key: private_key.replace("\\n", "\n"),
                 slug: var("GITHUB_APP_SLUG"),
+                webhook_secret: secret("GITHUB_APP_WEBHOOK_SECRET").map(|w| w.trim().to_string()),
             })
         }
         (None, None, None, None) => None,
@@ -308,5 +385,30 @@ fn github_app_from_env() -> Option<GithubAppConfig> {
             );
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_github_apps;
+
+    #[test]
+    fn github_app_list_parses_and_drops_bad_entries() {
+        let raw = r#"[
+            {"app_id": " 11 ", "client_id": "Iv1.a", "client_secret": "s1", "private_key": "-----BEGIN-----\\nk\\n-----END-----", "slug": "one"},
+            {"app_id": "12", "client_id": "Iv1.b", "client_secret": "s2", "private_key": "pem", "webhook_secret": " w2\n"},
+            {"app_id": "13", "client_id": "", "client_secret": "s3", "private_key": "pem"},
+            {"app_id": "11", "client_id": "Iv1.c", "client_secret": "s4", "private_key": "pem"}
+        ]"#;
+        let apps = parse_github_apps(raw);
+        assert_eq!(apps.len(), 2);
+        assert_eq!(apps[0].app_id, "11");
+        assert_eq!(apps[0].slug.as_deref(), Some("one"));
+        assert!(apps[0].private_key.contains("\nk\n"));
+        assert_eq!(apps[1].app_id, "12");
+        assert!(apps[1].slug.is_none());
+        assert_eq!(apps[1].webhook_secret.as_deref(), Some("w2"));
+        assert!(apps[0].webhook_secret.is_none());
+        assert!(parse_github_apps("not json").is_empty());
     }
 }

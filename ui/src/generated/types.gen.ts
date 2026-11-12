@@ -162,6 +162,22 @@ export interface ListTokensResponse {
   tokens: ApiToken[];
 }
 
+/**
+ * Display preferences of one identity. Clients use the defaults for an
+ * anonymous viewer.
+ */
+export interface Preferences {
+  /**
+   * "split" (side by side, the default) | "unified" (in-line).
+   */
+  diffLayout: string;
+}
+
+export interface SetPreferencesRequest {
+  ctx: Ctx;
+  diffLayout?: string;
+}
+
 export interface WhoAmI {
   identity: Identity;
   scopes: string[];
@@ -171,6 +187,10 @@ export interface WhoAmI {
   credentialKind: string;
   actingVia?: string;
   expiresAt?: Timestamp;
+  /**
+   * "admin" | "viewer" when the identity has an instance role.
+   */
+  instanceRole?: string;
 }
 
 /**
@@ -344,6 +364,12 @@ export interface Org {
   displayName?: string;
   githubOwner?: string;
   createdAt: Timestamp;
+  /**
+   * The caller's role in the organization: "owner" | "admin" |
+   * "member". Absent for an anonymous caller or a non-member. An
+   * instance admin is "owner". Clients show only what the role allows.
+   */
+  viewerRole?: string;
 }
 
 export interface CreateOrgRequest {
@@ -462,6 +488,11 @@ export interface Repo {
    */
   httpsUrl: string;
   sshUrl?: string;
+  /**
+   * The caller's effective role on the repository: "admin" |
+   * "maintain" | "write" | "read". Set by `get` and `list`.
+   */
+  viewerRole?: string;
 }
 
 export interface CreateRepoRequest {
@@ -1039,6 +1070,65 @@ export interface MirrorStatus {
    * Newest GitHub `updated_at` the pull request sync pass has processed.
    */
   lastPullSyncAt?: Timestamp;
+  /**
+   * History import of every GitHub pull request, oldest first:
+   * "pending" (not started), "running", or "done".
+   */
+  backfillState?: string;
+  /**
+   * Pull requests the history import went through so far.
+   */
+  backfillPulls?: number;
+  backfillStartedAt?: Timestamp;
+  backfillDoneAt?: Timestamp;
+  /**
+   * Import of the branches and tags from GitHub, run by a mirror
+   * worker: "queued", "failed" (stopped retrying; see last_error), or
+   * "done".
+   */
+  importState?: string;
+  /**
+   * Seconds between pull request passes and between ref reconcile
+   * passes for this repository (the instance default when not set).
+   */
+  pullSyncIntervalS: number;
+  refReconcileIntervalS: number;
+}
+
+/**
+ * Cadence of the pull-based passes of one repository. 0 or absent
+ * sets the instance default (900 s). Allowed: 60 to 604800.
+ */
+export interface SetMirrorScheduleRequest {
+  ctx: Ctx;
+  repo: RepoRef;
+  pullSyncIntervalS?: number;
+  refReconcileIntervalS?: number;
+}
+
+/**
+ * Queue the import of every GitHub repository under the organization's
+ * `github_owner` that has no mirror here yet.
+ */
+export interface ImportAllRequest {
+  ctx: Ctx;
+  org: string;
+  mode?: string;
+  /**
+   * Leave out archived GitHub repositories (default false).
+   */
+  skipArchived?: boolean;
+}
+
+export interface ImportAllResult {
+  /**
+   * "owner/name" of each queued import.
+   */
+  queued: string[];
+  /**
+   * "owner/name: reason" for each one not queued.
+   */
+  skipped: string[];
 }
 
 export interface BlockedAction {
@@ -1202,6 +1292,43 @@ export interface GithubRepoInfo {
    * Name of the vcsstar repository that mirrors it, when one does.
    */
   mirroredAs?: string;
+  /**
+   * Its import state when it mirrors one ("queued", "failed", "done").
+   */
+  importState?: string;
+}
+
+export interface GithubInstallation {
+  /**
+   * Numeric id of the instance GitHub App.
+   */
+  appId: string;
+  appSlug?: string;
+  installationId: number;
+  /**
+   * GitHub login of the account the App is installed on.
+   */
+  owner: string;
+  /**
+   * "Organization" | "User"
+   */
+  ownerType: string;
+  /**
+   * "all" | "selected"
+   */
+  repositorySelection: string;
+  /**
+   * vcsstar organizations whose `github_owner` is this owner.
+   */
+  vcsstarOrgs: string[];
+}
+
+export interface GithubInstallationList {
+  installations: GithubInstallation[];
+  /**
+   * Apps whose installations could not be read, with the reason.
+   */
+  errors: string[];
 }
 
 export interface GithubRepoPage {
@@ -1318,6 +1445,44 @@ export interface RevokeServiceAccountTokenRequest {
   org: string;
   name: string;
   tokenId: string;
+}
+
+/**
+ * A role on the whole instance. "admin": everything an instance admin
+ * may do (as `INSTANCE_ADMINS`). "viewer": read every organization's
+ * repositories, private ones too; no writes. `source` is "manual" (set
+ * by an admin) or "claims" (from a LinkKeys claim policy; reserved).
+ */
+export interface InstanceRoleGrant {
+  identity: Identity;
+  role: string;
+  source: string;
+  grantedBy?: Identity;
+  grantedAt: Timestamp;
+}
+
+export interface InstanceRoleList {
+  grants: InstanceRoleGrant[];
+  /**
+   * `user_id@domain` of the admins from the configuration; they cannot
+   * be removed here.
+   */
+  configuredAdmins: string[];
+}
+
+/**
+ * `identity` is `user_id@domain` of an identity this instance has seen
+ * (it signed in at least once, or is a service account).
+ */
+export interface SetInstanceRoleRequest {
+  ctx: Ctx;
+  identity: string;
+  role: string;
+}
+
+export interface RemoveInstanceRoleRequest {
+  ctx: Ctx;
+  identity: string;
 }
 
 export interface FedHello {

@@ -316,6 +316,35 @@ pub(crate) fn trial_merge(
     Ok(updated)
 }
 
+/// The merge base of a closed or merged pull request that has none (one
+/// imported from GitHub's history): from the merge commit's first parent
+/// when it was merged, else from the recorded base, and the head. Without
+/// it the Files view would compare the head with today's base branch.
+/// Cached data like `mergeable`: no event. Leaves the row as it is when
+/// the objects are not here.
+pub(crate) fn settle_history_base(
+    app: &App,
+    conn: &mut PgConnection,
+    dir: &std::path::Path,
+    pr: &PrRow,
+) -> Result<PrRow, Error> {
+    if pr.state == "open" || pr.merge_base_sha.is_some() {
+        return Ok(pr.clone());
+    }
+    let base = match &pr.merged_commit_sha {
+        Some(m) => RevId(format!("{m}^1")),
+        None => RevId(pr.base_sha.clone()),
+    };
+    let head = RevId(pr.head_sha.clone());
+    let Ok(Some(found)) = app.store.backend().common_ancestor(dir, &base, &head) else {
+        return Ok(pr.clone());
+    };
+    Ok(diesel::update(pull_requests::table.find(pr.id))
+        .set(pull_requests::merge_base_sha.eq(found.0))
+        .returning(PrRow::as_returning())
+        .get_result(conn)?)
+}
+
 pub fn open(app: &App, ctx: &ReqCtx, req: OpenPrRequest) -> Result<PullRequest, Error> {
     let p = ctx.require()?;
     p.require_scope("pr:write")?;
@@ -421,6 +450,9 @@ pub fn get(app: &App, ctx: &ReqCtx, req: PrRef) -> Result<PullRequest, Error> {
         let dir = vcs::hydrate(app, &mut conn, &repo)?;
         pr =
             conn.transaction::<PrRow, Error, _>(|conn| trial_merge(app, conn, &repo, &dir, &pr))?;
+    } else if pr.state != "open" && pr.merge_base_sha.is_none() {
+        let dir = vcs::hydrate(app, &mut conn, &repo)?;
+        pr = settle_history_base(app, &mut conn, &dir, &pr)?;
     }
     to_wire(&mut conn, &org, &repo, &pr)
 }

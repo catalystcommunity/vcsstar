@@ -1,9 +1,10 @@
 # Example instance overlay. Real overlays describe a network and never live in
 # this repository: keep them outside the tree (for example
 # ~/.config/vcsstar/values-<instance>.yaml) and hand the file to the deploy
-# job through the DEPLOY_VALUES secret (see .reactorcide/jobs/deploy.yaml).
+# job through the DEPLOY_VALUES secret (see .reactorcide/jobs/deploy.yaml and
+# the instance overlay example .reactorcide/overlays/deploy-catalystsquad.yaml).
 # Replace every example.com value.
-roles: "api,git-ssh,dispatcher,sweeper,hook-worker,mirror-worker,ingest-worker"
+roles: "api,git-ssh,dispatcher,sweeper,hook-worker,mirror-worker,ingest-worker,repack-worker"
 
 server:
   publicUrl: "https://vcsstar.example.com"
@@ -22,9 +23,10 @@ linkkeys:
 
 credentialKeySecret: "vcsstar-credential-key"
 
-# The instance's GitHub App (optional): the deploy job writes the Secret
-# from the store keys catalystcommunity/vcsstar:github-app-*. Users then
-# connect their GitHub account on the Account page.
+# The instance's GitHub Apps (optional): the deploy job writes the Secret
+# from GITHUB_APPS, a JSON list in the store (tools/store-github-apps.sh
+# makes it). The first App links user accounts (Account page); the mirror
+# uses every installed App and picks the one with the most rate room.
 githubApp:
   existingSecret: "vcsstar-github-app"
   slug: ""

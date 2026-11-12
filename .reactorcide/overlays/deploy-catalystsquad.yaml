@@ -1,0 +1,23 @@
+# Instance overlay for the catalystsquad deployment of vcsstar. A real
+# example of an instance: only the namespace and secret references. The
+# Helm values (hostnames, LinkKeys address and fingerprints, buckets) are
+# the text of the store key `values-catalystsquad`; template:
+# deploy/values-example.yaml.
+#
+# The CI workflow .reactorcide/workflows/deploy-catalystsquad.yaml carries
+# the same environment; change both together.
+#
+# Store keys (local store for run-local, production store for CI):
+#   catalystcommunity/vcsstar:values-catalystsquad          Helm overlay text
+#   catalystcommunity/vcsstar:catalystsquad-linkkeys-api-key   LinkKeys account API key
+#   catalystcommunity/vcsstar:catalystsquad-github-apps     JSON list of GitHub Apps
+environment:
+  K8S_NAMESPACE: "vcsstar"
+  HELM_RELEASE: "vcsstar"
+  DEPLOY_VALUES: "${secret:catalystcommunity/vcsstar:values-catalystsquad}"
+  LINKKEYS_API_KEY: "${secret:catalystcommunity/vcsstar:catalystsquad-linkkeys-api-key}"
+  GITHUB_APPS: "${secret:catalystcommunity/vcsstar:catalystsquad-github-apps}"
+  OBJECT_STORE_ACCESS_KEY: "${secret:catalystcommunity/vcsstar:catalystsquad-object-store-access-key}"
+  OBJECT_STORE_SECRET_KEY: "${secret:catalystcommunity/vcsstar:catalystsquad-object-store-secret-key}"
+  BACKUP_S3_ACCESS_KEY_ID: "${secret:catalystcommunity/vcsstar:catalystsquad-backup-access-key}"
+  BACKUP_S3_SECRET_KEY: "${secret:catalystcommunity/vcsstar:catalystsquad-backup-secret-key}"

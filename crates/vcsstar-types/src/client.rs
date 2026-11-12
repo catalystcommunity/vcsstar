@@ -220,6 +220,24 @@ impl<T: Transport> AuthClient<T> {
             .call("Auth", "unlink-github", &encode_empty(&req))?;
         decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
     }
+
+    /// The caller's display preferences (defaults when none are saved).
+    pub fn get_preferences(&self, req: Empty) -> Result<Preferences, ClientError> {
+        let csil_resp = self
+            .transport
+            .call("Auth", "get-preferences", &encode_empty(&req))?;
+        decode_preferences(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// Save the given fields; absent fields keep their value.
+    pub fn set_preferences(&self, req: SetPreferencesRequest) -> Result<Preferences, ClientError> {
+        let csil_resp = self.transport.call(
+            "Auth",
+            "set-preferences",
+            &encode_set_preferences_request(&req),
+        )?;
+        decode_preferences(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
 }
 
 /// Typed client for the Orgs service.
@@ -511,6 +529,15 @@ impl<T: Transport> ReposClient<T> {
                 .call("Repos", "capture-history", &encode_get_repo_request(&req))?;
         decode_capture_report(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
     }
+
+    /// Direct forks of the repository that the caller can see, on this
+    /// instance. A pull request into the repository may come from one.
+    pub fn list_forks(&self, req: GetRepoRequest) -> Result<RepoPage, ClientError> {
+        let csil_resp =
+            self.transport
+                .call("Repos", "list-forks", &encode_get_repo_request(&req))?;
+        decode_repo_page(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
 }
 
 /// Typed client for the PullRequests service.
@@ -788,7 +815,8 @@ impl<T: Transport> MirrorClient<T> {
         decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
     }
 
-    /// import-repo (request/response).
+    /// Make the repository and queue its import. The answer comes before
+    /// the branches are fetched; `status` reports `import_state`.
     pub fn import_repo(&self, req: ImportRequest) -> Result<Repo, ClientError> {
         let csil_resp =
             self.transport
@@ -849,6 +877,87 @@ impl<T: Transport> MirrorClient<T> {
             .transport
             .call("Mirror", "health", &encode_empty(&req))?;
         decode_github_health(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// Start the history import of the repository's GitHub pull requests
+    /// again from the first one. A mirrored repository imports its history
+    /// by itself; this is for a repository whose import must run again.
+    pub fn backfill(&self, req: GetRepoRequest) -> Result<MirrorStatus, ClientError> {
+        let csil_resp =
+            self.transport
+                .call("Mirror", "backfill", &encode_get_repo_request(&req))?;
+        decode_mirror_status(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// Where the instance's GitHub Apps are installed, with the vcsstar
+    /// organizations whose `github_owner` is each owner.
+    pub fn list_github_installations(
+        &self,
+        req: Empty,
+    ) -> Result<GithubInstallationList, ClientError> {
+        let csil_resp =
+            self.transport
+                .call("Mirror", "list-github-installations", &encode_empty(&req))?;
+        decode_github_installation_list(&csil_resp)
+            .map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// import-all (request/response).
+    pub fn import_all(&self, req: ImportAllRequest) -> Result<ImportAllResult, ClientError> {
+        let csil_resp =
+            self.transport
+                .call("Mirror", "import-all", &encode_import_all_request(&req))?;
+        decode_import_all_result(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// set-schedule (request/response).
+    pub fn set_schedule(&self, req: SetMirrorScheduleRequest) -> Result<MirrorStatus, ClientError> {
+        let csil_resp = self.transport.call(
+            "Mirror",
+            "set-schedule",
+            &encode_set_mirror_schedule_request(&req),
+        )?;
+        decode_mirror_status(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+}
+
+/// Typed client for the Instance service.
+pub struct InstanceClient<T: Transport> {
+    #[allow(dead_code)]
+    transport: T,
+}
+
+impl<T: Transport> InstanceClient<T> {
+    pub fn new(transport: T) -> Self {
+        Self { transport }
+    }
+
+    /// Every instance role. Instance admins only.
+    pub fn list_roles(&self, req: Empty) -> Result<InstanceRoleList, ClientError> {
+        let csil_resp = self
+            .transport
+            .call("Instance", "list-roles", &encode_empty(&req))?;
+        decode_instance_role_list(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// set-role (request/response).
+    pub fn set_role(&self, req: SetInstanceRoleRequest) -> Result<InstanceRoleGrant, ClientError> {
+        let csil_resp = self.transport.call(
+            "Instance",
+            "set-role",
+            &encode_set_instance_role_request(&req),
+        )?;
+        decode_instance_role_grant(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// remove-role (request/response).
+    pub fn remove_role(&self, req: RemoveInstanceRoleRequest) -> Result<Ok, ClientError> {
+        let csil_resp = self.transport.call(
+            "Instance",
+            "remove-role",
+            &encode_remove_instance_role_request(&req),
+        )?;
+        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
     }
 }
 

@@ -14,6 +14,14 @@ and each side shows up on the other when GitHub can be reached.
   themselves.
 - Identity through LinkKeys (`user_id@domain`), API tokens, service accounts,
   and GitHub account links so vcsstar acts on GitHub as you.
+- GitHub import that brings a repository's whole pull request history, and
+  any number of GitHub Apps to spread the rate limits. Imports are queued
+  work that survives restarts; each repository has its own sync cadence.
+- Forks into any organization on the instance and pull requests back from
+  them; side by side or in-line diffs with syntax highlighting; rendered
+  markdown and mermaid diagrams.
+- Roles on organizations, repositories, and the instance (admin, viewer);
+  the UI shows each caller only what their role allows.
 - A CSIL contract (`csil/vcsstar.csil`) that every client, the web UI, and
   the `vcsstar` CLI are generated from. Every capability is an operation in
   that file first.

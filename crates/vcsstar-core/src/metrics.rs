@@ -16,7 +16,13 @@ struct Metrics {
     github_lane_open: IntGaugeVec,
     github_lane_transitions: IntCounterVec,
     github_rate_limit_remaining: IntGaugeVec,
+    github_rate_limit_limit: IntGaugeVec,
+    github_rate_limit_reset: IntGaugeVec,
+    github_rate_limit_held: IntGaugeVec,
     github_pull_sync: IntCounterVec,
+    github_backfill: IntCounterVec,
+    github_import: IntCounterVec,
+    github_backfill_pulls: prometheus::IntCounter,
     hook_deliveries: IntCounterVec,
     repack: IntCounterVec,
     cache_warm: IntCounterVec,
@@ -89,11 +95,35 @@ fn metrics() -> &'static Metrics {
             "Times a GitHub lane opened or closed on this node, by lane and new state",
             &["lane", "to"],
         );
+        // GitHub rate limits, from the shared table at scrape time (every
+        // node answers the same). `token` is the label the instance tracks
+        // (`app:<app id>/<installation>`, `user:<login>`, a credential
+        // purpose, `tok:<hash>`); `app_id` and `installation` are set for
+        // GitHub App installation tokens and empty otherwise.
+        let rate_labels = &["token", "app_id", "installation"];
         let github_rate_limit_remaining = gauge(
             &registry,
             "vcsstar_github_rate_limit_remaining",
-            "Remaining GitHub API calls in the current window, by token label",
-            &["token"],
+            "GitHub API calls left in the current rate limit window, from the X-RateLimit-Remaining header",
+            rate_labels,
+        );
+        let github_rate_limit_limit = gauge(
+            &registry,
+            "vcsstar_github_rate_limit_limit",
+            "GitHub API calls allowed per rate limit window, from the X-RateLimit-Limit header",
+            rate_labels,
+        );
+        let github_rate_limit_reset = gauge(
+            &registry,
+            "vcsstar_github_rate_limit_reset_seconds",
+            "Seconds until the GitHub rate limit window resets (0 when it has reset), from X-RateLimit-Reset",
+            rate_labels,
+        );
+        let github_rate_limit_held = gauge(
+            &registry,
+            "vcsstar_github_rate_limit_held",
+            "1 while vcsstar holds calls on this token (reserve reached or Retry-After), else 0",
+            rate_labels,
         );
         let github_pull_sync = counter(
             &registry,
@@ -101,6 +131,24 @@ fn metrics() -> &'static Metrics {
             "Pull-based GitHub sync passes, by outcome (complete, partial, held, error)",
             &["outcome"],
         );
+        let github_backfill = counter(
+            &registry,
+            "vcsstar_github_backfill_total",
+            "History import passes of GitHub pull requests, by outcome (done, partial, held, error)",
+            &["outcome"],
+        );
+        let github_import = counter(
+            &registry,
+            "vcsstar_github_import_total",
+            "Repository import attempts from GitHub, by outcome (done, retry, failed, held)",
+            &["outcome"],
+        );
+        let github_backfill_pulls =
+            prometheus::IntCounter::new("vcsstar_github_backfill_pulls_total", "Pull requests the history import went through")
+                .expect("static metric definition");
+        registry
+            .register(Box::new(github_backfill_pulls.clone()))
+            .expect("fresh registry");
         let hook_deliveries = counter(
             &registry,
             "vcsstar_hook_deliveries_total",
@@ -143,7 +191,13 @@ fn metrics() -> &'static Metrics {
             github_lane_open,
             github_lane_transitions,
             github_rate_limit_remaining,
+            github_rate_limit_limit,
+            github_rate_limit_reset,
+            github_rate_limit_held,
             github_pull_sync,
+            github_backfill,
+            github_import,
+            github_backfill_pulls,
             hook_deliveries,
             repack,
             cache_warm,
@@ -200,11 +254,42 @@ pub fn github_lane_transition(lane: &str, to: &str) {
         .inc();
 }
 
-pub fn github_rate_limit_remaining(token: &str, remaining: u64) {
-    metrics()
-        .github_rate_limit_remaining
-        .with_label_values(&[token])
-        .set(remaining.min(i64::MAX as u64) as i64);
+/// The `app_id` and `installation` labels of a token label.
+fn app_parts(token: &str) -> (&str, &str) {
+    token
+        .strip_prefix("app:")
+        .and_then(|rest| rest.split_once('/'))
+        .unwrap_or(("", ""))
+}
+
+/// The rate limit gauges, from the shared rate table (tokens seen in the
+/// last two hours). Called by the scrape handler; the old label sets are
+/// dropped first, so a token nobody uses any more leaves the output.
+pub fn refresh_rate_limits() {
+    let (_, rates) = crate::github_health::snapshot();
+    let m = metrics();
+    m.github_rate_limit_remaining.reset();
+    m.github_rate_limit_limit.reset();
+    m.github_rate_limit_reset.reset();
+    m.github_rate_limit_held.reset();
+    let now = crate::now_ms();
+    for r in rates {
+        let (app_id, installation) = app_parts(&r.token);
+        let labels = [r.token.as_str(), app_id, installation];
+        let clamp = |v: u64| v.min(i64::MAX as u64) as i64;
+        m.github_rate_limit_remaining
+            .with_label_values(&labels)
+            .set(clamp(r.remaining));
+        m.github_rate_limit_limit
+            .with_label_values(&labels)
+            .set(clamp(r.limit));
+        m.github_rate_limit_reset
+            .with_label_values(&labels)
+            .set(((r.reset_at - now) / 1000).max(0));
+        m.github_rate_limit_held
+            .with_label_values(&labels)
+            .set(r.held as i64);
+    }
 }
 
 /// One pull-based sync pass of a repository finished.
@@ -213,6 +298,23 @@ pub fn github_pull_sync(outcome: &str) {
         .github_pull_sync
         .with_label_values(&[outcome])
         .inc();
+}
+
+/// One repository import attempt finished.
+pub fn github_import(outcome: &str) {
+    metrics().github_import.with_label_values(&[outcome]).inc();
+}
+
+/// One history import pass finished.
+pub fn github_backfill(outcome: &str) {
+    metrics()
+        .github_backfill
+        .with_label_values(&[outcome])
+        .inc();
+}
+
+pub fn github_backfill_pulls(n: u64) {
+    metrics().github_backfill_pulls.inc_by(n);
 }
 
 /// One outbound webhook delivery attempt finished.
@@ -272,6 +374,13 @@ pub fn render() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn app_labels_split_out_of_the_token_label() {
+        assert_eq!(app_parts("app:5701582/998877"), ("5701582", "998877"));
+        assert_eq!(app_parts("user:octo"), ("", ""));
+        assert_eq!(app_parts("mirror_api"), ("", ""));
+    }
 
     #[test]
     fn counter_shows_up_in_the_rendering() {

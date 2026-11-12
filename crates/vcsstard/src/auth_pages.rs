@@ -113,36 +113,38 @@ fn login_submit(
     peer: HttpPeer,
     form: Form<LoginForm>,
 ) -> Result<Redirect, Redirect> {
-    let req = vcsstar_types::BeginLoginRequest {
-        ctx: vcsstar_types::Ctx {
-            request_id: uuid::Uuid::now_v7().to_string(),
-            deadline_ms: None,
-            contract_version: None,
-            contract_digest: None,
-        },
-        identity_input: form.identity.clone(),
-        return_to: form.return_to.clone().filter(|s| !s.is_empty()),
-        device_user_code: form.device_code.clone().filter(|s| !s.is_empty()),
-    };
-    match login::begin(app, &anon_ctx(&peer.0.remote), req) {
-        Ok(resp) => {
-            let secure = app.config.public_url.starts_with("https://");
-            cookies.add(
-                Cookie::build((ATTEMPT_COOKIE, resp.attempt_token))
-                    .http_only(true)
-                    .secure(secure)
-                    .same_site(SameSite::Lax)
-                    .path("/auth")
-                    .max_age(rocket::time::Duration::minutes(login::LOGIN_TTL_MINUTES))
-                    .build(),
-            );
-            Ok(Redirect::to(resp.redirect_url))
+    crate::http::blocking(|| {
+        let req = vcsstar_types::BeginLoginRequest {
+            ctx: vcsstar_types::Ctx {
+                request_id: uuid::Uuid::now_v7().to_string(),
+                deadline_ms: None,
+                contract_version: None,
+                contract_digest: None,
+            },
+            identity_input: form.identity.clone(),
+            return_to: form.return_to.clone().filter(|s| !s.is_empty()),
+            device_user_code: form.device_code.clone().filter(|s| !s.is_empty()),
+        };
+        match login::begin(app, &anon_ctx(&peer.0.remote), req) {
+            Ok(resp) => {
+                let secure = app.config.public_url.starts_with("https://");
+                cookies.add(
+                    Cookie::build((ATTEMPT_COOKIE, resp.attempt_token))
+                        .http_only(true)
+                        .secure(secure)
+                        .same_site(SameSite::Lax)
+                        .path("/auth")
+                        .max_age(rocket::time::Duration::minutes(login::LOGIN_TTL_MINUTES))
+                        .build(),
+                );
+                Ok(Redirect::to(resp.redirect_url))
+            }
+            Err(e) => Err(Redirect::to(format!(
+                "/auth/login?error={}",
+                vcsstar_core::linkkeys::urlencode(&e.message)
+            ))),
         }
-        Err(e) => Err(Redirect::to(format!(
-            "/auth/login?error={}",
-            vcsstar_core::linkkeys::urlencode(&e.message)
-        ))),
-    }
+    })
 }
 
 #[get("/auth/callback?<encrypted_token>&<error>")]
@@ -153,52 +155,54 @@ fn callback(
     encrypted_token: Option<String>,
     error: Option<String>,
 ) -> Result<Redirect, Redirect> {
-    let attempt = cookies.get(ATTEMPT_COOKIE).map(|c| c.value().to_string());
-    cookies.remove(Cookie::build(ATTEMPT_COOKIE).path("/auth"));
-    if let Some(e) = error {
-        return Err(Redirect::to(format!(
-            "/auth/login?error={}",
-            vcsstar_core::linkkeys::urlencode(&format!("identity provider: {e}"))
-        )));
-    }
-    let (Some(attempt), Some(token)) = (attempt, encrypted_token) else {
-        return Err(Redirect::to(
-            "/auth/login?error=login%20attempt%20missing%20or%20expired",
-        ));
-    };
-    let req = vcsstar_types::CompleteLoginRequest {
-        ctx: vcsstar_types::Ctx {
-            request_id: uuid::Uuid::now_v7().to_string(),
-            deadline_ms: None,
-            contract_version: None,
-            contract_digest: None,
-        },
-        attempt_token: attempt,
-        encrypted_token: token,
-    };
-    match login::complete(app, &anon_ctx(&peer.0.remote), req) {
-        Ok(session) => {
-            let secure = app.config.public_url.starts_with("https://");
-            cookies.add(
-                Cookie::build((SESSION_COOKIE, session.session_token))
-                    .http_only(true)
-                    .secure(secure)
-                    .same_site(SameSite::Lax)
-                    .path("/")
-                    .max_age(rocket::time::Duration::hours(login::SESSION_SLIDING_HOURS))
-                    .build(),
-            );
-            let target = session
-                .return_to
-                .filter(|r| r.starts_with('/') && !r.starts_with("//"))
-                .unwrap_or_else(|| "/auth/me".to_string());
-            Ok(Redirect::to(target))
+    crate::http::blocking(|| {
+        let attempt = cookies.get(ATTEMPT_COOKIE).map(|c| c.value().to_string());
+        cookies.remove(Cookie::build(ATTEMPT_COOKIE).path("/auth"));
+        if let Some(e) = error {
+            return Err(Redirect::to(format!(
+                "/auth/login?error={}",
+                vcsstar_core::linkkeys::urlencode(&format!("identity provider: {e}"))
+            )));
         }
-        Err(e) => Err(Redirect::to(format!(
-            "/auth/login?error={}",
-            vcsstar_core::linkkeys::urlencode(&e.message)
-        ))),
-    }
+        let (Some(attempt), Some(token)) = (attempt, encrypted_token) else {
+            return Err(Redirect::to(
+                "/auth/login?error=login%20attempt%20missing%20or%20expired",
+            ));
+        };
+        let req = vcsstar_types::CompleteLoginRequest {
+            ctx: vcsstar_types::Ctx {
+                request_id: uuid::Uuid::now_v7().to_string(),
+                deadline_ms: None,
+                contract_version: None,
+                contract_digest: None,
+            },
+            attempt_token: attempt,
+            encrypted_token: token,
+        };
+        match login::complete(app, &anon_ctx(&peer.0.remote), req) {
+            Ok(session) => {
+                let secure = app.config.public_url.starts_with("https://");
+                cookies.add(
+                    Cookie::build((SESSION_COOKIE, session.session_token))
+                        .http_only(true)
+                        .secure(secure)
+                        .same_site(SameSite::Lax)
+                        .path("/")
+                        .max_age(rocket::time::Duration::hours(login::SESSION_SLIDING_HOURS))
+                        .build(),
+                );
+                let target = session
+                    .return_to
+                    .filter(|r| r.starts_with('/') && !r.starts_with("//"))
+                    .unwrap_or_else(|| "/auth/me".to_string());
+                Ok(Redirect::to(target))
+            }
+            Err(e) => Err(Redirect::to(format!(
+                "/auth/login?error={}",
+                vcsstar_core::linkkeys::urlencode(&e.message)
+            ))),
+        }
+    })
 }
 
 #[get("/auth/me")]
@@ -207,11 +211,12 @@ fn me(
     cookies: &CookieJar<'_>,
     peer: HttpPeer,
 ) -> Result<RawHtml<String>, Redirect> {
-    let ctx = session_ctx(app, cookies, &peer.0.remote);
-    let Some(p) = ctx.principal.as_ref() else {
-        return Err(Redirect::to("/auth/login?return_to=/auth/me"));
-    };
-    Ok(page(
+    crate::http::blocking(|| {
+        let ctx = session_ctx(app, cookies, &peer.0.remote);
+        let Some(p) = ctx.principal.as_ref() else {
+            return Err(Redirect::to("/auth/login?return_to=/auth/me"));
+        };
+        Ok(page(
         "Signed in",
         &format!(
             "<p>You are <strong>{}@{}</strong> <span class=\"muted\">({})</span>.</p>\
@@ -221,20 +226,23 @@ fn me(
             esc(&p.key())
         ),
     ))
+    })
 }
 
 #[post("/auth/logout")]
 fn logout(app: &State<App>, cookies: &CookieJar<'_>, peer: HttpPeer) -> Redirect {
-    let ctx = session_ctx(app, cookies, &peer.0.remote);
-    if ctx.principal.is_some() {
-        let _ = vcsstar_core::services::auth::logout(
-            app,
-            &ctx,
-            vcsstar_types::Empty { ctx: empty_ctx() },
-        );
-    }
-    cookies.remove(Cookie::build(SESSION_COOKIE).path("/"));
-    Redirect::to("/auth/login")
+    crate::http::blocking(|| {
+        let ctx = session_ctx(app, cookies, &peer.0.remote);
+        if ctx.principal.is_some() {
+            let _ = vcsstar_core::services::auth::logout(
+                app,
+                &ctx,
+                vcsstar_types::Empty { ctx: empty_ctx() },
+            );
+        }
+        cookies.remove(Cookie::build(SESSION_COOKIE).path("/"));
+        Redirect::to("/auth/login")
+    })
 }
 
 fn empty_ctx() -> vcsstar_types::Ctx {
@@ -260,32 +268,34 @@ fn device_form(
     code: Option<String>,
     msg: Option<String>,
 ) -> Result<RawHtml<String>, Redirect> {
-    let ctx = session_ctx(app, cookies, &peer.0.remote);
-    if ctx.principal.is_none() {
-        let mut target = "/auth/login?return_to=/auth/device".to_string();
-        if let Some(c) = code.as_deref() {
-            target = format!(
-                "/auth/login?device_code={}",
-                vcsstar_core::linkkeys::urlencode(c)
-            );
+    crate::http::blocking(|| {
+        let ctx = session_ctx(app, cookies, &peer.0.remote);
+        if ctx.principal.is_none() {
+            let mut target = "/auth/login?return_to=/auth/device".to_string();
+            if let Some(c) = code.as_deref() {
+                target = format!(
+                    "/auth/login?device_code={}",
+                    vcsstar_core::linkkeys::urlencode(c)
+                );
+            }
+            return Err(Redirect::to(target));
         }
-        return Err(Redirect::to(target));
-    }
-    let note = msg
-        .map(|m| format!("<p>{}</p>", esc(&m)))
-        .unwrap_or_default();
-    Ok(page(
-        "Approve CLI login",
-        &format!(
-            "{note}<form method=\"post\" action=\"/auth/device\">\
+        let note = msg
+            .map(|m| format!("<p>{}</p>", esc(&m)))
+            .unwrap_or_default();
+        Ok(page(
+            "Approve CLI login",
+            &format!(
+                "{note}<form method=\"post\" action=\"/auth/device\">\
 <label for=\"code\">Code shown by the CLI</label>\
 <input type=\"text\" id=\"code\" name=\"code\" value=\"{}\" autocomplete=\"off\" required>\
 <button type=\"submit\" name=\"decision\" value=\"approve\">Approve</button> \
 <button type=\"submit\" name=\"decision\" value=\"deny\">Deny</button></form>\
 <p class=\"muted\">Only approve a code you requested yourself a moment ago.</p>",
-            esc(code.as_deref().unwrap_or(""))
-        ),
-    ))
+                esc(code.as_deref().unwrap_or(""))
+            ),
+        ))
+    })
 }
 
 #[post("/auth/device", data = "<form>")]
@@ -295,26 +305,28 @@ fn device_submit(
     peer: HttpPeer,
     form: Form<DeviceForm>,
 ) -> Redirect {
-    let ctx = session_ctx(app, cookies, &peer.0.remote);
-    let req = vcsstar_types::DeviceApproveRequest {
-        ctx: empty_ctx(),
-        user_code: form.code.clone(),
-        approve: form.decision == "approve",
-    };
-    match login::approve_device(app, &ctx, req) {
-        Ok(_) => Redirect::to(format!(
-            "/auth/device?msg={}",
-            if form.decision == "approve" {
-                "Approved.%20You%20can%20return%20to%20the%20terminal."
-            } else {
-                "Denied."
-            }
-        )),
-        Err(e) => Redirect::to(format!(
-            "/auth/device?msg={}",
-            vcsstar_core::linkkeys::urlencode(&e.message)
-        )),
-    }
+    crate::http::blocking(|| {
+        let ctx = session_ctx(app, cookies, &peer.0.remote);
+        let req = vcsstar_types::DeviceApproveRequest {
+            ctx: empty_ctx(),
+            user_code: form.code.clone(),
+            approve: form.decision == "approve",
+        };
+        match login::approve_device(app, &ctx, req) {
+            Ok(_) => Redirect::to(format!(
+                "/auth/device?msg={}",
+                if form.decision == "approve" {
+                    "Approved.%20You%20can%20return%20to%20the%20terminal."
+                } else {
+                    "Denied."
+                }
+            )),
+            Err(e) => Redirect::to(format!(
+                "/auth/device?msg={}",
+                vcsstar_core::linkkeys::urlencode(&e.message)
+            )),
+        }
+    })
 }
 
 fn account_target(return_to: Option<&str>) -> String {
@@ -342,24 +354,27 @@ fn github_start(
     peer: HttpPeer,
     return_to: Option<String>,
 ) -> Redirect {
-    let ctx = session_ctx(app, cookies, &peer.0.remote);
-    let Some(p) = ctx.principal.as_ref() else {
-        return Redirect::to(format!(
-            "/auth/login?return_to={}",
-            vcsstar_core::linkkeys::urlencode(&format!(
-                "/auth/github/start?return_to={}",
-                account_target(return_to.as_deref())
-            ))
-        ));
-    };
-    let mut conn = match app.conn() {
-        Ok(c) => c,
-        Err(e) => return link_error(return_to.as_deref(), &e.message),
-    };
-    match vcsstar_core::github_link::begin(app, &mut conn, p.identity.id, return_to.as_deref()) {
-        Ok(url) => Redirect::to(url),
-        Err(e) => link_error(return_to.as_deref(), &e.message),
-    }
+    crate::http::blocking(|| {
+        let ctx = session_ctx(app, cookies, &peer.0.remote);
+        let Some(p) = ctx.principal.as_ref() else {
+            return Redirect::to(format!(
+                "/auth/login?return_to={}",
+                vcsstar_core::linkkeys::urlencode(&format!(
+                    "/auth/github/start?return_to={}",
+                    account_target(return_to.as_deref())
+                ))
+            ));
+        };
+        let mut conn = match app.conn() {
+            Ok(c) => c,
+            Err(e) => return link_error(return_to.as_deref(), &e.message),
+        };
+        match vcsstar_core::github_link::begin(app, &mut conn, p.identity.id, return_to.as_deref())
+        {
+            Ok(url) => Redirect::to(url),
+            Err(e) => link_error(return_to.as_deref(), &e.message),
+        }
+    })
 }
 
 /// GitHub sends the browser back here with the authorization code. A
@@ -380,29 +395,31 @@ fn github_callback(
     setup_action: Option<String>,
     installation_id: Option<String>,
 ) -> Redirect {
-    let _ = (setup_action, installation_id);
-    if let Some(e) = error {
-        let d = error_description.unwrap_or_default();
-        return link_error(None, &format!("GitHub: {e} {d}"));
-    }
-    let ctx = session_ctx(app, cookies, &peer.0.remote);
-    let Some(p) = ctx.principal.as_ref() else {
-        return Redirect::to("/auth/login?return_to=%2Fauth%2Fgithub%2Fstart");
-    };
-    let (Some(code), Some(state)) = (code, state) else {
-        return Redirect::to("/auth/github/start");
-    };
-    let mut conn = match app.conn() {
-        Ok(c) => c,
-        Err(e) => return link_error(None, &e.message),
-    };
-    match vcsstar_core::github_link::complete(app, &mut conn, p.identity.id, &state, &code) {
-        Ok((row, return_to)) => {
-            tracing::info!(identity = %p.key(), login = %row.login, "GitHub account linked");
-            Redirect::to(account_target(return_to.as_deref()))
+    crate::http::blocking(|| {
+        let _ = (setup_action, installation_id);
+        if let Some(e) = error {
+            let d = error_description.unwrap_or_default();
+            return link_error(None, &format!("GitHub: {e} {d}"));
         }
-        Err(e) => link_error(None, &e.message),
-    }
+        let ctx = session_ctx(app, cookies, &peer.0.remote);
+        let Some(p) = ctx.principal.as_ref() else {
+            return Redirect::to("/auth/login?return_to=%2Fauth%2Fgithub%2Fstart");
+        };
+        let (Some(code), Some(state)) = (code, state) else {
+            return Redirect::to("/auth/github/start");
+        };
+        let mut conn = match app.conn() {
+            Ok(c) => c,
+            Err(e) => return link_error(None, &e.message),
+        };
+        match vcsstar_core::github_link::complete(app, &mut conn, p.identity.id, &state, &code) {
+            Ok((row, return_to)) => {
+                tracing::info!(identity = %p.key(), login = %row.login, "GitHub account linked");
+                Redirect::to(account_target(return_to.as_deref()))
+            }
+            Err(e) => link_error(None, &e.message),
+        }
+    })
 }
 
 /// Without a built UI, the root shows the session page. The SPA file
