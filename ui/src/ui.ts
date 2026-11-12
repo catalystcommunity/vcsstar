@@ -2,7 +2,7 @@
 // notices, confirmations, and the one-shot token dialog.
 import { askConfirm } from "@catalystcommunity/containers";
 import { showNotice } from "@catalystcommunity/menus";
-import { errorText } from "./api";
+import { errorText, when as whenText } from "./api";
 import { button, fill, h, link, type Child } from "./dom";
 
 export type Tone = "ok" | "warn" | "bad" | "info" | "neutral";
@@ -32,12 +32,78 @@ export function panel(...children: Child[]): HTMLDivElement {
 }
 
 /** A table. `rows` are `<tr>` elements; the body is returned so the page
- * can fill it again after a load. */
+ * can fill it again after a load. A header with text sorts the rows by
+ * its column when clicked (again: the other direction). The key of a
+ * cell is its `data-sort` attribute (see `sortKey`), else its text.
+ * Numbers compare as numbers; empty keys go last in both directions.
+ * The sort stays when the page fills the body again. */
 export function table(headers: Child[] | null, cls = ""): { wrap: HTMLDivElement; body: HTMLTableSectionElement } {
   const body = h("tbody");
-  const head = headers ? h("thead", null, h("tr", null, ...headers.map((x) => h("th", { scope: "col" }, x)))) : null;
+  let sorted: { col: number; desc: boolean } | null = null;
+  const ths: HTMLTableCellElement[] = [];
+  const apply = () => {
+    if (!sorted) return;
+    const { col, desc } = sorted;
+    const rows = Array.from(body.rows).map((row, i) => ({ row, i, key: keyOf(row.cells[col]) }));
+    rows.sort((a, b) => {
+      if (a.key === null || b.key === null) return a.key === b.key ? a.i - b.i : a.key === null ? 1 : -1;
+      const c = compareKeys(a.key, b.key);
+      return (desc ? -c : c) || a.i - b.i;
+    });
+    body.append(...rows.map((r) => r.row));
+    observer.takeRecords(); // our own moves are not a refill
+  };
+  const observer = new MutationObserver(apply);
+  observer.observe(body, { childList: true });
+  const head = headers ? h("thead", null, h("tr", null, ...headers.map((x, col) => {
+    const label = typeof x === "string" ? x : "";
+    const th = label ? h("th", { scope: "col" }) : h("th", { scope: "col" }, x);
+    ths.push(th);
+    if (!label) return th;
+    const sort = h("button", { type: "button", class: "sort-head" }, label);
+    sort.addEventListener("click", () => {
+      // Dates and numbers start with the largest (newest) first.
+      const first = Array.from(body.rows).map((r) => keyOf(r.cells[col])).find((k) => k !== null);
+      const numeric = first !== undefined && first !== null && isNumber(first);
+      sorted = sorted?.col === col ? { col, desc: !sorted.desc } : { col, desc: numeric };
+      ths.forEach((t, i) => (i === col ? t.setAttribute("aria-sort", sorted!.desc ? "descending" : "ascending") : t.removeAttribute("aria-sort")));
+      apply();
+    });
+    th.append(sort);
+    return th;
+  }))) : null;
   const wrap = h("div", { class: `table-wrap ${cls}`.trim() }, h("table", null, head, body));
   return { wrap, body };
+}
+
+/** Give a cell the key it sorts by (a time in ms, a number, or text);
+ * null or undefined sorts last. Returns the cell. */
+export function sortKey<T extends HTMLElement>(cell: T, key: number | string | null | undefined): T {
+  cell.dataset.sort = key === null || key === undefined ? "" : String(key);
+  return cell;
+}
+
+/** A table cell that shows a time ("3 h ago") and sorts by it. */
+export function timeCell(ms: number | null | undefined, missing = "", ...rest: Child[]): HTMLTableCellElement {
+  return sortKey(td("muted", ms ? whenText(ms) : missing, ...rest), ms || null);
+}
+
+function keyOf(cell: HTMLTableCellElement | undefined): string | null {
+  if (!cell) return null;
+  const marked = cell.dataset.sort ?? cell.querySelector<HTMLElement>("[data-sort]")?.dataset.sort;
+  const key = (marked ?? cell.textContent ?? "").trim();
+  return key === "" ? null : key;
+}
+
+function isNumber(s: string): boolean {
+  return /^-?\d+(\.\d+)?$/.test(s);
+}
+
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+function compareKeys(a: string, b: string): number {
+  if (isNumber(a) && isNumber(b)) return Number(a) - Number(b);
+  return collator.compare(a, b);
 }
 
 export function tr(...cells: Child[]): HTMLTableRowElement {

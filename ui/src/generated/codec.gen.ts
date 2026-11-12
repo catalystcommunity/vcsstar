@@ -1625,6 +1625,7 @@ export function toRepoCborValue(v: Repo): CborValue {
   csilMap.set("archived", v.archived);
   csilMap.set("vcs_type", v.vcsType);
   csilMap.set("https_url", v.httpsUrl);
+  if (v.pushedAt !== undefined) csilMap.set("pushed_at", v.pushedAt);
   csilMap.set("created_at", v.createdAt);
   csilMap.set("visibility", v.visibility);
   if (v.description !== undefined) csilMap.set("description", v.description);
@@ -1646,6 +1647,7 @@ export function fromRepoCborValue(value: CborValue): Repo {
     mirrorEnabled: asBool(requireKey(value, "mirror_enabled")),
     archived: asBool(requireKey(value, "archived")),
     createdAt: asNumber(requireKey(value, "created_at")),
+    pushedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "pushed_at")),
     httpsUrl: asString(requireKey(value, "https_url")),
     sshUrl: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "ssh_url")),
     viewerRole: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "viewer_role")),

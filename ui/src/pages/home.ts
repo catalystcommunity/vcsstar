@@ -3,12 +3,12 @@
 import { api, ctx, when } from "../api";
 import { button, comboBox, fill, form, h, link, textField, clear } from "../dom";
 import { Page } from "../page";
-import { act, badge, empty, Feedback, loading, meta, mono, pageHead, panel, section, table, td, tr } from "../ui";
+import { act, badge, empty, Feedback, loading, meta, mono, pageHead, panel, section, sortKey, table, td, timeCell, tr } from "../ui";
 import type { Org, Repo } from "../generated/types.gen.ts";
 
 export class HomePage extends Page {
   title = "Repositories";
-  private readonly repoTable = table(["Repository", "Visibility", "Default branch", "Mirror", "Created"]);
+  private readonly repoTable = table(["Repository", "Visibility", "Default branch", "Mirror", "Last push", "Created"]);
   private readonly repoStatus = h("div");
   private readonly count = h("p", { class: "lead" });
   private readonly orgList = h("div", { class: "chips" });
@@ -86,11 +86,12 @@ export class HomePage extends Page {
     this.count.textContent = repos.length === 1 ? "One repository" : `${repos.length} repositories`;
     fill(this.repoTable.body, ...repos.map((r) =>
       tr(
-        td("", link(`/${r.org}/${r.name}`, h("span", { class: "repo-org" }, `${r.org} / `), h("strong", null, r.name)), r.description && h("div", { class: "hint" }, r.description)),
+        sortKey(td("", link(`/${r.org}/${r.name}`, h("span", { class: "repo-org" }, `${r.org} / `), h("strong", null, r.name)), r.description && h("div", { class: "hint" }, r.description)), `${r.org}/${r.name}`),
         r.visibility,
         td("", mono(r.defaultBranch)),
         td("", r.mirrorEnabled ? badge("mirrored", "info") : badge("local")),
-        td("muted", when(r.createdAt)),
+        timeCell(r.pushedAt, "never"),
+        timeCell(r.createdAt),
       ),
     ));
     fill(this.repoStatus, repos.length === 0 && empty(this.context.session ? "No repositories you can see yet. Create one below, or enable a GitHub repository from an organization page." : "No public repositories yet. Sign in to see the ones you have access to."));

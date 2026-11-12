@@ -61,6 +61,12 @@ export function when(ms?: number | null): string {
   if (!ms) return "";
   const d = new Date(ms);
   const diff = Date.now() - ms;
+  // A time to come (an expiry): the date, or "in N min/h" when close.
+  if (diff < -60_000) {
+    if (diff > -3_600_000) return `in ${Math.ceil(-diff / 60_000)} min`;
+    if (diff > -86_400_000) return `in ${Math.ceil(-diff / 3_600_000)} h`;
+    return d.toISOString().slice(0, 10);
+  }
   if (diff < 60_000) return "just now";
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} min ago`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} h ago`;

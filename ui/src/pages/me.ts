@@ -2,7 +2,7 @@
 import { api, ctx, when, who } from "../api";
 import { button, comboBox, fill, form, h, textButton, textField, clear } from "../dom";
 import { Page } from "../page";
-import { act, badge, confirmDanger, csv, empty, Feedback, isoDate, loading, meta, mono, pageHead, panel, section, showSecretOnce, table, td, tr } from "../ui";
+import { act, badge, confirmDanger, csv, empty, Feedback, isoDate, loading, meta, mono, pageHead, panel, section, showSecretOnce, sortKey, table, td, timeCell, tr } from "../ui";
 
 export class MePage extends Page {
   title = "Account";
@@ -79,7 +79,7 @@ export class MePage extends Page {
         td("", mono(k.publicKey.split(" ").slice(0, 2).join(" ").slice(0, 56) + "…", "small")),
         k.usage,
         td("", badge(k.status, k.status === "attested" ? "ok" : k.status === "revoked" ? "bad" : "warn")),
-        td("muted", k.attestedUntil ? isoDate(k.attestedUntil) : "no attestation"),
+        sortKey(td("muted", k.attestedUntil ? isoDate(k.attestedUntil) : "no attestation"), k.attestedUntil),
         td("actions", k.status !== "revoked" && textButton("Revoke", async () => {
           if (await confirmDanger("Revoke this key?", "Git over SSH with this key stops at once.", "Revoke key")) {
             void act(() => api.auth.revokeKey({ ctx: ctx(), keyId: k.keyId }), { done: "Key revoked.", after: () => void this.loadKeys() });
@@ -111,8 +111,8 @@ export class MePage extends Page {
         td("", h("strong", null, t.name)),
         td("small", t.scopes.join(", ")),
         td("muted small", t.clientLabel),
-        td("muted", when(t.createdAt)),
-        td("muted", t.expiresAt ? when(t.expiresAt) : "never"),
+        timeCell(t.createdAt),
+        timeCell(t.expiresAt, "never"),
         td("actions", textButton("Revoke", async () => {
           if (await confirmDanger(`Revoke the token "${t.name}"?`, "Anything that uses it stops at once.", "Revoke token")) {
             void act(() => api.auth.revokeToken({ ctx: ctx(), tokenId: t.id }), { done: "Token revoked.", after: () => void this.loadTokens() });
@@ -156,7 +156,7 @@ export class MePage extends Page {
           td("", who(g.identity), h("div", { class: "hint mono" }, key)),
           g.role,
           g.source,
-          td("muted", when(g.grantedAt), g.grantedBy ? ` by ${who(g.grantedBy)}` : ""),
+          timeCell(g.grantedAt, "", g.grantedBy ? ` by ${who(g.grantedBy)}` : ""),
           td("actions", textButton("Remove", async () => {
             if (await confirmDanger(`Remove the ${g.role} role of ${who(g.identity)}?`, "They keep their organization and repository roles.", "Remove role")) {
               void act(() => api.instance.removeRole({ ctx: ctx(), identity: key }), { feedback, done: "Role removed.", after: () => void this.loadRoles() });

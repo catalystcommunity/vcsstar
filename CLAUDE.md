@@ -531,6 +531,16 @@ helm/                    chart for the catalyst cluster
   first opened; the PR Files tab reads every page of `Repos/diff`.
 - Class names in `@layer page` are global: check for a clash before you
   add one (`.split` and `.empty` exist).
+- Every `table()` with headers sorts by a column when its header is
+  clicked (a header with no text does not sort). A cell sorts by its
+  `data-sort` key, else by its text; numbers compare as numbers, and
+  empty keys go last. Use `timeCell(ms, missing)` for a time and
+  `sortKey(cell, key)` for a cell that shows more than its key (a name
+  with a description under it). A refill of the body keeps the sort.
+  Lists that sort are only as complete as what is loaded: the GitHub
+  repository list reads every page for this reason. `Repo.pushed_at` is
+  the last ref change on this instance; for a repository imported from
+  GitHub it is the import time until the next push.
 - Every button calls a contract op. Nothing in the UI reaches the server
   by another path.
 - The shell routes only links made with `link()` (`data-nav`). A link to a

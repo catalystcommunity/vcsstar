@@ -371,6 +371,10 @@ Repo = {
     mirror_enabled: bool,
     archived: bool,
     created_at: Timestamp,
+    ;;; Time of the last ref change on this instance (push, merge, or
+    ;;; mirror). Set by `get`, `list`, and `list-forks`; none before the
+    ;;; first ref.
+    ? pushed_at: Timestamp,
     ;;; Clone URLs for this instance.
     https_url: text,
     ? ssh_url: text,

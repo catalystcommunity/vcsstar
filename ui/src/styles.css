@@ -132,6 +132,14 @@
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--line); vertical-align: top; }
   th { color: var(--text-3); font-weight: 500; font-size: 0.8rem; }
+  /* A sortable column header: the whole label is the button. */
+  .sort-head { all: unset; cursor: pointer; display: inline-flex; white-space: nowrap; gap: 0.35em; align-items: center; color: inherit; font: inherit; }
+  .sort-head:hover { color: var(--text); }
+  .sort-head:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; border-radius: 2px; }
+  .sort-head::after { content: "↕"; opacity: 0.35; font-size: 0.9em; }
+  th[aria-sort="ascending"] .sort-head, th[aria-sort="descending"] .sort-head { color: var(--text); }
+  th[aria-sort="ascending"] .sort-head::after { content: "▲"; opacity: 0.9; font-size: 0.7em; }
+  th[aria-sort="descending"] .sort-head::after { content: "▼"; opacity: 0.9; font-size: 0.7em; }
   td.muted { color: var(--text-2); }
   td.small { font-size: 0.875rem; }
   td.actions { white-space: nowrap; text-align: right; }

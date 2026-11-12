@@ -3,7 +3,7 @@
 import { api, ctx, when, who } from "../api";
 import { button, comboBox, fill, form, h, link, external, show, textArea, textButton, textField, clear } from "../dom";
 import { Page } from "../page";
-import { act, badge, confirmDanger, csv, empty, Feedback, loading, meta, mono, pageHead, panel, section, showSecretOnce, table, td, tr } from "../ui";
+import { act, badge, confirmDanger, csv, empty, Feedback, loading, meta, mono, pageHead, panel, section, showSecretOnce, sortKey, table, td, timeCell, tr } from "../ui";
 import { hooksSection } from "./hooks";
 import type { GithubRepoInfo, GithubRepoPage, Org } from "../generated/types.gen.ts";
 
@@ -13,7 +13,7 @@ export class OrgPage extends Page {
   private readonly feedback = new Feedback();
   private readonly titleText = document.createTextNode("");
   private readonly facts = h("div", { class: "meta" });
-  private readonly repoList = h("ul", { class: "plain-list" });
+  private readonly repoList = table(["Repository", "Visibility", "Mirror", "Default branch", "Last push"]);
   private readonly repoStatus = h("div");
   private readonly githubSection = h("div");
   private readonly webhookBox = h("div");
@@ -23,7 +23,7 @@ export class OrgPage extends Page {
   private readonly credsBox = h("div");
   private readonly accountsBox = h("div");
   private readonly hooksBox = h("div");
-  private ghCursor: string | undefined;
+  private ghLoad = 0;
 
   protected build() {
     this.org = this.context.path.split("/").filter(Boolean).map(decodeURIComponent)[0] ?? "";
@@ -32,7 +32,7 @@ export class OrgPage extends Page {
     return [
       pageHead([["Repositories", "/"]], this.titleText, this.facts),
       this.feedback.element,
-      section("Repositories", null, this.repoList, this.repoStatus),
+      section("Repositories", null, this.repoList.wrap, this.repoStatus),
       // Everything below needs a signed-in member; it is not built, and not
       // requested, for an anonymous viewer.
       ...(signedIn ? this.memberSections() : []),
@@ -89,7 +89,13 @@ export class OrgPage extends Page {
     try {
       const page = await api.repos.list({ ctx: ctx(), org: this.org, page: { limit: 200 } });
       if (!this.isActive()) return;
-      fill(this.repoList, ...page.repos.map((r) => h("li", null, link(`/${r.org}/${r.name}`, h("strong", null, r.name)), " ", badge(r.visibility), r.mirrorEnabled && badge("mirrored", "info"), r.description && h("div", { class: "hint" }, r.description))));
+      fill(this.repoList.body, ...page.repos.map((r) => tr(
+        sortKey(td("", link(`/${r.org}/${r.name}`, h("strong", null, r.name)), r.forkOf && h("div", { class: "hint" }, "fork of ", `${r.forkOf.org}/${r.forkOf.name}`), r.description && h("div", { class: "hint" }, r.description)), r.name),
+        td("", badge(r.visibility), r.archived && badge("archived", "warn")),
+        td("", r.mirrorEnabled ? badge("mirrored", "info") : badge("local")),
+        td("", mono(r.defaultBranch)),
+        timeCell(r.pushedAt, "never"),
+      )));
       fill(this.repoStatus, page.repos.length === 0 && empty("No repositories in this organization yet."));
     } catch (error) {
       if (this.isActive()) { fill(this.repoStatus); this.feedback.error(error); }
@@ -107,9 +113,22 @@ export class OrgPage extends Page {
     const paging = h("div", { class: "row" });
     const lead = h("p", { class: "lead" }, "Repositories under ", mono(owner), " on GitHub. Enable one to import it and keep both sides in step.");
     fill(this.githubSection, h("section", { class: "section" }, h("div", { class: "section-head" }, h("h2", null, "GitHub repositories"), lead), feedback.element, t.wrap, status, paging));
+    const load = ++this.ghLoad;
+    // Every page, so a sort by a column covers the whole owner.
+    const fetchAll = async (): Promise<GithubRepoPage> => {
+      const first = await api.mirror.listGithubRepos({ ctx: ctx(), org: this.org, page: { limit: 100 } });
+      const repos = [...first.repos];
+      let next = first.nextCursor;
+      for (let n = 1; next && n < 50; n++) {
+        const more = await api.mirror.listGithubRepos({ ctx: ctx(), org: this.org, page: { cursor: next, limit: 100 } });
+        repos.push(...more.repos);
+        next = more.nextCursor;
+      }
+      return { ...first, repos, nextCursor: undefined };
+    };
     let page: GithubRepoPage;
     try {
-      page = await api.mirror.listGithubRepos({ ctx: ctx(), org: this.org, page: { cursor: this.ghCursor, limit: 100 } });
+      page = await fetchAll();
     } catch (error) {
       if (this.isActive()) { fill(status); feedback.error(error); }
       return;
@@ -141,29 +160,28 @@ export class OrgPage extends Page {
       const here = h("td");
       cells.set(r.fullName, here);
       return tr(
-        td("", external(r.htmlUrl, r.fullName), r.description && h("div", { class: "hint" }, r.description)),
+        sortKey(td("", external(r.htmlUrl, r.fullName), r.description && h("div", { class: "hint" }, r.description)), r.fullName),
         td("", badge(r.private ? "private" : "public"), r.archived && badge("archived", "warn"), r.fork && badge("fork")),
         td("", mono(r.defaultBranch)),
-        td("muted", r.pushedAt ? when(r.pushedAt) : "never"),
+        timeCell(r.pushedAt, "never"),
         here,
       );
     }));
     page.repos.forEach(showHere);
     fill(status, page.repos.length === 0 && empty("GitHub lists no repositories for this owner with the current credential."));
     const progress = h("span", { class: "muted" });
-    const cursor = this.ghCursor;
     let polling = false;
-    // Ask again every five seconds while an import of this page is queued.
+    // Ask again every five seconds while an import is queued.
     const poll = async () => {
       if (polling) return;
       polling = true;
       try {
-        while (this.isActive() && this.ghCursor === cursor) {
+        while (this.isActive() && this.ghLoad === load) {
           let fresh: GithubRepoPage;
           try {
-            fresh = await api.mirror.listGithubRepos({ ctx: ctx(), org: this.org, page: { cursor, limit: 100 } });
+            fresh = await fetchAll();
           } catch { break; }
-          if (!this.isActive() || this.ghCursor !== cursor) break;
+          if (!this.isActive() || this.ghLoad !== load) break;
           fresh.repos.filter((r) => cells.has(r.fullName)).forEach(showHere);
           const queued = fresh.repos.filter((r) => r.importState === "queued").length;
           const left = fresh.repos.filter((r) => !r.mirroredAs).length;
@@ -175,10 +193,10 @@ export class OrgPage extends Page {
         }
       } finally { polling = false; }
     };
-    // Queue every repository under the owner that has no mirror yet (all
-    // pages). The mirror workers import them; a restart only delays them.
+    // Queue every repository under the owner that has no mirror yet. The
+    // mirror workers import them; a restart only delays them.
     const todo = page.repos.filter((r) => !r.mirroredAs);
-    const enableAll = button(`Enable all ${todo.length}`, { variant: "default", disabled: todo.length === 0 && !page.nextCursor, onClick: async () => {
+    const enableAll = button(`Enable all ${todo.length}`, { variant: "default", disabled: todo.length === 0, onClick: async () => {
       enableAll.disabled = true;
       const ok = await act(async () => {
         const res = await api.mirror.importAll({ ctx: ctx(), org: this.org, mode: "import_drift", skipArchived: false });
@@ -190,7 +208,7 @@ export class OrgPage extends Page {
       void poll();
     } });
     if (page.repos.some((r) => r.importState === "queued")) void poll();
-    fill(paging, enableAll, progress, this.ghCursor && textButton("First page", () => { this.ghCursor = undefined; void this.loadGithub(); }), page.nextCursor && textButton("More", () => { this.ghCursor = page.nextCursor!; void this.loadGithub(); }));
+    fill(paging, enableAll, progress);
   }
 
   // --- GitHub webhook secret ----------------------------------------------
@@ -376,7 +394,7 @@ export class OrgPage extends Page {
     if (!this.isActive() || this.tokenFor !== name) return;
     const t = table(["Name", "Scopes", "Created", "Expires", ""]);
     fill(t.body, ...page.tokens.map((k) => tr(
-      k.name, td("small", k.scopes.join(", ")), td("muted", when(k.createdAt)), td("muted", k.expiresAt ? when(k.expiresAt) : "never"),
+      k.name, td("small", k.scopes.join(", ")), timeCell(k.createdAt), timeCell(k.expiresAt, "never"),
       td("actions", textButton("Revoke", async () => {
         if (await confirmDanger(`Revoke the token "${k.name}"?`, "Anything that uses it stops at once.", "Revoke token")) {
           void act(() => api.serviceAccounts.revokeToken({ ctx: ctx(), org: this.org, name, tokenId: k.id }), { done: "Token revoked.", after: () => void this.loadAccounts() });
