@@ -394,6 +394,7 @@ pub struct Repo {
     pub mirror_enabled: bool,
     pub archived: bool,
     pub created_at: Timestamp,
+    pub pushed_at: Option<Timestamp>,
     pub https_url: String,
     pub ssh_url: Option<String>,
     pub viewer_role: Option<String>,

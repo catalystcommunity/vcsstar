@@ -3067,7 +3067,7 @@ pub fn decode_list_teams_response(csil_data: &[u8]) -> Result<ListTeamsResponse,
 
 /// Build the canonical CBOR value tree for a Repo.
 fn csil_enc_repo(csil_v: &Repo) -> CsilCborValue {
-    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(13);
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(14);
     csil_entries.push((cbor_text("org"), cbor_text(&csil_v.org)));
     csil_entries.push((cbor_text("name"), cbor_text(&csil_v.name)));
     if let Some(csil_inner) = &csil_v.fork_of {
@@ -3079,6 +3079,9 @@ fn csil_enc_repo(csil_v: &Repo) -> CsilCborValue {
     csil_entries.push((cbor_text("archived"), cbor_bool(csil_v.archived)));
     csil_entries.push((cbor_text("vcs_type"), cbor_text(&csil_v.vcs_type)));
     csil_entries.push((cbor_text("https_url"), cbor_text(&csil_v.https_url)));
+    if let Some(csil_inner) = &csil_v.pushed_at {
+        csil_entries.push((cbor_text("pushed_at"), cbor_int(*csil_inner)));
+    }
     csil_entries.push((cbor_text("created_at"), cbor_int(csil_v.created_at)));
     csil_entries.push((cbor_text("visibility"), cbor_text(&csil_v.visibility)));
     if let Some(csil_inner) = &csil_v.description {
@@ -3154,6 +3157,13 @@ fn csil_dec_repo(csil_root: &CsilCborValue) -> Result<Repo, CsilCborError> {
         let csil_decode = cbor_as_i64;
         csil_decode(csil_field)?
     };
+    let pushed_at = match cbor_map_get(csil_root, "pushed_at") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_i64;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
     let https_url = {
         let csil_field = cbor_require(csil_root, "https_url")?;
         let csil_decode = cbor_as_text;
@@ -3184,6 +3194,7 @@ fn csil_dec_repo(csil_root: &CsilCborValue) -> Result<Repo, CsilCborError> {
         mirror_enabled,
         archived,
         created_at,
+        pushed_at,
         https_url,
         ssh_url,
         viewer_role,

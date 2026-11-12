@@ -4,7 +4,7 @@ import { api, bytesToText, ctx, short, when, who } from "../api";
 import { button, checkBox, comboBox, fill, form, h, link, spinBox, textArea, textButton, textField, clear } from "../dom";
 import { live } from "../live";
 import { Page } from "../page";
-import { act, badge, confirmDanger, csv, empty, Feedback, firstLine, isoDate, loading, meta, mono, pageHead, panel, refShort, section, table, td, tr } from "../ui";
+import { act, badge, confirmDanger, csv, empty, Feedback, firstLine, isoDate, loading, meta, mono, pageHead, panel, refShort, section, sortKey, table, td, timeCell, tr } from "../ui";
 import { diffView, mediaElement } from "./diff";
 import { codeView, drawMermaid, isMarkdown, isMermaid, languageOf, markdown, mediaType, rawUrl, readAll } from "../render";
 import { hooksSection } from "./hooks";
@@ -302,7 +302,7 @@ function commitsTab(c: Common, rest: string[]): Tab {
 function pullsTab(c: Common): Tab {
   const repo = { org: c.org, name: c.name };
   const state = comboBox("Show", [{ value: "open", label: "Open" }, { value: "merged", label: "Merged" }, { value: "closed", label: "Closed" }, { value: "all", label: "All" }], { value: "open" });
-  const list = table(null);
+  const list = table(["Pull request", "State", "Updated"]);
   const status = h("div");
   const feedback = new Feedback();
   const formBox = h("div");
@@ -312,8 +312,9 @@ function pullsTab(c: Common): Tab {
     try {
       const page = await api.pullRequests.list({ ctx: ctx(), repo, state: state.value, page: { limit: 50 } });
       fill(list.body, ...page.pullRequests.map((pr) => tr(
-        td("", link(`${c.base}/pulls/${pr.number}`, h("span", { class: "muted pr-number" }, `#${pr.number} `), pr.title), meta(who(pr.author), h("span", null, mono(refShort(pr.head.ref)), " into ", mono(refShort(pr.baseRef))), when(pr.updatedAt))),
+        sortKey(td("", link(`${c.base}/pulls/${pr.number}`, h("span", { class: "muted pr-number" }, `#${pr.number} `), pr.title), meta(who(pr.author), h("span", null, mono(refShort(pr.head.ref)), " into ", mono(refShort(pr.baseRef))))), pr.number),
         td("", badge(pr.state, pr.state === "merged" ? "ok" : pr.state === "closed" ? "bad" : "info"), pr.state === "open" && badge(pr.mergeable === "clean" ? "can merge" : pr.mergeable, pr.mergeable === "clean" ? "ok" : pr.mergeable === "conflicts" ? "bad" : "neutral")),
+        timeCell(pr.updatedAt),
       )));
       fill(status, page.pullRequests.length === 0 && empty(`No ${state.value === "all" ? "" : state.value + " "}pull requests.`));
     } catch (error) {
@@ -434,7 +435,7 @@ function mirrorTab(c: Common): Tab {
       const b = await api.mirror.listBlocked({ ctx: ctx(), repo });
       if (b.actions.length === 0) { fill(blockedBox); return; }
       const t = table(["Object", "Kind", "Credential purpose", "Exact error", "Blocked", ""]);
-      fill(t.body, ...b.actions.map((a) => tr(td("", mono(a.objectKey)), a.actionKind, a.credentialPurpose, td("small", a.error), td("muted", when(a.blockedAt)),
+      fill(t.body, ...b.actions.map((a) => tr(td("", mono(a.objectKey)), a.actionKind, a.credentialPurpose, td("small", a.error), timeCell(a.blockedAt),
         td("actions", c.can("maintain") && textButton("Replay", () => void act(() => api.mirror.replayBlocked({ ctx: ctx(), repo, actionIds: [a.id] }), { done: "Action queued again.", after: () => void load() }))))));
       fill(blockedBox, section("Blocked actions", "Each row holds the latest desired state for its object. Fix the credential, then replay.", t.wrap));
     } catch {

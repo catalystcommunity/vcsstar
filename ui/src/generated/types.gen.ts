@@ -484,6 +484,12 @@ export interface Repo {
   archived: boolean;
   createdAt: Timestamp;
   /**
+   * Time of the last ref change on this instance (push, merge, or
+   * mirror). Set by `get`, `list`, and `list-forks`; none before the
+   * first ref.
+   */
+  pushedAt?: Timestamp;
+  /**
    * Clone URLs for this instance.
    */
   httpsUrl: string;

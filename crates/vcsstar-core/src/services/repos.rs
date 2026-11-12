@@ -41,7 +41,28 @@ pub fn to_wire(app: &App, org: &OrgRow, r: &RepoRow) -> Repo {
         ),
         ssh_url: crate::vcs::ssh_url(app, org, r),
         viewer_role: None,
+        pushed_at: None,
     }
+}
+
+/// Time of the last ref change of each repository (`Repo.pushed_at`).
+fn last_push(
+    conn: &mut DbConn,
+    ids: &[uuid::Uuid],
+) -> Result<std::collections::HashMap<uuid::Uuid, chrono::DateTime<chrono::Utc>>, Error> {
+    use vcsstar_db::schema::repo_refs;
+    if ids.is_empty() {
+        return Ok(Default::default());
+    }
+    let rows: Vec<(uuid::Uuid, Option<chrono::DateTime<chrono::Utc>>)> = repo_refs::table
+        .filter(repo_refs::repo_id.eq_any(ids))
+        .group_by(repo_refs::repo_id)
+        .select((repo_refs::repo_id, diesel::dsl::max(repo_refs::updated_at)))
+        .load(conn)?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|(id, at)| Some((id, at?)))
+        .collect())
 }
 
 fn settings_event<'a>(
@@ -126,6 +147,9 @@ pub fn get(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<Repo, Error> 
     let mut out = to_wire(app, &org, &repo);
     out.viewer_role = Some(role.as_str().into());
     out.fork_of = fork_ref(&mut conn, &repo)?;
+    out.pushed_at = last_push(&mut conn, &[repo.id])?
+        .get(&repo.id)
+        .map(|t| to_ms(*t));
     Ok(out)
 }
 
@@ -164,6 +188,10 @@ pub fn list_forks(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<RepoPa
         name: repo.name.clone(),
         instance: None,
     };
+    let pushed = last_push(
+        &mut conn,
+        &rows.iter().map(|(f, _)| f.id).collect::<Vec<_>>(),
+    )?;
     let mut out = Vec::new();
     for (fork, fork_org) in rows {
         let Some(role) =
@@ -174,6 +202,7 @@ pub fn list_forks(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<RepoPa
         let mut r = to_wire(app, &fork_org, &fork);
         r.viewer_role = Some(role.as_str().into());
         r.fork_of = Some(parent.clone());
+        r.pushed_at = pushed.get(&fork.id).map(|t| to_ms(*t));
         out.push(r);
     }
     Ok(RepoPage {
@@ -213,6 +242,7 @@ pub fn list(app: &App, ctx: &ReqCtx, req: ListReposRequest) -> Result<RepoPage, 
         .load(&mut conn)?;
     // Visibility filtering happens per row; the page fills from visible rows.
     let mut out = Vec::new();
+    let mut ids = Vec::new();
     let mut next_cursor = None;
     for (repo, org) in rows {
         let Some(role) = authz::repo_role(app, &mut conn, &org, &repo, ctx.principal.as_ref())?
@@ -226,7 +256,12 @@ pub fn list(app: &App, ctx: &ReqCtx, req: ListReposRequest) -> Result<RepoPage, 
         let mut r = to_wire(app, &org, &repo);
         r.viewer_role = Some(role.as_str().into());
         r.fork_of = fork_ref(&mut conn, &repo)?;
+        ids.push(repo.id);
         out.push(r);
+    }
+    let pushed = last_push(&mut conn, &ids)?;
+    for (r, id) in out.iter_mut().zip(&ids) {
+        r.pushed_at = pushed.get(id).map(|t| to_ms(*t));
     }
     Ok(RepoPage {
         repos: out,

@@ -216,6 +216,35 @@ fn instance_roles_are_set_by_admins_and_shape_what_a_caller_sees() {
     assert_eq!((g.role.as_str(), g.source.as_str()), ("viewer", "manual"));
     let r = repos::get(&app, &as_someone(), get()).expect("a viewer reads it");
     assert_eq!(r.viewer_role.as_deref(), Some("read"));
+    // `pushed_at` is the last ref change: none before the first ref.
+    assert_eq!(r.pushed_at, None);
+    {
+        let mut conn = app.conn().unwrap();
+        diesel::sql_query(
+            "INSERT INTO repo_refs (repo_id, name, target, updated_at) \
+             SELECT r.id, 'refs/heads/main', '\\x00'::bytea, now() - interval '1 hour' \
+             FROM repos r JOIN orgs o ON o.id = r.org_id WHERE o.name = $1 AND r.name = 'secret'",
+        )
+        .bind::<diesel::sql_types::Text, _>(&org_name)
+        .execute(&mut conn)
+        .unwrap();
+    }
+    let pushed = repos::get(&app, &as_someone(), get())
+        .unwrap()
+        .pushed_at
+        .expect("pushed_at");
+    assert!((chrono::Utc::now().timestamp_millis() - pushed as i64 - 3_600_000).abs() < 60_000);
+    let listed = repos::list(
+        &app,
+        &as_someone(),
+        vcsstar_types::ListReposRequest {
+            ctx: wire_ctx(),
+            org: Some(org_name.clone()),
+            page: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(listed.repos[0].pushed_at, Some(pushed));
     let who = auth::whoami(
         &app,
         &as_someone(),
