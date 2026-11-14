@@ -218,6 +218,9 @@ pub fn ingest(
     event: &str,
     body: &Json,
 ) -> Result<String, Error> {
+    if !state.is_github() {
+        return Err(Error::invalid("this operation requires a GitHub mirror"));
+    }
     match event {
         "pull_request" => ingest_pull_request(app, conn, org, repo, state, body),
         "pull_request_review" => ingest_review(app, conn, org, repo, state, body),
@@ -1390,6 +1393,9 @@ pub fn reconcile_pulls(
     state: &StateRow,
     budget: usize,
 ) -> Result<PullSyncOutcome, Error> {
+    if !state.is_github() {
+        return Err(Error::invalid("this operation requires a GitHub mirror"));
+    }
     outbox::with_origin("github", || {
         reconcile_pulls_inner(app, conn, org, repo, state, budget)
     })
@@ -1561,6 +1567,9 @@ pub fn backfill_pulls(
     state: &StateRow,
     budget: usize,
 ) -> Result<BackfillOutcome, Error> {
+    if !state.is_github() {
+        return Err(Error::invalid("this operation requires a GitHub mirror"));
+    }
     outbox::with_origin("github", || {
         backfill_inner(app, conn, org, repo, state, budget)
     })

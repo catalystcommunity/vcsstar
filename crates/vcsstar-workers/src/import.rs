@@ -1,4 +1,4 @@
-//! Repository imports from GitHub (queue `import:github`), threads of the
+//! GitHub and GitLab imports (queue `import:github`), threads of the
 //! `mirror-worker` role. Each task is one repository; the work is
 //! `vcsstar_core::mirror_import::run`, which is idempotent and claims the
 //! repository, so a task given out twice (lease expiry after a pod

@@ -208,13 +208,13 @@ fn dispatch_one(
     // What GitHub itself caused is never sent back: events written while
     // a GitHub delivery was applied carry origin `github`, whoever the
     // actor is, and a shadow actor can only have come from GitHub.
-    if ev.origin.as_deref() == Some("github")
+    if matches!(ev.origin.as_deref(), Some("github" | "gitlab"))
         || vcsstar_core::github_sync::is_shadow_actor(conn, ev.actor)?
     {
         return Ok(());
     }
     if let Some(repo_id) = ev.repo_id {
-        let mirrored: Option<(bool, bool, String, String)> = mirror_state::table
+        let mirrored: Option<(bool, bool, String, String, String)> = mirror_state::table
             .inner_join(repos::table.inner_join(orgs::table))
             .filter(mirror_state::repo_id.eq(repo_id))
             .select((
@@ -222,10 +222,11 @@ fn dispatch_one(
                 mirror_state::paused,
                 orgs::name,
                 repos::name,
+                mirror_state::provider,
             ))
             .first(conn)
             .optional()?;
-        if let Some((enabled, paused, org, repo)) = mirrored {
+        if let Some((enabled, paused, org, repo, provider)) = mirrored {
             if enabled {
                 let eref = EventRef {
                     repo_id,
@@ -235,6 +236,11 @@ fn dispatch_one(
                     payload_cbor: &ev.payload_cbor,
                 };
                 for spec in mirror::expand_event(&eref) {
+                    if provider == "gitlab"
+                        && !matches!(&spec.payload, mirror::ActionPayload::Push { .. })
+                    {
+                        continue;
+                    }
                     let id = mirror::upsert_action(conn, &eref, &spec)?;
                     if !paused {
                         q.submit(

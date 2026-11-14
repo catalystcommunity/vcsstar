@@ -1060,6 +1060,8 @@ export interface DeliveryRef {
 
 export interface MirrorStatus {
   repo: RepoRef;
+  provider?: string;
+  host?: string;
   githubRepo?: string;
   /**
    * "authoritative_vcsstar" | "import_drift" | "flag_drift"
@@ -1172,7 +1174,7 @@ export interface Credential {
   org: string;
   repo?: string;
   /**
-   * "github"
+   * "github" | "gitlab"
    */
   provider: string;
   /**
@@ -1180,7 +1182,7 @@ export interface Credential {
    */
   purpose: string;
   /**
-   * "pat" | "github_app"
+   * "pat" | "github_app" (GitHub only)
    */
   authMethod: string;
   host: string;
@@ -1238,7 +1240,16 @@ export interface ConfigureMirrorRequest {
   ctx: Ctx;
   repo: RepoRef;
   /**
-   * "owner/name" on GitHub.
+   * "github" (default) or "gitlab". GitLab supports Git refs only.
+   */
+  provider?: string;
+  /**
+   * Host and optional port, without a scheme. Defaults to the provider host.
+   */
+  host?: string;
+  /**
+   * Remote project path. GitLab can include subgroups. The field name
+   * stays unchanged for existing clients.
    */
   githubRepo: string;
   mode?: string;
@@ -1268,6 +1279,11 @@ export interface ImportRequest {
   ctx: Ctx;
   org: string;
   name: string;
+  provider?: string;
+  host?: string;
+  /**
+   * Remote project path, including GitLab subgroups when applicable.
+   */
   githubRepo: string;
   mode?: string;
   visibility?: string;

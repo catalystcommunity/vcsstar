@@ -152,6 +152,7 @@ fn github_hook(shared: &State<Shared>, req: GithubHeaders, body: Vec<u8>) -> (Ht
         let target: Option<(uuid::Uuid, uuid::Uuid)> = mirror_state::table
             .inner_join(repos::table)
             .filter(mirror_state::github_repo.eq(full_name))
+            .filter(mirror_state::provider.eq("github"))
             .select((repos::id, repos::org_id))
             .first(&mut conn)
             .optional()

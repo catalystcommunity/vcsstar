@@ -260,6 +260,8 @@ fn github_pull_request_life_cycle_is_imported_without_echo() {
             &app,
             &ctx,
             vcsstar_types::ImportRequest {
+                provider: None,
+                host: None,
                 ctx: wire_ctx(),
                 org: org_name.clone(),
                 name: "thing".into(),
@@ -906,6 +908,8 @@ fn pull_based_sync_imports_what_webhooks_missed() {
             &app,
             &ctx,
             vcsstar_types::ImportRequest {
+                provider: None,
+                host: None,
                 ctx: wire_ctx(),
                 org: org_name.clone(),
                 name: "thing".into(),
@@ -1158,6 +1162,8 @@ fn history_import_brings_every_pull_request_with_github_numbers_and_times() {
             &app,
             &ctx,
             vcsstar_types::ImportRequest {
+                provider: None,
+                host: None,
                 ctx: wire_ctx(),
                 org: org_name.clone(),
                 name: "thing".into(),
@@ -1369,6 +1375,8 @@ fn stale_snapshots_do_not_overwrite_newer_state() {
             &app,
             &ctx,
             vcsstar_types::ImportRequest {
+                provider: None,
+                host: None,
                 ctx: wire_ctx(),
                 org: org_name.clone(),
                 name: "thing".into(),
@@ -1620,6 +1628,8 @@ fn import_continues_an_unfinished_import_and_sends_nothing_back() {
             &app,
             &ctx,
             vcsstar_types::ImportRequest {
+                provider: None,
+                host: None,
                 ctx: wire_ctx(),
                 org: org_name.clone(),
                 name: "thing".into(),
@@ -1657,6 +1667,8 @@ fn import_continues_an_unfinished_import_and_sends_nothing_back() {
             &app,
             &ctx,
             vcsstar_types::ImportRequest {
+                provider: None,
+                host: None,
                 ctx: wire_ctx(),
                 org: org_name.clone(),
                 name: "other".into(),
@@ -1706,6 +1718,8 @@ fn queued_import_finishes_once_and_schedule_is_per_repository() {
     )
     .expect("org");
     let req = || vcsstar_types::ImportRequest {
+        provider: None,
+        host: None,
         ctx: wire_ctx(),
         org: org_name.clone(),
         name: "thing".into(),
@@ -1815,6 +1829,8 @@ fn a_fork_in_another_org_is_listed_and_opens_a_pull_request_back() {
             &app,
             &ctx,
             vcsstar_types::ImportRequest {
+                provider: None,
+                host: None,
                 ctx: wire_ctx(),
                 org: up.clone(),
                 name: "thing".into(),

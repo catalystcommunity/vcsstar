@@ -190,6 +190,14 @@ helm/                    chart for the catalyst cluster
 
 ## GitHub sync of pull requests (both ways)
 
+GitLab prototype: `Mirror/import-repo` and `Mirror/configure` also accept
+`provider=gitlab` and a `host`. The existing `github_repo` field holds the
+GitLab project path. GitLab supports import and mirror operations for
+branches and tags only. Credentials are selected by provider and host.
+GitHub sync jobs and webhook lookup exclude GitLab mirrors. See
+`docs/gitlab.md` for setup and limits. This prototype has not been built or
+tested.
+
 - `vcsstar_core::github_sync`. Outbound: PR, comment, review, and
   `status_set` events become mirror actions (`pr:{n}`, `pr-comment:{id}`,
   `pr-review:{id}`, `status:{sha}:{ctx}`, purpose `mirror_api`); the

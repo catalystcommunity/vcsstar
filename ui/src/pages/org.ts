@@ -16,6 +16,7 @@ export class OrgPage extends Page {
   private readonly repoList = table(["Repository", "Visibility", "Mirror", "Default branch", "Last push"]);
   private readonly repoStatus = h("div");
   private readonly githubSection = h("div");
+  private readonly gitlabSection = h("div");
   private readonly webhookBox = h("div");
   private readonly members = table(["Person", "Role", ""]);
   private readonly membersBox = h("div");
@@ -43,6 +44,7 @@ export class OrgPage extends Page {
     return [
       this.webhookBox,
       this.githubSection,
+      this.gitlabSection,
       this.membersBox,
       this.teamsBox,
       this.credsBox,
@@ -65,7 +67,10 @@ export class OrgPage extends Page {
     if (member) loads.push(this.loadMembers(), this.loadTeams());
     if (admin) loads.push(this.loadGithub(), this.loadCreds(), this.loadAccounts(), this.loadWebhookSecret());
     await Promise.all(loads);
-    if (admin && this.isActive()) fill(this.hooksBox, hooksSection(this.org));
+    if (admin && this.isActive()) {
+      fill(this.hooksBox, hooksSection(this.org));
+      this.showGitlabImport();
+    }
   }
 
   /** Owner or admin of this organization (an instance admin is owner). */
@@ -100,6 +105,24 @@ export class OrgPage extends Page {
     } catch (error) {
       if (this.isActive()) { fill(this.repoStatus); this.feedback.error(error); }
     }
+  }
+
+  private showGitlabImport() {
+    const host = textField("GitLab host", { value: "gitlab.com", required: true, class: "w-md", helper: "Hostname and optional port, without https://" });
+    const project = textField("Project path", { placeholder: "group/subgroup/project", required: true, class: "w-lg" });
+    const name = textField("Local repository name", { required: true, class: "w-md" });
+    const visibility = comboBox("Local visibility", ["private", "public"], { value: "private" });
+    const feedback = new Feedback();
+    fill(this.gitlabSection, section("Import from GitLab (prototype)",
+      "Imports branches, tags, description, and the default branch. Remote changes are read on a schedule. Merge requests, webhooks, and project settings do not sync. Set a GitLab token under Mirror credentials first for a private project.",
+      feedback.element,
+      form({ class: "form-stack", onSubmit: () => void act(() => api.mirror.importRepo({
+        ctx: ctx(), org: this.org, name: name.value, provider: "gitlab", host: host.value,
+        githubRepo: project.value, mode: "import_drift", visibility: visibility.value,
+      }), { feedback, done: "GitLab import queued. Open the repository Mirror tab for progress.", after: () => void this.loadRepos() }) },
+      h("div", { class: "form-row" }, host, project, name, visibility),
+      button("Import project", { type: "submit", variant: "default" })),
+    ));
   }
 
   // --- GitHub repositories -------------------------------------------------
@@ -222,7 +245,7 @@ export class OrgPage extends Page {
     let count = 0;
     try {
       const page = await api.mirror.listCredentials({ ctx: ctx(), target: { org: this.org } });
-      count = page.credentials.filter((c) => c.purpose === "webhook_inbound" && !c.repo).length;
+      count = page.credentials.filter((c) => c.provider === "github" && c.purpose === "webhook_inbound" && !c.repo).length;
     } catch (error) {
       if (!this.isActive()) return;
       fill(this.webhookBox, section("GitHub webhook secret", null, feedback.element));
@@ -312,9 +335,10 @@ export class OrgPage extends Page {
       return;
     }
     if (!this.isActive()) return;
-    const t = table(["Scope", "Purpose", "Method", "Secret", ""]);
+    const t = table(["Scope", "Provider", "Host", "Purpose", "Method", "Secret", ""]);
     fill(t.body, ...page.credentials.map((c) => tr(
       c.repo ? `${c.org}/${c.repo}` : c.org,
+      c.provider, c.host,
       td("", mono(c.purpose)),
       c.authMethod === "github_app" ? "GitHub App" : "personal access token",
       td("", mono(c.secretRef)),
@@ -324,6 +348,8 @@ export class OrgPage extends Page {
         }
       }, { danger: true })),
     )));
+    const provider = comboBox("Provider", ["github", "gitlab"], { value: "github" });
+    const host = textField("Host", { value: "github.com", required: true, class: "w-md" });
     const purpose = comboBox("Purpose", ["mirror_git_push", "mirror_api", "import_fetch", "webhook_inbound"], { value: "mirror_git_push" });
     const method = comboBox("Method", [{ value: "pat", label: "Personal access token" }, { value: "github_app", label: "GitHub App" }], { value: "pat" });
     const secretRef = textField("Secret reference", { value: "stored", helper: "stored, or env:VAR for a secret the server has in its environment", class: "w-md" });
@@ -331,15 +357,24 @@ export class OrgPage extends Page {
     const appJson = textArea("App credential", { rows: 4, placeholder: '{"app_id": "…", "installation_id": "…", "private_key": "-----BEGIN RSA PRIVATE KEY-----…"}', class: "w-xl" });
     const sync = () => { const stored = secretRef.value === "stored"; show(token, stored && method.value === "pat"); show(appJson, stored && method.value === "github_app"); };
     method.addEventListener("change", sync); secretRef.addEventListener("input", sync);
+    provider.addEventListener("change", () => {
+      host.value = provider.value === "gitlab" ? "gitlab.com" : "github.com";
+      if (provider.value === "gitlab") {
+        method.value = "pat";
+        if (purpose.value === "webhook_inbound") purpose.value = "mirror_git_push";
+      }
+      method.disabled = provider.value === "gitlab";
+      sync();
+    });
     appJson.hidden = true;
     fill(this.credsBox, section("Mirror credentials", "Credentials with the same purpose form a set; each action picks one. A stored secret is sealed with the instance key and never shown again.",
       t.wrap, page.credentials.length === 0 && empty("No credentials yet. The instance GitHub App and linked accounts still work without one."),
       panel(h("h3", null, "Set a credential"), form({ class: "form-stack", onSubmit: () => void act(async () => {
         const stored = secretRef.value === "stored";
-        await api.mirror.setCredential({ ctx: ctx(), org: this.org, provider: "github", purpose: purpose.value, authMethod: method.value, host: "github.com", secretRef: secretRef.value, secret: stored ? (method.value === "pat" ? token.value : appJson.value) : undefined });
+        await api.mirror.setCredential({ ctx: ctx(), org: this.org, provider: provider.value, purpose: purpose.value, authMethod: method.value, host: host.value, secretRef: secretRef.value, secret: stored ? (method.value === "pat" ? token.value : appJson.value) : undefined });
         clear(token); clear(appJson);
       }, { done: "Credential set.", after: () => void this.loadCreds() }) },
-        h("div", { class: "form-row" }, purpose, method, secretRef),
+        h("div", { class: "form-row" }, provider, host, purpose, method, secretRef),
         h("div", { class: "form-row" }, token, appJson),
         button("Set credential", { type: "submit", variant: "default" }),
       )),

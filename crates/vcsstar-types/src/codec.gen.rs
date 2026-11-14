@@ -7085,12 +7085,18 @@ pub fn decode_delivery_ref(csil_data: &[u8]) -> Result<DeliveryRef, CsilCborErro
 
 /// Build the canonical CBOR value tree for a MirrorStatus.
 fn csil_enc_mirror_status(csil_v: &MirrorStatus) -> CsilCborValue {
-    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(18);
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(20);
+    if let Some(csil_inner) = &csil_v.host {
+        csil_entries.push((cbor_text("host"), cbor_text(csil_inner)));
+    }
     csil_entries.push((cbor_text("mode"), cbor_text(&csil_v.mode)));
     csil_entries.push((cbor_text("repo"), csil_enc_repo_ref(&csil_v.repo)));
     csil_entries.push((cbor_text("paused"), cbor_bool(csil_v.paused)));
     csil_entries.push((cbor_text("blocked"), cbor_uint(csil_v.blocked)));
     csil_entries.push((cbor_text("pending"), cbor_uint(csil_v.pending)));
+    if let Some(csil_inner) = &csil_v.provider {
+        csil_entries.push((cbor_text("provider"), cbor_text(csil_inner)));
+    }
     csil_entries.push((cbor_text("cursor_seq"), cbor_uint(csil_v.cursor_seq)));
     if let Some(csil_inner) = &csil_v.last_error {
         csil_entries.push((cbor_text("last_error"), cbor_text(csil_inner)));
@@ -7139,6 +7145,20 @@ fn csil_dec_mirror_status(csil_root: &CsilCborValue) -> Result<MirrorStatus, Csi
         let csil_field = cbor_require(csil_root, "repo")?;
         let csil_decode = csil_dec_repo_ref;
         csil_decode(csil_field)?
+    };
+    let provider = match cbor_map_get(csil_root, "provider") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let host = match cbor_map_get(csil_root, "host") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
     };
     let github_repo = match cbor_map_get(csil_root, "github_repo") {
         Some(csil_field) => {
@@ -7247,6 +7267,8 @@ fn csil_dec_mirror_status(csil_root: &CsilCborValue) -> Result<MirrorStatus, Csi
     };
     Ok(MirrorStatus {
         repo,
+        provider,
+        host,
         github_repo,
         mode,
         paused,
@@ -7938,14 +7960,20 @@ pub fn decode_credential_ref(csil_data: &[u8]) -> Result<CredentialRef, CsilCbor
 
 /// Build the canonical CBOR value tree for a ConfigureMirrorRequest.
 fn csil_enc_configure_mirror_request(csil_v: &ConfigureMirrorRequest) -> CsilCborValue {
-    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(5);
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(7);
     csil_entries.push((cbor_text("ctx"), csil_enc_ctx(&csil_v.ctx)));
+    if let Some(csil_inner) = &csil_v.host {
+        csil_entries.push((cbor_text("host"), cbor_text(csil_inner)));
+    }
     if let Some(csil_inner) = &csil_v.mode {
         csil_entries.push((cbor_text("mode"), cbor_text(csil_inner)));
     }
     csil_entries.push((cbor_text("repo"), csil_enc_repo_ref(&csil_v.repo)));
     if let Some(csil_inner) = &csil_v.enabled {
         csil_entries.push((cbor_text("enabled"), cbor_bool(*csil_inner)));
+    }
+    if let Some(csil_inner) = &csil_v.provider {
+        csil_entries.push((cbor_text("provider"), cbor_text(csil_inner)));
     }
     csil_entries.push((cbor_text("github_repo"), cbor_text(&csil_v.github_repo)));
     CsilCborValue::Map(csil_entries)
@@ -7964,6 +7992,20 @@ fn csil_dec_configure_mirror_request(
         let csil_field = cbor_require(csil_root, "repo")?;
         let csil_decode = csil_dec_repo_ref;
         csil_decode(csil_field)?
+    };
+    let provider = match cbor_map_get(csil_root, "provider") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let host = match cbor_map_get(csil_root, "host") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
     };
     let github_repo = {
         let csil_field = cbor_require(csil_root, "github_repo")?;
@@ -7987,6 +8029,8 @@ fn csil_dec_configure_mirror_request(
     Ok(ConfigureMirrorRequest {
         ctx,
         repo,
+        provider,
+        host,
         github_repo,
         mode,
         enabled,
@@ -8120,13 +8164,19 @@ pub fn decode_reconcile_report(csil_data: &[u8]) -> Result<ReconcileReport, Csil
 
 /// Build the canonical CBOR value tree for a ImportRequest.
 fn csil_enc_import_request(csil_v: &ImportRequest) -> CsilCborValue {
-    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(6);
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(8);
     csil_entries.push((cbor_text("ctx"), csil_enc_ctx(&csil_v.ctx)));
     csil_entries.push((cbor_text("org"), cbor_text(&csil_v.org)));
+    if let Some(csil_inner) = &csil_v.host {
+        csil_entries.push((cbor_text("host"), cbor_text(csil_inner)));
+    }
     if let Some(csil_inner) = &csil_v.mode {
         csil_entries.push((cbor_text("mode"), cbor_text(csil_inner)));
     }
     csil_entries.push((cbor_text("name"), cbor_text(&csil_v.name)));
+    if let Some(csil_inner) = &csil_v.provider {
+        csil_entries.push((cbor_text("provider"), cbor_text(csil_inner)));
+    }
     if let Some(csil_inner) = &csil_v.visibility {
         csil_entries.push((cbor_text("visibility"), cbor_text(csil_inner)));
     }
@@ -8151,6 +8201,20 @@ fn csil_dec_import_request(csil_root: &CsilCborValue) -> Result<ImportRequest, C
         let csil_decode = cbor_as_text;
         csil_decode(csil_field)?
     };
+    let provider = match cbor_map_get(csil_root, "provider") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let host = match cbor_map_get(csil_root, "host") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
     let github_repo = {
         let csil_field = cbor_require(csil_root, "github_repo")?;
         let csil_decode = cbor_as_text;
@@ -8174,6 +8238,8 @@ fn csil_dec_import_request(csil_root: &CsilCborValue) -> Result<ImportRequest, C
         ctx,
         org,
         name,
+        provider,
+        host,
         github_repo,
         mode,
         visibility,

@@ -403,20 +403,29 @@ function mirrorTab(c: Common): Tab {
   const statusBox = h("div");
   const blockedBox = h("div");
   const feedback = new Feedback();
+  let configured = false;
 
   async function load() {
     try {
       const s = await api.mirror.status({ ctx: ctx(), repo });
+      if (!configured) {
+        provider.value = s.provider ?? "github";
+        host.value = s.host ?? "github.com";
+        github.value = s.githubRepo ?? "";
+        mode.value = s.githubRepo ? s.mode : "import_drift";
+        configured = true;
+      }
+      pullEvery.disabled = s.provider === "gitlab";
       if (c.can("admin")) { pullEvery.value = Math.max(1, Math.round(s.pullSyncIntervalS / 60)); refsEvery.value = Math.max(1, Math.round(s.refReconcileIntervalS / 60)); }
       fill(statusBox, panel(
-        h("div", { class: "row" }, h("strong", null, "GitHub"), s.githubRepo ? mono(s.githubRepo) : h("span", { class: "muted" }, "not configured"), badge(s.mode.replace(/_/g, " ")), badge(s.paused ? "paused" : "active", s.paused ? "warn" : "ok"), badge(`${s.pending} pending`), badge(`${s.blocked} blocked`, s.blocked ? "bad" : "neutral")),
-        meta(h("span", null, `last success ${when(s.lastSuccessAt) || "never"}`), h("span", null, `last full reconcile ${when(s.lastFullReconcileAt) || "never"}`), h("span", null, `pull requests synced from GitHub up to ${s.lastPullSyncAt ? isoDate(s.lastPullSyncAt) : "never"}`)),
+        h("div", { class: "row" }, h("strong", null, s.provider === "gitlab" ? "GitLab" : "GitHub"), s.host && mono(s.host), s.githubRepo ? mono(s.githubRepo) : h("span", { class: "muted" }, "not configured"), badge(s.mode.replace(/_/g, " ")), badge(s.paused ? "paused" : "active", s.paused ? "warn" : "ok"), badge(`${s.pending} pending`), badge(`${s.blocked} blocked`, s.blocked ? "bad" : "neutral")),
+        meta(h("span", null, `last success ${when(s.lastSuccessAt) || "never"}`), h("span", null, `last full reconcile ${when(s.lastFullReconcileAt) || "never"}`), s.provider !== "gitlab" && h("span", null, `pull requests synced from GitHub up to ${s.lastPullSyncAt ? isoDate(s.lastPullSyncAt) : "never"}`)),
         s.backfillState && meta(h("span", null, "pull request history from GitHub: ", badge(s.backfillState, s.backfillState === "done" ? "ok" : "info"), ` ${s.backfillPulls ?? 0} pull requests`, s.backfillDoneAt ? `, done ${when(s.backfillDoneAt)}` : s.backfillStartedAt ? `, started ${when(s.backfillStartedAt)}` : "")),
         s.importState && s.importState !== "done" && meta(h("span", null, "import of the branches and tags: ", badge(s.importState === "failed" ? "failed" : "queued", s.importState === "failed" ? "bad" : "info"))),
-        meta(h("span", null, `pull request pass every ${duration(s.pullSyncIntervalS)}`), h("span", null, `ref reconcile every ${duration(s.refReconcileIntervalS)}`)),
+        meta(s.provider !== "gitlab" && h("span", null, `pull request pass every ${duration(s.pullSyncIntervalS)}`), h("span", null, `ref reconcile every ${duration(s.refReconcileIntervalS)}`)),
         s.lastError && h("p", { class: "problem" }, s.lastError),
         c.can("maintain") && h("div", { class: "row" },
-          c.can("admin") && button("Import history again", { variant: "default", disabled: !s.githubRepo || s.backfillState !== "done", onClick: () => void act(() => api.mirror.backfill({ ctx: ctx(), repo }), { done: "The pull request history import starts again from the first pull request.", after: () => void load() }) }),
+          c.can("admin") && s.provider !== "gitlab" && button("Import history again", { variant: "default", disabled: !s.githubRepo || s.backfillState !== "done", onClick: () => void act(() => api.mirror.backfill({ ctx: ctx(), repo }), { done: "The pull request history import starts again from the first pull request.", after: () => void load() }) }),
           button("Reconcile now", { variant: "default", onClick: () => void act(() => api.mirror.reconcile({ ctx: ctx(), repo }), { done: "Reconcile ran.", after: () => void load() }) }),
           c.can("admin") && (s.paused
             ? button("Resume", { variant: "default", onClick: () => void act(() => api.mirror.resume({ ctx: ctx(), repo }), { done: "Mirror resumed.", after: () => void load() }) })
@@ -443,20 +452,23 @@ function mirrorTab(c: Common): Tab {
     }
   }
 
-  const github = textField("GitHub repository", { placeholder: "owner/name", required: true, class: "w-md", autocapitalize: "none", spellcheck: false });
+  const provider = comboBox("Provider", [{ value: "github", label: "GitHub" }, { value: "gitlab", label: "GitLab (prototype)" }], { value: "github" });
+  const host = textField("Host", { value: "github.com", required: true, class: "w-md", helper: "Hostname and optional port, without https://" });
+  provider.addEventListener("change", () => { host.value = provider.value === "gitlab" ? "gitlab.com" : "github.com"; });
+  const github = textField("Project path", { placeholder: "namespace/project", required: true, class: "w-md", autocapitalize: "none", spellcheck: false });
   const mode = comboBox("Mode", [
-    { value: "authoritative_vcsstar", label: "vcsstar is authoritative", description: "GitHub-only branches are removed" },
-    { value: "import_drift", label: "Import drift", description: "Branches pushed to GitHub are imported; needed for both-ways pull requests" },
+    { value: "authoritative_vcsstar", label: "vcsstar is authoritative", description: "Branches that exist only on the remote are removed" },
+    { value: "import_drift", label: "Import drift", description: "Branches pushed to the remote are imported" },
     { value: "flag_drift", label: "Flag drift", description: "Differences are reported, not changed" },
   ], { value: "import_drift" });
   const pullEvery = spinBox("Pull requests every (minutes)", { min: 1, max: 10080, value: 15 });
   const refsEvery = spinBox("Branches and tags every (minutes)", { min: 1, max: 10080, value: 15 });
-  const schedule = c.can("admin") && section("Schedule", "How often this repository asks GitHub for changes that webhooks missed. Webhooks apply at once either way.",
+  const schedule = c.can("admin") && section("Schedule", "How often this repository reads remote changes. GitLab supports the branch and tag schedule only.",
     form({ class: "form-row", onSubmit: () => void act(() => api.mirror.setSchedule({ ctx: ctx(), repo, pullSyncIntervalS: Math.round(Number(pullEvery.value) * 60), refReconcileIntervalS: Math.round(Number(refsEvery.value) * 60) }), { done: "Schedule saved.", after: () => void load() }) },
       pullEvery, refsEvery, button("Save", { type: "submit", variant: "default" }),
       textButton("Use the defaults", () => void act(() => api.mirror.setSchedule({ ctx: ctx(), repo, pullSyncIntervalS: 0, refReconcileIntervalS: 0 }), { done: "Schedule set to the defaults.", after: () => void load() }))));
-  const configure = c.can("admin") && section("Configure", "Credentials are set on the organization page, with the purposes mirror_git_push and webhook_inbound.",
-    form({ class: "form-row", onSubmit: () => void act(() => api.mirror.configure({ ctx: ctx(), repo, githubRepo: github.value, mode: mode.value }), { done: "Mirror configured.", after: () => void load() }) }, github, mode, button("Save", { type: "submit", variant: "default" })));
+  const configure = c.can("admin") && section("Configure", "Set credentials on the organization page. GitLab supports branches and tags only. Create the remote project first.",
+    form({ class: "form-row", onSubmit: () => void act(() => api.mirror.configure({ ctx: ctx(), repo, provider: provider.value, host: host.value, githubRepo: github.value, mode: mode.value }), { done: "Mirror configured.", after: () => void load() }) }, provider, host, github, mode, button("Save", { type: "submit", variant: "default" })));
 
   fill(statusBox, loading());
   void load();

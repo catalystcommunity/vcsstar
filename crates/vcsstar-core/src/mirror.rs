@@ -1,4 +1,4 @@
-//! The GitHub mirror engine: credentials, per-object-key actions with the
+//! The mirror engine: credentials, per-object-key actions with the
 //! newest desired state, convergence (push or API upsert), failure
 //! classification, drift handling, reconcile, and import. Workers call
 //! `execute`; the dispatcher calls `expand_event`; the Mirror service ops
@@ -89,6 +89,75 @@ pub struct StateRow {
     pub pull_sync_interval_s: Option<i32>,
     /// Cadence of the ref reconcile pass; NULL is the default.
     pub ref_reconcile_interval_s: Option<i32>,
+    pub provider: String,
+    pub host: String,
+}
+
+impl StateRow {
+    pub fn is_github(&self) -> bool {
+        self.provider == "github"
+    }
+
+    pub fn git_url(&self, app: &App) -> String {
+        if self.is_github() {
+            github_url(app, &self.github_repo)
+        } else {
+            format!("https://{}/{}.git", self.host, self.github_repo)
+        }
+    }
+}
+
+/// Validate a provider and its HTTPS host before credentials are selected.
+pub fn target(provider: Option<&str>, host: Option<&str>) -> Result<(String, String), Error> {
+    let provider = provider.unwrap_or("github");
+    let default_host = match provider {
+        "github" => "github.com",
+        "gitlab" => "gitlab.com",
+        _ => return Err(Error::invalid("provider must be github or gitlab")),
+    };
+    let host = host.unwrap_or(default_host).to_ascii_lowercase();
+    let (name, port) = host
+        .split_once(':')
+        .map_or((host.as_str(), None), |(n, p)| (n, Some(p)));
+    if name.is_empty()
+        || name.split('.').any(|label| {
+            label.is_empty()
+                || label.starts_with('-')
+                || label.ends_with('-')
+                || !label
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        })
+        || port.is_some_and(|p| p.parse::<u16>().map_or(true, |n| n == 0))
+        || (provider == "github" && host != "github.com")
+    {
+        return Err(Error::invalid(
+            "host must be a hostname with an optional port; GitHub uses github.com",
+        ));
+    }
+    Ok((provider.into(), host))
+}
+
+pub fn check_project(provider: &str, path: &str) -> Result<(), Error> {
+    let parts: Vec<_> = path.split('/').collect();
+    if parts.len() < 2
+        || (provider == "github" && parts.len() != 2)
+        || parts.iter().any(|p| {
+            p.is_empty()
+                || *p == "."
+                || *p == ".."
+                || p.starts_with('-')
+                || !p
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b))
+        })
+        || path.ends_with(".git")
+    {
+        return Err(Error::invalid(
+            "project path must be namespace/project without a URL or .git suffix",
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Queryable, Selectable)]
@@ -268,8 +337,13 @@ pub mod cred {
         repo_id: Uuid,
         purpose: &str,
     ) -> Result<Vec<CredentialRow>, Error> {
+        let state = state_for(conn, repo_id)?;
+        let provider = state.as_ref().map_or("github", |s| s.provider.as_str());
+        let host = state.as_ref().map_or("github.com", |s| s.host.as_str());
         let rows: Vec<CredentialRow> = credentials::table
             .filter(credentials::org_id.eq(org_id))
+            .filter(credentials::provider.eq(provider))
+            .filter(credentials::host.eq(host))
             .filter(credentials::purpose.eq(purpose))
             .filter(credentials::enabled.eq(true))
             .filter(
@@ -369,6 +443,7 @@ pub mod cred {
     /// The GitHub repository a mirrored repository shadows.
     fn github_repo_of(conn: &mut PgConnection, repo_id: Uuid) -> Result<Option<String>, Failure> {
         mirror_state::table
+            .filter(mirror_state::provider.eq("github"))
             .filter(mirror_state::repo_id.eq(repo_id))
             .select(mirror_state::github_repo)
             .first::<String>(conn)
@@ -594,6 +669,21 @@ pub mod cred {
         purpose: &str,
         actor: Option<Uuid>,
     ) -> Result<Token, Failure> {
+        if state_for(conn, repo_id)
+            .map_err(|e| Failure::Transient(e.message))?
+            .is_some_and(|s| !s.is_github())
+        {
+            for p in purpose_order(purpose) {
+                if let Some(row) =
+                    find(conn, org_id, repo_id, p).map_err(|e| Failure::Transient(e.message))?
+                {
+                    return credential_token(app, &row, p);
+                }
+            }
+            return Err(Failure::Terminal(format!(
+                "no GitLab credential with purpose {purpose} for this host"
+            )));
+        }
         if let Some(identity_id) = actor {
             if let Some((login, value)) = crate::github_link::user_token(app, conn, identity_id)? {
                 return Ok(Token {
@@ -863,6 +953,14 @@ pub fn github_url(app: &App, full_name: &str) -> String {
     format!("{}/{full_name}.git", app.config.github_git_base)
 }
 
+fn classify_git_for(track_health: bool, stderr: &str, stdout: &str) -> Failure {
+    if track_health {
+        github::classify_git(stderr, stdout)
+    } else {
+        github::classify_git_text(stderr, stdout)
+    }
+}
+
 /// git config through the environment: the token never appears in argv.
 pub(crate) fn auth_env(token: &str) -> Env {
     use base64::Engine;
@@ -878,6 +976,25 @@ pub(crate) fn auth_env(token: &str) -> Env {
     ]
 }
 
+fn remote_env(url: &str, token: Option<&str>, track_github: bool) -> Env {
+    let mut env = token.map(auth_env).unwrap_or_default();
+    if !track_github {
+        // Keep the header on this project URL and reject redirects.
+        if token.is_some() {
+            env.retain(|(key, _)| key != "GIT_CONFIG_COUNT" && key != "GIT_CONFIG_KEY_0");
+            env.push(("GIT_CONFIG_KEY_0".into(), format!("http.{url}.extraHeader")));
+        }
+        let index = usize::from(token.is_some());
+        env.push(("GIT_CONFIG_COUNT".into(), (index + 1).to_string()));
+        env.push((
+            format!("GIT_CONFIG_KEY_{index}"),
+            "http.followRedirects".into(),
+        ));
+        env.push((format!("GIT_CONFIG_VALUE_{index}"), "false".into()));
+    }
+    env
+}
+
 pub(crate) fn git_cmd(dir: &std::path::Path, env: &Env) -> std::process::Command {
     let mut c = std::process::Command::new("git");
     c.arg("-C")
@@ -885,6 +1002,7 @@ pub(crate) fn git_cmd(dir: &std::path::Path, env: &Env) -> std::process::Command
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("LC_ALL", "C")
+        .env("GIT_TERMINAL_PROMPT", "0")
         .envs(env.iter().cloned());
     c
 }
@@ -895,18 +1013,30 @@ pub fn ls_remote(
     url: &str,
     token: Option<&str>,
 ) -> Result<Vec<(String, String)>, Failure> {
-    let env = token.map(auth_env).unwrap_or_default();
+    ls_remote_for(dir, url, token, true)
+}
+
+pub fn ls_remote_for(
+    dir: &std::path::Path,
+    url: &str,
+    token: Option<&str>,
+    track_health: bool,
+) -> Result<Vec<(String, String)>, Failure> {
+    let env = remote_env(url, token, track_health);
     let out = git_cmd(dir, &env)
         .args(["ls-remote", "--heads", "--tags", "--refs", url])
         .output()
         .map_err(|e| Failure::Transient(format!("spawn git: {e}")))?;
     if !out.status.success() {
-        return Err(github::classify_git(
+        return Err(classify_git_for(
+            track_health,
             &String::from_utf8_lossy(&out.stderr),
             &String::from_utf8_lossy(&out.stdout),
         ));
     }
-    crate::github_health::record_success(crate::github_health::Lane::Git);
+    if track_health {
+        crate::github_health::record_success(crate::github_health::Lane::Git);
+    }
     Ok(String::from_utf8_lossy(&out.stdout)
         .lines()
         .filter_map(|l| {
@@ -925,7 +1055,17 @@ pub fn fetch_refs(
     token: Option<&str>,
     refs: &[(String, String)],
 ) -> Result<(), Failure> {
-    let env = token.map(auth_env).unwrap_or_default();
+    fetch_refs_for(dir, url, token, refs, true)
+}
+
+pub fn fetch_refs_for(
+    dir: &std::path::Path,
+    url: &str,
+    token: Option<&str>,
+    refs: &[(String, String)],
+    track_health: bool,
+) -> Result<(), Failure> {
+    let env = remote_env(url, token, track_health);
     for batch in refs.chunks(500) {
         let mut cmd = git_cmd(dir, &env);
         cmd.args(["fetch", "--quiet", "--no-tags", url]);
@@ -936,13 +1076,16 @@ pub fn fetch_refs(
             .output()
             .map_err(|e| Failure::Transient(format!("spawn git: {e}")))?;
         if !out.status.success() {
-            return Err(github::classify_git(
+            return Err(classify_git_for(
+                track_health,
                 &String::from_utf8_lossy(&out.stderr),
                 &String::from_utf8_lossy(&out.stdout),
             ));
         }
     }
-    crate::github_health::record_success(crate::github_health::Lane::Git);
+    if track_health {
+        crate::github_health::record_success(crate::github_health::Lane::Git);
+    }
     Ok(())
 }
 
@@ -1005,7 +1148,18 @@ pub fn fetch_ref(
     remote_ref: &str,
     local_ref: &str,
 ) -> Result<(), Failure> {
-    let env = token.map(auth_env).unwrap_or_default();
+    fetch_ref_for(dir, url, token, remote_ref, local_ref, true)
+}
+
+pub fn fetch_ref_for(
+    dir: &std::path::Path,
+    url: &str,
+    token: Option<&str>,
+    remote_ref: &str,
+    local_ref: &str,
+    track_health: bool,
+) -> Result<(), Failure> {
+    let env = remote_env(url, token, track_health);
     let out = git_cmd(dir, &env)
         .args([
             "fetch",
@@ -1017,12 +1171,15 @@ pub fn fetch_ref(
         .output()
         .map_err(|e| Failure::Transient(format!("spawn git: {e}")))?;
     if !out.status.success() {
-        return Err(github::classify_git(
+        return Err(classify_git_for(
+            track_health,
             &String::from_utf8_lossy(&out.stderr),
             &String::from_utf8_lossy(&out.stdout),
         ));
     }
-    crate::github_health::record_success(crate::github_health::Lane::Git);
+    if track_health {
+        crate::github_health::record_success(crate::github_health::Lane::Git);
+    }
     Ok(())
 }
 
@@ -1043,7 +1200,21 @@ pub fn push_ref(
     lease: Option<&str>,
     force: bool,
 ) -> PushResult {
-    let env = auth_env(token);
+    push_ref_for(dir, url, token, r#ref, target, lease, force, true)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn push_ref_for(
+    dir: &std::path::Path,
+    url: &str,
+    token: &str,
+    r#ref: &str,
+    target: Option<&str>,
+    lease: Option<&str>,
+    force: bool,
+    track_health: bool,
+) -> PushResult {
+    let env = remote_env(url, Some(token), track_health);
     let mut c = git_cmd(dir, &env);
     c.args(["push", "--porcelain", "--no-verify"]);
     if force {
@@ -1064,14 +1235,18 @@ pub fn push_ref(
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     if out.status.success() {
-        crate::github_health::record_success(crate::github_health::Lane::Git);
+        if track_health {
+            crate::github_health::record_success(crate::github_health::Lane::Git);
+        }
         return PushResult::Ok;
     }
     if stdout.contains("stale info") || stderr.contains("stale info") {
-        crate::github_health::record_success(crate::github_health::Lane::Git);
+        if track_health {
+            crate::github_health::record_success(crate::github_health::Lane::Git);
+        }
         return PushResult::StaleLease;
     }
-    PushResult::Failed(github::classify_git(&stderr, &stdout))
+    PushResult::Failed(classify_git_for(track_health, &stderr, &stdout))
 }
 
 fn record_attempt(
@@ -1254,24 +1429,36 @@ pub fn execute(app: &App, conn: &mut DbConn, action_id: Uuid) -> Result<Exec, Er
         ActionPayload::Push { .. } => crate::github_health::Lane::Git,
         _ => crate::github_health::Lane::Api,
     };
-    if let Some(wait) = crate::github_health::hold(lane) {
+    if let Some(wait) = state
+        .is_github()
+        .then(|| crate::github_health::hold(lane))
+        .flatten()
+    {
         crate::metrics::mirror_action(kind, "held");
         return Ok(Exec::Held(wait));
     }
-    let outcome = match &payload {
-        ActionPayload::Push { r#ref } => exec_push(app, conn, &org, &repo, &state, &action, r#ref),
-        ActionPayload::RepoSettings => exec_settings(app, conn, &org, &repo, &state, &action),
-        ActionPayload::PrSync { number } => {
-            crate::github_sync::exec_pr_sync(app, conn, &org, &repo, &state, &action, *number)
-        }
-        ActionPayload::PrComment { id } => {
-            crate::github_sync::exec_pr_comment(app, conn, &org, &repo, &state, &action, *id)
-        }
-        ActionPayload::PrReview { id } => {
-            crate::github_sync::exec_pr_review(app, conn, &org, &repo, &state, &action, *id)
-        }
-        ActionPayload::Status { sha, context } => {
-            crate::github_sync::exec_status(app, conn, &org, &repo, &state, &action, sha, context)
+    let outcome = if !state.is_github() && !matches!(&payload, ActionPayload::Push { .. }) {
+        Ok(Exec::Blocked(
+            "GitLab prototype supports branches and tags only".into(),
+        ))
+    } else {
+        match &payload {
+            ActionPayload::Push { r#ref } => {
+                exec_push(app, conn, &org, &repo, &state, &action, r#ref)
+            }
+            ActionPayload::RepoSettings => exec_settings(app, conn, &org, &repo, &state, &action),
+            ActionPayload::PrSync { number } => {
+                crate::github_sync::exec_pr_sync(app, conn, &org, &repo, &state, &action, *number)
+            }
+            ActionPayload::PrComment { id } => {
+                crate::github_sync::exec_pr_comment(app, conn, &org, &repo, &state, &action, *id)
+            }
+            ActionPayload::PrReview { id } => {
+                crate::github_sync::exec_pr_review(app, conn, &org, &repo, &state, &action, *id)
+            }
+            ActionPayload::Status { sha, context } => crate::github_sync::exec_status(
+                app, conn, &org, &repo, &state, &action, sha, context,
+            ),
         }
     };
     crate::metrics::mirror_action(
@@ -1294,7 +1481,9 @@ pub fn execute(app: &App, conn: &mut DbConn, action_id: Uuid) -> Result<Exec, Er
         Ok(Exec::Blocked(reason)) => {
             record_attempt(conn, action.id, false, None, Some(&reason))?;
             set_blocked(conn, &org, &repo, &action, &reason)?;
-            cred::forget_app_token(app, conn, org.id, repo.id, &action.credential_purpose);
+            if state.is_github() {
+                cred::forget_app_token(app, conn, org.id, repo.id, &action.credential_purpose);
+            }
             Ok(Exec::Blocked(reason))
         }
         Ok(Exec::Transient(reason)) => {
@@ -1344,11 +1533,11 @@ fn exec_push(
         Err(Failure::Terminal(m)) => return Ok(Exec::Blocked(m)),
         Err(Failure::Transient(m)) => return Ok(Exec::Transient(m)),
     };
-    tracing::info!(action = %action.object_key, source = %used.label(), "GitHub credential chosen");
+    tracing::info!(action = %action.object_key, source = %used.label(), "mirror credential chosen");
     let token = used.value.clone();
-    let url = github_url(app, &state.github_repo);
+    let url = state.git_url(app);
     let target_str = target.as_ref().map(|t| t.0.as_str());
-    if target.is_none() && lease.is_some() {
+    if state.is_github() && target.is_none() && lease.is_some() {
         if let Some(branch) = r#ref.strip_prefix("refs/heads/") {
             let gh =
                 github::Client::new(&app.config.github_api_base, &token).with_label(&used.label());
@@ -1362,7 +1551,7 @@ fn exec_push(
             }
         }
     }
-    match push_ref(
+    match push_ref_for(
         &dir,
         &url,
         &token,
@@ -1370,6 +1559,7 @@ fn exec_push(
         target_str,
         lease.as_deref(),
         false,
+        state.is_github(),
     ) {
         PushResult::Ok => {
             set_mirrored(conn, repo.id, r#ref, target_str)?;
@@ -1415,7 +1605,7 @@ fn handle_drift(
     target: Option<&str>,
     lease: Option<&str>,
 ) -> Result<Exec, Error> {
-    let remote = ls_remote(dir, url, Some(token));
+    let remote = ls_remote_for(dir, url, Some(token), state.is_github());
     let remote_sha = match remote {
         Ok(list) => list.into_iter().find(|(n, _)| n == r#ref).map(|(_, s)| s),
         Err(Failure::Transient(m)) => return Ok(Exec::Transient(m)),
@@ -1423,7 +1613,16 @@ fn handle_drift(
     };
     let Some(remote_sha) = remote_sha else {
         // The ref is gone on GitHub: lease mismatch because it was deleted.
-        return match push_ref(dir, url, token, r#ref, target, None, true) {
+        return match push_ref_for(
+            dir,
+            url,
+            token,
+            r#ref,
+            target,
+            None,
+            true,
+            state.is_github(),
+        ) {
             PushResult::Ok => {
                 set_mirrored(conn, repo.id, r#ref, target)?;
                 mirror_event(
@@ -1434,7 +1633,7 @@ fn handle_drift(
                     r#ref,
                     "git_push",
                     Some(format!(
-                        "{ref} was deleted on GitHub (expected {}); re-pushed",
+                        "{ref} was deleted on the remote (expected {}); re-pushed",
                         lease.unwrap_or("<absent>")
                     )),
                 )?;
@@ -1451,7 +1650,7 @@ fn handle_drift(
         "refs/vcsstar/drift/{}/{short}",
         Utc::now().format("%Y%m%dT%H%M%S")
     );
-    match fetch_ref(dir, url, Some(token), r#ref, &drift_ref) {
+    match fetch_ref_for(dir, url, Some(token), r#ref, &drift_ref, state.is_github()) {
         Ok(()) => {
             let _ = refs::apply(
                 conn,
@@ -1468,12 +1667,21 @@ fn handle_drift(
         Err(Failure::Terminal(m)) => return Ok(Exec::Blocked(m)),
     }
     let note = format!(
-        "GitHub {ref} is at {remote_sha}, expected {}; drifted commits kept at {drift_ref}",
+        "Remote {ref} is at {remote_sha}, expected {}; drifted commits kept at {drift_ref}",
         lease.unwrap_or("<absent>")
     );
     match state.mode.as_str() {
         "authoritative_vcsstar" => {
-            match push_ref(dir, url, token, r#ref, target, Some(&remote_sha), false) {
+            match push_ref_for(
+                dir,
+                url,
+                token,
+                r#ref,
+                target,
+                Some(&remote_sha),
+                false,
+                state.is_github(),
+            ) {
                 PushResult::Ok => {
                     set_mirrored(conn, repo.id, r#ref, target)?;
                     mirror_event(
@@ -1585,7 +1793,7 @@ pub fn note_drift(
     if lease.as_deref() == observed {
         return Ok(false);
     }
-    let url = github_url(app, &state.github_repo);
+    let url = state.git_url(app);
     let mut kept = None;
     if let Some(sha) = observed {
         let short = r#ref.trim_start_matches("refs/");
@@ -1593,7 +1801,7 @@ pub fn note_drift(
             "refs/vcsstar/drift/{}/{short}",
             Utc::now().format("%Y%m%dT%H%M%S")
         );
-        match fetch_ref(dir, &url, token, r#ref, &drift_ref) {
+        match fetch_ref_for(dir, &url, token, r#ref, &drift_ref, state.is_github()) {
             Ok(()) => {
                 let _ = refs::apply(
                     conn,
@@ -1611,7 +1819,7 @@ pub fn note_drift(
         }
     }
     let note = format!(
-        "GitHub {ref} is at {}, expected {}{}",
+        "Remote {ref} is at {}, expected {}{}",
         observed.unwrap_or("<absent>"),
         lease.as_deref().unwrap_or("<absent>"),
         kept.as_ref()
@@ -1732,7 +1940,7 @@ pub fn note_drift(
                         "mirror_drift",
                         r#ref,
                         "git_push",
-                        Some(format!("{note}; deleted on GitHub, scheduling re-push")),
+                        Some(format!("{note}; deleted on the remote, scheduling re-push")),
                     )?;
                     Ok(true)
                 }
@@ -1824,7 +2032,12 @@ pub fn reconcile(app: &App, conn: &mut DbConn, repo_id: Uuid) -> Result<Reconcil
     let token = cred::token_for(app, conn, org.id, repo.id, "mirror_git_push")
         .ok()
         .map(|(_, t)| t);
-    let remote = ls_remote(&dir, &github_url(app, &state.github_repo), token.as_deref())?;
+    let remote = ls_remote_for(
+        &dir,
+        &state.git_url(app),
+        token.as_deref(),
+        state.is_github(),
+    )?;
     let ours: Vec<(String, RevId)> = refs::load(conn, repo_id)?
         .into_iter()
         .filter(|(n, _)| n.starts_with("refs/heads/") || n.starts_with("refs/tags/"))
@@ -1850,7 +2063,7 @@ pub fn reconcile(app: &App, conn: &mut DbConn, repo_id: Uuid) -> Result<Reconcil
             other => {
                 let observed = other.copied();
                 out.drift.push(format!(
-                    "{name}: GitHub {}, vcsstar {target}",
+                    "{name}: remote {}, vcsstar {target}",
                     observed.unwrap_or("<absent>")
                 ));
                 let push = note_drift(
@@ -1873,7 +2086,8 @@ pub fn reconcile(app: &App, conn: &mut DbConn, repo_id: Uuid) -> Result<Reconcil
     for (name, sha) in &remote {
         if !ours.iter().any(|(n, _)| n == name) {
             out.refs_checked += 1;
-            out.drift.push(format!("{name}: only on GitHub ({sha})"));
+            out.drift
+                .push(format!("{name}: only on the remote ({sha})"));
             let push = note_drift(
                 app,
                 conn,

@@ -190,12 +190,8 @@ fn handle(app: &App, q: &Queue, claimed: &Claimed) -> anyhow::Result<()> {
 /// wake-up for pending actions nothing touched for two minutes: a lost
 /// submission or a deduplicated replay self-heals here.
 fn reconcile_pass(app: &App) -> anyhow::Result<()> {
-    if health::is_open(Lane::Git) {
-        tracing::debug!("reconcile pass skipped; the GitHub git lane is open");
-        return Ok(());
-    }
     let mut conn = app.conn()?;
-    if !health::is_open(Lane::Api) {
+    {
         use vcsstar_db::schema::mirror_actions;
         let stale: Vec<(uuid::Uuid, String, String)> = mirror_actions::table
             .inner_join(repos::table.inner_join(orgs::table))
@@ -223,6 +219,13 @@ fn reconcile_pass(app: &App) -> anyhow::Result<()> {
         .inner_join(repos::table.inner_join(orgs::table))
         .filter(repos::mirror_enabled.eq(true))
         .filter(mirror_state::paused.eq(false))
+        .filter(mirror_state::provider.ne("github").or(
+            diesel::dsl::sql::<diesel::sql_types::Bool>(if health::is_open(Lane::Git) {
+                "FALSE"
+            } else {
+                "TRUE"
+            }),
+        ))
         .filter(due_filter(
             "last_full_reconcile_at",
             "ref_reconcile_interval_s",
@@ -285,6 +288,7 @@ fn pull_sync_pass(app: &App) -> anyhow::Result<()> {
     let due: Vec<(uuid::Uuid, String, String)> = mirror_state::table
         .inner_join(repos::table.inner_join(orgs::table))
         .filter(repos::mirror_enabled.eq(true))
+        .filter(mirror_state::provider.eq("github"))
         .filter(mirror_state::paused.eq(false))
         .filter(due_filter(
             "last_pull_pass_at",

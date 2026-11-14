@@ -149,6 +149,7 @@ fn mirror_target(
     let found: Option<(Repo, Org, mirror::StateRow)> = mirror_state::table
         .inner_join(repos::table.inner_join(orgs::table))
         .filter(mirror_state::github_repo.eq(full_name))
+        .filter(mirror_state::provider.eq("github"))
         .select((
             Repo::as_select(),
             Org::as_select(),
@@ -178,6 +179,7 @@ fn process_push(app: &App, body: &serde_json::Value) -> anyhow::Result<String> {
         mirror_state::table
             .inner_join(repos::table.inner_join(orgs::table))
             .filter(mirror_state::github_repo.eq(full_name))
+            .filter(mirror_state::provider.eq("github"))
             .select((repos::id, orgs::name, repos::name, mirror_state::mode))
             .first(&mut conn)
             .optional()?
