@@ -910,7 +910,7 @@ pub fn classify_git(stderr: &str, stdout: &str) -> Failure {
     f
 }
 
-fn classify_git_text(stderr: &str, stdout: &str) -> Failure {
+pub(crate) fn classify_git_text(stderr: &str, stdout: &str) -> Failure {
     let all = format!("{stdout}\n{stderr}");
     let lower = all.to_lowercase();
     let transient = [
@@ -937,7 +937,7 @@ fn classify_git_text(stderr: &str, stdout: &str) -> Failure {
     }
     if lower.contains("could not read username") || lower.contains("authentication failed") {
         return Failure::Terminal(format!(
-            "GitHub refused the credential (HTTP 401/403): {}",
+            "Remote refused the credential (HTTP 401/403): {}",
             trim(&all)
         ));
     }

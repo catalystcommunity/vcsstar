@@ -17,6 +17,9 @@ and each side shows up on the other when GitHub can be reached.
 - GitHub import that brings a repository's whole pull request history, and
   any number of GitHub Apps to spread the rate limits. Imports are queued
   work that survives restarts; each repository has its own sync cadence.
+- GitLab prototype: import and mirror branches and tags on GitLab.com or
+  a self-hosted GitLab server. See [GitLab setup](docs/gitlab.md) for the
+  procedure and limits. This prototype has not been built or tested.
 - Forks into any organization on the instance and pull requests back from
   them; side by side or in-line diffs with syntax highlighting; rendered
   markdown and mermaid diagrams.
@@ -31,6 +34,7 @@ and each side shows up on the other when GitHub can be reached.
 | Document | What it covers |
 | --- | --- |
 | [`docs/architecture.md`](docs/architecture.md) | The pieces and how they fit, with diagrams: a push, the GitHub mirror both ways, outage behaviour, identity |
+| [`docs/gitlab.md`](docs/gitlab.md) | GitLab prototype setup, API fields, and limits |
 | [`CLAUDE.md`](CLAUDE.md) | The rules each piece follows, roles, configuration, local development, deployment |
 | [`csil/vcsstar.csil`](csil/vcsstar.csil) | The contract |
 | [`deploy/values-example.yaml`](deploy/values-example.yaml) | Template for an instance overlay (real overlays never live in the repository) |

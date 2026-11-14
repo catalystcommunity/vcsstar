@@ -8,6 +8,13 @@ comes back, the mirror catches up. This document shows the pieces and how
 they fit. The repository guide (`CLAUDE.md`) holds the rules each piece
 follows; the plans under `plan/` hold the reasoning.
 
+The GitLab prototype uses the same import queue and Git mirror engine.
+Each mirror stores a provider, host, and project path. Credentials must
+match the provider and host. GitLab imports read project metadata through
+REST API v4. Git transfers use HTTPS. Scheduled passes read branch and tag
+changes. GitLab does not use GitHub Apps, account links, webhooks, pull
+request jobs, or GitHub outage controls. See [GitLab setup](gitlab.md).
+
 ## The pieces
 
 ```mermaid
@@ -46,6 +53,7 @@ flowchart TB
     subgraph Outside["Outside"]
         direction LR
         gh["GitHub<br/>mirrored repositories<br/>App · webhooks"]
+        gl["GitLab prototype<br/>branches and tags<br/>access token"]
         lk["LinkKeys<br/>sign-in · application keys"]
         prom["Prometheus · OTLP"]
     end
@@ -56,13 +64,14 @@ flowchart TB
     Instance <-->|"submit · claim · park"| cd
     Instance <-->|"REST · git push · ls-remote"| gh
     gh -->|"webhooks"| Instance
+    Instance <-->|"HTTPS git · project metadata"| gl
     Instance <-->|"Rp ops over TCP"| lk
     Instance -.->|"scrape · spans"| prom
 
     class dev,ci person
     class api,ssh,workers pod
     class pg,s3,cache store
-    class gh,lk,prom external
+    class gh,gl,lk,prom external
     class cd queue
 ```
 

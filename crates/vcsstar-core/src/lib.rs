@@ -12,6 +12,7 @@ pub mod github_app;
 pub mod github_health;
 pub mod github_link;
 pub mod github_sync;
+pub mod gitlab;
 pub mod instance_keys;
 pub mod linkkeys;
 pub mod metrics;

@@ -41,6 +41,8 @@ fn status_wire(
         .get_result(conn)?;
     Ok(MirrorStatus {
         repo: vcs::repo_ref(org, repo),
+        provider: Some(s.provider.clone()),
+        host: Some(s.host.clone()),
         github_repo: Some(s.github_repo.clone()),
         mode: s.mode.clone(),
         paused: s.paused || !repo.mirror_enabled,
@@ -51,7 +53,7 @@ fn status_wire(
         last_error: s.last_error.clone(),
         last_full_reconcile_at: s.last_full_reconcile_at.map(to_ms),
         last_pull_sync_at: s.last_pull_sync_at.map(to_ms),
-        backfill_state: Some(
+        backfill_state: s.is_github().then(|| {
             if s.backfill_done_at.is_some() {
                 "done"
             } else if s.backfill_started_at.is_some() {
@@ -59,8 +61,8 @@ fn status_wire(
             } else {
                 "pending"
             }
-            .into(),
-        ),
+            .into()
+        }),
         backfill_pulls: Some(s.backfill_pulls.max(0) as u64),
         backfill_started_at: s.backfill_started_at.map(to_ms),
         backfill_done_at: s.backfill_done_at.map(to_ms),
@@ -94,6 +96,8 @@ pub fn status(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<MirrorStat
         Some(s) => status_wire(&mut conn, &org, &repo, &s),
         None => Ok(MirrorStatus {
             repo: vcs::repo_ref(&org, &repo),
+            provider: None,
+            host: None,
             github_repo: None,
             mode: "authoritative_vcsstar".into(),
             paused: true,
@@ -122,14 +126,28 @@ pub fn configure(
 ) -> Result<MirrorStatus, Error> {
     let (mut conn, org, repo) =
         open_admin(app, ctx, &req.repo.org, &req.repo.name, RepoRole::Admin)?;
-    let (owner, name) = req
-        .github_repo
-        .split_once('/')
-        .ok_or_else(|| Error::invalid("github_repo must be owner/name"))?;
-    if owner.is_empty() || name.is_empty() || req.github_repo.contains(char::is_whitespace) {
-        return Err(Error::invalid("github_repo must be owner/name"));
+    let previous = mirror::state_for(&mut conn, repo.id)?;
+    let (provider, host) = mirror::target(
+        req.provider
+            .as_deref()
+            .or(previous.as_ref().map(|s| s.provider.as_str())),
+        req.host
+            .as_deref()
+            .or(previous.as_ref().map(|s| s.host.as_str())),
+    )?;
+    mirror::check_project(&provider, &req.github_repo)?;
+    if previous.as_ref().is_some_and(|s| {
+        s.provider != provider || s.host != host || s.github_repo != req.github_repo
+    }) {
+        return Err(Error::invalid(
+            "an existing mirror cannot change its remote target; use a new repository",
+        ));
     }
-    let mode = req.mode.as_deref().unwrap_or("authoritative_vcsstar");
+    let mode = req.mode.as_deref().unwrap_or(if provider == "gitlab" {
+        "import_drift"
+    } else {
+        "authoritative_vcsstar"
+    });
     if !mirror::MODES.contains(&mode) {
         return Err(Error::invalid(format!(
             "mode must be one of {:?}",
@@ -142,16 +160,25 @@ pub fn configure(
             .values((
                 mirror_state::repo_id.eq(repo.id),
                 mirror_state::github_repo.eq(&req.github_repo),
+                mirror_state::provider.eq(&provider),
+                mirror_state::host.eq(&host),
                 mirror_state::mode.eq(mode),
             ))
             .on_conflict(mirror_state::repo_id)
             .do_update()
-            .set((
-                mirror_state::github_repo.eq(&req.github_repo),
-                mirror_state::mode.eq(mode),
-            ))
+            .set(mirror_state::mode.eq(mode))
             .returning(StateRow::as_returning())
             .get_result(conn)?;
+        if s.provider != provider || s.host != host || s.github_repo != req.github_repo {
+            return Err(Error::invalid(
+                "an existing mirror cannot change its remote target; use a new repository",
+            ));
+        }
+        if s.import_requested_at.is_some() && s.import_done_at.is_none() {
+            return Err(Error::invalid(
+                "wait for the repository import to finish before configuring its mirror",
+            ));
+        }
         diesel::update(repos::table.find(repo.id))
             .set(repos::mirror_enabled.eq(enabled))
             .execute(conn)?;
@@ -368,8 +395,11 @@ pub fn set_credential(
     let mut conn = app.conn()?;
     let (org_id, repo_id) =
         authorize_cred_target(app, &mut conn, ctx, &req.org, req.repo.as_deref())?;
-    if req.provider != "github" {
-        return Err(Error::invalid("provider must be github"));
+    let (_, host) = mirror::target(Some(&req.provider), Some(&req.host))?;
+    if req.provider == "gitlab" && (req.auth_method != "pat" || req.purpose == "webhook_inbound") {
+        return Err(Error::invalid(
+            "the GitLab prototype supports PAT credentials for Git and import only",
+        ));
     }
     if !mirror::PURPOSES.contains(&req.purpose.as_str()) {
         return Err(Error::invalid(format!(
@@ -417,7 +447,7 @@ pub fn set_credential(
             credentials::provider.eq(&req.provider),
             credentials::purpose.eq(&req.purpose),
             credentials::auth_method.eq(&req.auth_method),
-            credentials::host.eq(&req.host),
+            credentials::host.eq(&host),
             credentials::secret_ref.eq(&req.secret_ref),
             credentials::secret_ciphertext.eq(ciphertext),
             credentials::enabled.eq(req.enabled.unwrap_or(true)),
@@ -507,7 +537,7 @@ pub fn reconcile(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<Reconci
     };
     // GitHub's pull requests, reviews, comments, and statuses, by asking.
     let mut pulls = None;
-    if let Some(state) = mirror::state_for(&mut conn, repo.id)? {
+    if let Some(state) = mirror::state_for(&mut conn, repo.id)?.filter(|s| s.is_github()) {
         match crate::github_sync::reconcile_pulls(
             app,
             &mut conn,
@@ -544,10 +574,10 @@ pub fn reconcile(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<Reconci
 pub fn backfill(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<MirrorStatus, Error> {
     let (mut conn, org, repo) =
         open_admin(app, ctx, &req.repo.org, &req.repo.name, RepoRole::Admin)?;
-    let Some(_) = mirror::state_for(&mut conn, repo.id)? else {
+    let Some(_) = mirror::state_for(&mut conn, repo.id)?.filter(|s| s.is_github()) else {
         return Err(Error::new(
             Code::PreconditionFailed,
-            "this repository has no mirror; configure or import one first",
+            "pull request history import requires a GitHub mirror",
         ));
     };
     crate::github_sync::restart_backfill(&mut conn, repo.id)?;
@@ -757,7 +787,7 @@ pub fn list_github_repos(
         };
         let here = mirrored
             .iter()
-            .find(|(_, st)| st.github_repo.eq_ignore_ascii_case(&full));
+            .find(|(_, st)| st.is_github() && st.github_repo.eq_ignore_ascii_case(&full));
         out.push(GithubRepoInfo {
             mirrored_as: here.map(|(r, _)| r.name.clone()),
             import_state: here
@@ -793,17 +823,27 @@ pub fn import_repo(app: &App, ctx: &ReqCtx, req: ImportRequest) -> Result<Repo, 
     p.require_scope("repo:admin")?;
     p.require_scope("mirror:manage")?;
     check_name("repository", &req.name)?;
-    if !req.github_repo.contains('/') {
-        return Err(Error::invalid("github_repo must be owner/name"));
-    }
-    let mode = req.mode.as_deref().unwrap_or("authoritative_vcsstar");
+    let (provider, host) = mirror::target(req.provider.as_deref(), req.host.as_deref())?;
+    mirror::check_project(&provider, &req.github_repo)?;
+    let mode = req.mode.as_deref().unwrap_or(if provider == "gitlab" {
+        "import_drift"
+    } else {
+        "authoritative_vcsstar"
+    });
     if !mirror::MODES.contains(&mode) {
         return Err(Error::invalid(format!(
             "mode must be one of {:?}",
             mirror::MODES
         )));
     }
-    let visibility = req.visibility.as_deref().unwrap_or("public");
+    let visibility = req
+        .visibility
+        .as_deref()
+        .unwrap_or(if provider == "gitlab" {
+            "private"
+        } else {
+            "public"
+        });
     if !repo_svc::VISIBILITIES.contains(&visibility) {
         return Err(Error::invalid("visibility"));
     }
@@ -818,6 +858,8 @@ pub fn import_repo(app: &App, ctx: &ReqCtx, req: ImportRequest) -> Result<Repo, 
             org: &org,
             name: &req.name,
             github_repo: &req.github_repo,
+            provider: &provider,
+            host: &host,
             mode,
             visibility,
         },
@@ -893,6 +935,8 @@ pub fn import_all(
             org: &org,
             name,
             github_repo: &full,
+            provider: "github",
+            host: "github.com",
             mode,
             visibility: if b("private") { "private" } else { "public" },
         };
@@ -975,6 +1019,8 @@ struct ImportRow<'a> {
     org: &'a OrgRow,
     name: &'a str,
     github_repo: &'a str,
+    provider: &'a str,
+    host: &'a str,
     mode: &'a str,
     visibility: &'a str,
 }
@@ -996,6 +1042,8 @@ fn queue_import(
         .filter(repos::name.eq(row.name))
         .filter(repos::mirror_enabled.eq(false))
         .filter(mirror_state::github_repo.eq(row.github_repo))
+        .filter(mirror_state::provider.eq(row.provider))
+        .filter(mirror_state::host.eq(row.host))
         .filter(mirror_state::import_done_at.is_null())
         .select(RepoRow::as_select())
         .first(conn)
@@ -1046,7 +1094,7 @@ fn create_import_row(
     // so the dispatcher sends no settings back (an empty description would
     // otherwise blank GitHub's). The worker sets GitHub's default branch
     // and description.
-    outbox::with_origin("github", || {
+    outbox::with_origin(row.provider, || {
         conn.transaction::<RepoRow, Error, _>(|conn| {
             let new_row = NewRepo {
                 id: repo_id,
@@ -1065,6 +1113,8 @@ fn create_import_row(
                 .values((
                     mirror_state::repo_id.eq(repo.id),
                     mirror_state::github_repo.eq(row.github_repo),
+                    mirror_state::provider.eq(row.provider),
+                    mirror_state::host.eq(row.host),
                     mirror_state::mode.eq(row.mode),
                     mirror_state::paused.eq(true),
                     mirror_state::import_requested_by.eq(p.identity.id),

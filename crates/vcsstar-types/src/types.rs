@@ -942,6 +942,8 @@ pub struct DeliveryRef {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MirrorStatus {
     pub repo: RepoRef,
+    pub provider: Option<String>,
+    pub host: Option<String>,
     pub github_repo: Option<String>,
     pub mode: String,
     pub paused: bool,
@@ -1059,6 +1061,8 @@ pub struct CredentialRef {
 pub struct ConfigureMirrorRequest {
     pub ctx: Ctx,
     pub repo: RepoRef,
+    pub provider: Option<String>,
+    pub host: Option<String>,
     pub github_repo: String,
     pub mode: Option<String>,
     pub enabled: Option<bool>,
@@ -1083,6 +1087,8 @@ pub struct ImportRequest {
     pub ctx: Ctx,
     pub org: String,
     pub name: String,
+    pub provider: Option<String>,
+    pub host: Option<String>,
     pub github_repo: String,
     pub mode: Option<String>,
     pub visibility: Option<String>,

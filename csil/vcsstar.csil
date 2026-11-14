@@ -792,11 +792,13 @@ service Hooks {
 }
 
 ;; ---------------------------------------------------------------------
-;; Mirror (GitHub golden-source mirror)
+;; Mirror (GitHub and GitLab)
 ;; ---------------------------------------------------------------------
 
 MirrorStatus = {
     repo: RepoRef,
+    ? provider: text,
+    ? host: text,
     ? github_repo: text,
     ;;; "authoritative_vcsstar" | "import_drift" | "flag_drift"
     mode: text,
@@ -870,11 +872,11 @@ Credential = {
     id: text,
     org: text,
     ? repo: text,
-    ;;; "github"
+    ;;; "github" | "gitlab"
     provider: text,
     ;;; "mirror_git_push" | "mirror_api" | "import_fetch" | "webhook_inbound"
     purpose: text,
-    ;;; "pat" | "github_app"
+    ;;; "pat" | "github_app" (GitHub only)
     auth_method: text,
     host: text,
     ;;; Pointer into the secret store, never the secret.
@@ -909,7 +911,12 @@ CredentialRef = { ctx: Ctx, credential_id: text }
 ConfigureMirrorRequest = {
     ctx: Ctx,
     repo: RepoRef,
-    ;;; "owner/name" on GitHub.
+    ;;; "github" (default) or "gitlab". GitLab supports Git refs only.
+    ? provider: text,
+    ;;; Host and optional port, without a scheme. Defaults to the provider host.
+    ? host: text,
+    ;;; Remote project path. GitLab can include subgroups. The field name
+    ;;; stays unchanged for existing clients.
     github_repo: text,
     ? mode: text,
     ? enabled: bool
@@ -932,6 +939,9 @@ ImportRequest = {
     ctx: Ctx,
     org: text,
     name: text,
+    ? provider: text,
+    ? host: text,
+    ;;; Remote project path, including GitLab subgroups when applicable.
     github_repo: text,
     ? mode: text,
     ? visibility: text

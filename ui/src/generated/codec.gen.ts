@@ -3372,11 +3372,13 @@ export function fromDeliveryRefCbor(bytes: Uint8Array): DeliveryRef {
 
 export function toMirrorStatusCborValue(v: MirrorStatus): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
+  if (v.host !== undefined) csilMap.set("host", v.host);
   csilMap.set("mode", v.mode);
   csilMap.set("repo", toRepoRefCborValue(v.repo));
   csilMap.set("paused", v.paused);
   csilMap.set("blocked", v.blocked);
   csilMap.set("pending", v.pending);
+  if (v.provider !== undefined) csilMap.set("provider", v.provider);
   csilMap.set("cursor_seq", v.cursorSeq);
   if (v.lastError !== undefined) csilMap.set("last_error", v.lastError);
   if (v.githubRepo !== undefined) csilMap.set("github_repo", v.githubRepo);
@@ -3396,6 +3398,8 @@ export function toMirrorStatusCborValue(v: MirrorStatus): CborValue {
 export function fromMirrorStatusCborValue(value: CborValue): MirrorStatus {
   return {
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
+    provider: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "provider")),
+    host: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "host")),
     githubRepo: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "github_repo")),
     mode: asString(requireKey(value, "mode")),
     paused: asBool(requireKey(value, "paused")),
@@ -3735,9 +3739,11 @@ export function fromCredentialRefCbor(bytes: Uint8Array): CredentialRef {
 export function toConfigureMirrorRequestCborValue(v: ConfigureMirrorRequest): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
   csilMap.set("ctx", toCtxCborValue(v.ctx));
+  if (v.host !== undefined) csilMap.set("host", v.host);
   if (v.mode !== undefined) csilMap.set("mode", v.mode);
   csilMap.set("repo", toRepoRefCborValue(v.repo));
   if (v.enabled !== undefined) csilMap.set("enabled", v.enabled);
+  if (v.provider !== undefined) csilMap.set("provider", v.provider);
   csilMap.set("github_repo", v.githubRepo);
   return csilMap;
 }
@@ -3746,6 +3752,8 @@ export function fromConfigureMirrorRequestCborValue(value: CborValue): Configure
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
+    provider: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "provider")),
+    host: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "host")),
     githubRepo: asString(requireKey(value, "github_repo")),
     mode: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "mode")),
     enabled: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "enabled")),
@@ -3802,8 +3810,10 @@ export function toImportRequestCborValue(v: ImportRequest): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
   csilMap.set("ctx", toCtxCborValue(v.ctx));
   csilMap.set("org", v.org);
+  if (v.host !== undefined) csilMap.set("host", v.host);
   if (v.mode !== undefined) csilMap.set("mode", v.mode);
   csilMap.set("name", v.name);
+  if (v.provider !== undefined) csilMap.set("provider", v.provider);
   if (v.visibility !== undefined) csilMap.set("visibility", v.visibility);
   csilMap.set("github_repo", v.githubRepo);
   return csilMap;
@@ -3814,6 +3824,8 @@ export function fromImportRequestCborValue(value: CborValue): ImportRequest {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     org: asString(requireKey(value, "org")),
     name: asString(requireKey(value, "name")),
+    provider: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "provider")),
+    host: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "host")),
     githubRepo: asString(requireKey(value, "github_repo")),
     mode: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "mode")),
     visibility: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "visibility")),

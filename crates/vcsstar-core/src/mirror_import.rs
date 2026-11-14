@@ -1,4 +1,4 @@
-//! Import of a GitHub repository, run by a mirror worker from a corndogs
+//! Import of a GitHub or GitLab repository by a mirror worker from a corndogs
 //! task (queue [`QUEUE`]). `Mirror/import-repo` and `Mirror/import-all`
 //! only make the row (paused, mirror not enabled) and submit the task, so
 //! a pod restart or a slow fetch never loses an import: corndogs gives the
@@ -6,10 +6,10 @@
 //! when the submission itself was lost.
 //!
 //! The import fetches every branch and tag in batches, captures them as a
-//! history segment, records the refs and the mirrored shas, takes GitHub's
-//! default branch and description, and enables the mirror, all under
-//! origin `github` (nothing goes back to GitHub). The history import of
-//! pull requests then starts by itself.
+//! history segment, records the refs and mirrored shas, reads the remote
+//! default branch and description, and enables the mirror. Events carry
+//! the provider as their origin. Only GitHub imports start a pull request
+//! history job.
 
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
@@ -24,7 +24,7 @@ use crate::github::Failure;
 use crate::mirror::{self, cred, StateRow};
 use crate::{outbox, vcs, App, Code, Error};
 
-/// The corndogs queue of import tasks.
+/// The shared import queue. Keep its legacy name for tasks already queued.
 pub const QUEUE: &str = "import:github";
 /// After this many failed attempts the import stops retrying ("failed").
 pub const MAX_ATTEMPTS: i32 = 6;
@@ -100,7 +100,7 @@ pub fn run(app: &App, repo_id: Uuid) -> Result<Outcome, Error> {
     if repo.mirror_enabled || state.import_done_at.is_some() {
         return Ok(Outcome::Done { refs: 0 });
     }
-    if crate::github_health::is_open(crate::github_health::Lane::Git) {
+    if state.is_github() && crate::github_health::is_open(crate::github_health::Lane::Git) {
         return Ok(Outcome::Held(std::time::Duration::from_secs(60)));
     }
     // Claim: one worker at a time per repository.
@@ -126,13 +126,17 @@ pub fn run(app: &App, repo_id: Uuid) -> Result<Outcome, Error> {
         .first(&mut conn)?;
     match fetch_and_enable(app, &mut conn, &org, &repo, &state) {
         Ok(Ok(refs)) => {
-            crate::metrics::github_import("done");
+            if state.is_github() {
+                crate::metrics::github_import("done");
+            }
             tracing::info!(repo = %state.github_repo, refs, "import complete");
             Ok(Outcome::Done { refs })
         }
         Ok(Err(wait)) => {
             release(&mut conn, repo_id, None)?;
-            crate::metrics::github_import("held");
+            if state.is_github() {
+                crate::metrics::github_import("held");
+            }
             Ok(Outcome::Held(wait))
         }
         Err(e) => {
@@ -140,7 +144,9 @@ pub fn run(app: &App, repo_id: Uuid) -> Result<Outcome, Error> {
             let message = format!("import: {}", e.message);
             release(&mut conn, repo_id, Some((attempts, &message)))?;
             let final_ = attempts >= MAX_ATTEMPTS;
-            crate::metrics::github_import(if final_ { "failed" } else { "retry" });
+            if state.is_github() {
+                crate::metrics::github_import(if final_ { "failed" } else { "retry" });
+            }
             tracing::warn!(repo = %state.github_repo, attempts, error = %e.message, "import attempt failed");
             Ok(Outcome::Failed { message, final_ })
         }
@@ -182,40 +188,73 @@ fn fetch_and_enable(
     // The instance App's installation, the organization's credential set,
     // then the requester's own link; a public repository also reads
     // anonymously.
-    let token = match cred::token_for_owner(app, conn, org.id, owner, state.import_requested_by) {
-        Ok((t, _)) => {
-            tracing::info!(repo = %full, source = %t.label(), "import credential chosen");
-            Some(t)
+    let token = if state.is_github() {
+        match cred::token_for_owner(app, conn, org.id, owner, state.import_requested_by) {
+            Ok((t, _)) => Some(t),
+            Err(Failure::Terminal(_)) => None,
+            Err(Failure::Transient(m)) => return Err(Error::new(Code::Unavailable, m)),
         }
-        Err(Failure::Terminal(_)) => None,
-        Err(Failure::Transient(m)) => return Err(Error::new(Code::Unavailable, m)),
-    };
-    let info = match &token {
-        Some(t) => {
-            let gh = crate::github::Client::new(&app.config.github_api_base, &t.value)
-                .with_label(&t.label());
-            if let Some(wait) = gh.rate_hold() {
-                return Ok(Err(wait));
+    } else {
+        // No credential permits anonymous reads. A configured but invalid
+        // credential must fail instead of falling back to anonymous access.
+        let mut found = false;
+        for purpose in ["import_fetch", "mirror_git_push", "mirror_api"] {
+            if !cred::candidates(conn, org.id, repo.id, purpose)?.is_empty() {
+                found = true;
+                break;
             }
-            gh.get_repo(full).ok().flatten()
         }
-        None => None,
+        if found {
+            Some(cred::token_for_actor(
+                app,
+                conn,
+                org.id,
+                repo.id,
+                "import_fetch",
+                None,
+            )?)
+        } else {
+            None
+        }
+    };
+    let (remote_default, remote_description) = if state.is_github() {
+        let info = match &token {
+            Some(t) => {
+                let gh = crate::github::Client::new(&app.config.github_api_base, &t.value)
+                    .with_label(&t.label());
+                if let Some(wait) = gh.rate_hold() {
+                    return Ok(Err(wait));
+                }
+                gh.get_repo(full).ok().flatten()
+            }
+            None => None,
+        };
+        info.map(|r| (r.default_branch, r.description))
+            .unwrap_or_default()
+    } else {
+        let info =
+            crate::gitlab::project(&state.host, full, token.as_ref().map(|t| t.value.as_str()))?;
+        if repo.visibility == "public" && info.visibility != "public" {
+            return Err(Error::invalid(
+                "a non-public GitLab project must be imported with private visibility",
+            ));
+        }
+        (info.default_branch, info.description)
     };
     let token = token.map(|t| t.value);
     let dir = app.store.ensure(repo.id)?;
-    let url = mirror::github_url(app, full);
-    let remote = mirror::ls_remote(&dir, &url, token.as_deref())?;
+    let url = state.git_url(app);
+    let remote = mirror::ls_remote_for(&dir, &url, token.as_deref(), state.is_github())?;
     // One fetch (in batches) for every branch and tag, not one per ref.
     let specs: Vec<(String, String)> = remote.iter().map(|(n, _)| (n.clone(), n.clone())).collect();
-    if let Err(e) = mirror::fetch_refs(&dir, &url, token.as_deref(), &specs) {
+    if let Err(e) = mirror::fetch_refs_for(&dir, &url, token.as_deref(), &specs, state.is_github())
+    {
         return Err(Error::new(
             Code::Unavailable,
-            format!("fetch from GitHub: {}", e.message()),
+            format!("fetch from {}: {}", state.provider, e.message()),
         ));
     }
-    let default_branch = info
-        .as_ref()
-        .and_then(|r| r.default_branch.clone())
+    let default_branch = remote_default
         .or_else(|| {
             remote
                 .iter()
@@ -223,10 +262,7 @@ fn fetch_and_enable(
                 .map(|(n, _)| n.trim_start_matches("refs/heads/").to_string())
         })
         .unwrap_or_else(|| repo.default_branch.clone());
-    let description = info
-        .as_ref()
-        .and_then(|r| r.description.clone())
-        .filter(|d| !d.is_empty());
+    let description = remote_description.filter(|d| !d.is_empty());
     let updates: Vec<RefUpdate> = remote
         .iter()
         .map(|(n, s)| RefUpdate {
@@ -243,7 +279,7 @@ fn fetch_and_enable(
         .into_iter()
         .filter(|u| !existing.iter().any(|(n, _)| n == &u.name))
         .collect();
-    outbox::with_origin("github", || {
+    outbox::with_origin(&state.provider, || {
         conn.transaction::<(), Error, _>(|conn| {
             vcs::capture(app, conn, repo.id, &dir, &[], &want)?;
             refs::apply(conn, repo.id, &updates, state.import_requested_by)?;

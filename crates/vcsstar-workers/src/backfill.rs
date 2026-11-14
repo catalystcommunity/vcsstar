@@ -62,6 +62,7 @@ pub fn tick(app: &App) -> anyhow::Result<Duration> {
         .inner_join(repos::table.inner_join(orgs::table))
         .filter(repos::mirror_enabled.eq(true))
         .filter(mirror_state::paused.eq(false))
+        .filter(mirror_state::provider.eq("github"))
         .filter(mirror_state::backfill_done_at.is_null())
         .filter(due())
         .order(mirror_state::backfill_pass_at.asc().nulls_first())

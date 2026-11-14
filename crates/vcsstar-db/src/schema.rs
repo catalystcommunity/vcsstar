@@ -343,6 +343,8 @@ diesel::table! {
         import_done_at -> Nullable<Timestamptz>,
         pull_sync_interval_s -> Nullable<Int4>,
         ref_reconcile_interval_s -> Nullable<Int4>,
+        provider -> Text,
+        host -> Text,
     }
 }
 
