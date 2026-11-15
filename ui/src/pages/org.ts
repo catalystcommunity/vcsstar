@@ -113,13 +113,13 @@ export class OrgPage extends Page {
     const name = textField("Local repository name", { required: true, class: "w-md" });
     const visibility = comboBox("Local visibility", ["private", "public"], { value: "private" });
     const feedback = new Feedback();
-    fill(this.gitlabSection, section("Import from GitLab (prototype)",
-      "Imports branches, tags, description, and the default branch. Remote changes are read on a schedule. Merge requests, webhooks, and project settings do not sync. Set a GitLab token under Mirror credentials first for a private project.",
+    fill(this.gitlabSection, section("Import from GitLab",
+      "Imports branches, tags, and collaboration history. Changes from each connected repository can sync to the other destinations. Set a GitLab token under Mirror credentials first for a private project.",
       feedback.element,
       form({ class: "form-stack", onSubmit: () => void act(() => api.mirror.importRepo({
         ctx: ctx(), org: this.org, name: name.value, provider: "gitlab", host: host.value,
         githubRepo: project.value, mode: "import_drift", visibility: visibility.value,
-      }), { feedback, done: "GitLab import queued. Open the repository Mirror tab for progress.", after: () => void this.loadRepos() }) },
+      }), { feedback, done: "GitLab import queued. Open the repository Sync tab for progress.", after: () => void this.loadRepos() }) },
       h("div", { class: "form-row" }, host, project, name, visibility),
       button("Import project", { type: "submit", variant: "default" })),
     ));

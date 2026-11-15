@@ -145,6 +145,19 @@ pub const IMPLEMENTED: &[(&str, &str)] = &[
     ("Hooks", "list-deliveries"),
     ("Hooks", "redeliver"),
     ("Hooks", "update-endpoint"),
+    ("Mirror", "list-connections"),
+    ("Mirror", "connect"),
+    ("Mirror", "update-connection"),
+    ("Mirror", "sync-now"),
+    ("Mirror", "webhook-secret"),
+    ("Mirror", "get-policy"),
+    ("Mirror", "set-policy"),
+    ("Mirror", "list-conflicts"),
+    ("Mirror", "resolve-conflict"),
+    ("Mirror", "link-provider"),
+    ("Mirror", "list-provider-links"),
+    ("Mirror", "unlink-provider"),
+    ("Mirror", "list-sync-records"),
     ("Mirror", "status"),
     ("Mirror", "list-blocked"),
     ("Mirror", "replay-blocked"),
@@ -186,6 +199,8 @@ pub const IMPLEMENTED: &[(&str, &str)] = &[
     ("PullRequests", "retarget"),
     ("PullRequests", "update"),
     ("PullRequests", "list-reviews"),
+    ("PullRequests", "edit-comment"),
+    ("PullRequests", "delete-comment"),
     ("PullRequests", "list-comments"),
     ("Auth", "exchange-act-as-credential"),
     ("Auth", "scope-set"),
@@ -724,6 +739,123 @@ impl Dispatcher for AppDispatcher {
                 hooks::update_endpoint
             ),
 
+            ("Mirror", "list-connections") => op!(
+                app,
+                peer,
+                payload,
+                decode_get_repo_request,
+                encode_sync_connections,
+                "SyncConnections",
+                crate::star::service::list
+            ),
+            ("Mirror", "connect") => op!(
+                app,
+                peer,
+                payload,
+                decode_connect_remote_request,
+                encode_sync_connection,
+                "SyncConnection",
+                crate::star::service::connect
+            ),
+            ("Mirror", "update-connection") => op!(
+                app,
+                peer,
+                payload,
+                decode_update_connection_request,
+                encode_sync_connection,
+                "SyncConnection",
+                crate::star::service::update
+            ),
+            ("Mirror", "sync-now") => op!(
+                app,
+                peer,
+                payload,
+                decode_sync_connection_ref,
+                encode_ok,
+                "Ok",
+                crate::star::service::sync_now
+            ),
+            ("Mirror", "webhook-secret") => op!(
+                app,
+                peer,
+                payload,
+                decode_sync_connection_ref,
+                encode_sync_webhook_secret,
+                "SyncWebhookSecret",
+                crate::star::service::webhook_secret
+            ),
+            ("Mirror", "get-policy") => op!(
+                app,
+                peer,
+                payload,
+                decode_get_repo_request,
+                encode_sync_policy,
+                "SyncPolicy",
+                crate::star::service::get_policy
+            ),
+            ("Mirror", "set-policy") => op!(
+                app,
+                peer,
+                payload,
+                decode_set_sync_policy_request,
+                encode_sync_policy,
+                "SyncPolicy",
+                crate::star::service::set_policy
+            ),
+            ("Mirror", "list-conflicts") => op!(
+                app,
+                peer,
+                payload,
+                decode_get_repo_request,
+                encode_sync_conflicts,
+                "SyncConflicts",
+                crate::star::service::conflicts
+            ),
+            ("Mirror", "resolve-conflict") => op!(
+                app,
+                peer,
+                payload,
+                decode_resolve_sync_conflict_request,
+                encode_ok,
+                "Ok",
+                crate::star::service::resolve
+            ),
+            ("Mirror", "link-provider") => op!(
+                app,
+                peer,
+                payload,
+                decode_link_provider_request,
+                encode_provider_link,
+                "ProviderLink",
+                crate::star::service::link
+            ),
+            ("Mirror", "list-provider-links") => op!(
+                app,
+                peer,
+                payload,
+                decode_empty,
+                encode_provider_links,
+                "ProviderLinks",
+                crate::star::service::links
+            ),
+            ("Mirror", "unlink-provider") => op!(
+                app,
+                peer,
+                payload,
+                decode_unlink_provider_request,
+                encode_ok,
+                "Ok",
+                crate::star::service::unlink
+            ),
+            ("Mirror", "list-sync-records") => op!(
+                app,
+                peer,
+                payload,
+                decode_sync_records_request,
+                encode_sync_records,
+                "SyncRecords",
+                crate::star::service::records
+            ),
             ("Mirror", "status") => op!(
                 app,
                 peer,
@@ -1094,6 +1226,24 @@ impl Dispatcher for AppDispatcher {
                 encode_list_reviews_response,
                 "ListReviewsResponse",
                 prs::list_reviews
+            ),
+            ("PullRequests", "edit-comment") => op!(
+                app,
+                peer,
+                payload,
+                decode_edit_comment_request,
+                encode_comment,
+                "Comment",
+                prs::edit_comment
+            ),
+            ("PullRequests", "delete-comment") => op!(
+                app,
+                peer,
+                payload,
+                decode_delete_comment_request,
+                encode_ok,
+                "Ok",
+                prs::delete_comment
             ),
             ("PullRequests", "list-comments") => op!(
                 app,

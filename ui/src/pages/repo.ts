@@ -7,14 +7,15 @@ import { Page } from "../page";
 import { act, badge, confirmDanger, csv, empty, Feedback, firstLine, isoDate, loading, meta, mono, pageHead, panel, refShort, section, sortKey, table, td, timeCell, tr } from "../ui";
 import { diffView, mediaElement } from "./diff";
 import { codeView, drawMermaid, isMarkdown, isMermaid, languageOf, markdown, mediaType, rawUrl, readAll } from "../render";
+import { syncTab } from "./sync";
 import { hooksSection } from "./hooks";
 import { sigTone } from "./pull";
 import type { BranchProtection, Repo } from "../generated/types.gen.ts";
 
-const TABS = [["code", "Code"], ["commits", "Commits"], ["pulls", "Pull requests"], ["mirror", "Mirror"], ["hooks", "Webhooks"], ["settings", "Settings"]] as const;
+const TABS = [["code", "Code"], ["commits", "Commits"], ["pulls", "Pull requests"], ["mirror", "Sync"], ["hooks", "Webhooks"], ["settings", "Settings"]] as const;
 type TabId = (typeof TABS)[number][0];
 /** What an anonymous viewer gets; the other tabs need a sign-in and are not shown. */
-const PUBLIC_TABS: readonly TabId[] = ["code", "commits", "pulls", "mirror"];
+const PUBLIC_TABS: readonly TabId[] = ["code", "commits", "pulls"];
 /** Repository roles, lowest first, as `Repo.viewerRole` names them. */
 const ROLES = ["read", "write", "maintain", "admin"] as const;
 type Role = (typeof ROLES)[number];
@@ -150,7 +151,7 @@ export class RepoPage extends Page {
       case "code": this.tab = codeTab(common, this.rest); break;
       case "commits": this.tab = commitsTab(common, this.rest); break;
       case "pulls": this.tab = pullsTab(common); break;
-      case "mirror": this.tab = mirrorTab(common); break;
+      case "mirror": this.tab = syncTab(common); break;
       case "hooks": this.tab = { element: hooksSection(this.org, this.name), update() {}, refresh() {} }; break;
       case "settings": this.tab = settingsTab(common); break;
     }
@@ -397,83 +398,6 @@ function pullsTab(c: Common): Tab {
 }
 
 // --- Mirror ------------------------------------------------------------------
-
-function mirrorTab(c: Common): Tab {
-  const repo = { org: c.org, name: c.name };
-  const statusBox = h("div");
-  const blockedBox = h("div");
-  const feedback = new Feedback();
-  let configured = false;
-
-  async function load() {
-    try {
-      const s = await api.mirror.status({ ctx: ctx(), repo });
-      if (!configured) {
-        provider.value = s.provider ?? "github";
-        host.value = s.host ?? "github.com";
-        github.value = s.githubRepo ?? "";
-        mode.value = s.githubRepo ? s.mode : "import_drift";
-        configured = true;
-      }
-      pullEvery.disabled = s.provider === "gitlab";
-      if (c.can("admin")) { pullEvery.value = Math.max(1, Math.round(s.pullSyncIntervalS / 60)); refsEvery.value = Math.max(1, Math.round(s.refReconcileIntervalS / 60)); }
-      fill(statusBox, panel(
-        h("div", { class: "row" }, h("strong", null, s.provider === "gitlab" ? "GitLab" : "GitHub"), s.host && mono(s.host), s.githubRepo ? mono(s.githubRepo) : h("span", { class: "muted" }, "not configured"), badge(s.mode.replace(/_/g, " ")), badge(s.paused ? "paused" : "active", s.paused ? "warn" : "ok"), badge(`${s.pending} pending`), badge(`${s.blocked} blocked`, s.blocked ? "bad" : "neutral")),
-        meta(h("span", null, `last success ${when(s.lastSuccessAt) || "never"}`), h("span", null, `last full reconcile ${when(s.lastFullReconcileAt) || "never"}`), s.provider !== "gitlab" && h("span", null, `pull requests synced from GitHub up to ${s.lastPullSyncAt ? isoDate(s.lastPullSyncAt) : "never"}`)),
-        s.backfillState && meta(h("span", null, "pull request history from GitHub: ", badge(s.backfillState, s.backfillState === "done" ? "ok" : "info"), ` ${s.backfillPulls ?? 0} pull requests`, s.backfillDoneAt ? `, done ${when(s.backfillDoneAt)}` : s.backfillStartedAt ? `, started ${when(s.backfillStartedAt)}` : "")),
-        s.importState && s.importState !== "done" && meta(h("span", null, "import of the branches and tags: ", badge(s.importState === "failed" ? "failed" : "queued", s.importState === "failed" ? "bad" : "info"))),
-        meta(s.provider !== "gitlab" && h("span", null, `pull request pass every ${duration(s.pullSyncIntervalS)}`), h("span", null, `ref reconcile every ${duration(s.refReconcileIntervalS)}`)),
-        s.lastError && h("p", { class: "problem" }, s.lastError),
-        c.can("maintain") && h("div", { class: "row" },
-          c.can("admin") && s.provider !== "gitlab" && button("Import history again", { variant: "default", disabled: !s.githubRepo || s.backfillState !== "done", onClick: () => void act(() => api.mirror.backfill({ ctx: ctx(), repo }), { done: "The pull request history import starts again from the first pull request.", after: () => void load() }) }),
-          button("Reconcile now", { variant: "default", onClick: () => void act(() => api.mirror.reconcile({ ctx: ctx(), repo }), { done: "Reconcile ran.", after: () => void load() }) }),
-          c.can("admin") && (s.paused
-            ? button("Resume", { variant: "default", onClick: () => void act(() => api.mirror.resume({ ctx: ctx(), repo }), { done: "Mirror resumed.", after: () => void load() }) })
-            : button("Pause", { variant: "default", onClick: () => void act(() => api.mirror.pause({ ctx: ctx(), repo }), { done: "Mirror paused.", after: () => void load() }) })),
-          button("Replay all blocked", { variant: "default", disabled: !s.blocked, onClick: () => void act(() => api.mirror.replayBlocked({ ctx: ctx(), repo, actionIds: [] }), { done: "Blocked actions queued again.", after: () => void load() }) }),
-        ),
-      ));
-    } catch (error) {
-      fill(statusBox);
-      feedback.error(error);
-    }
-    // The blocked list needs write access; the actions need maintain or
-    // admin. Not requested for a caller without them.
-    if (!c.can("write")) return;
-    try {
-      const b = await api.mirror.listBlocked({ ctx: ctx(), repo });
-      if (b.actions.length === 0) { fill(blockedBox); return; }
-      const t = table(["Object", "Kind", "Credential purpose", "Exact error", "Blocked", ""]);
-      fill(t.body, ...b.actions.map((a) => tr(td("", mono(a.objectKey)), a.actionKind, a.credentialPurpose, td("small", a.error), timeCell(a.blockedAt),
-        td("actions", c.can("maintain") && textButton("Replay", () => void act(() => api.mirror.replayBlocked({ ctx: ctx(), repo, actionIds: [a.id] }), { done: "Action queued again.", after: () => void load() }))))));
-      fill(blockedBox, section("Blocked actions", "Each row holds the latest desired state for its object. Fix the credential, then replay.", t.wrap));
-    } catch {
-      fill(blockedBox);
-    }
-  }
-
-  const provider = comboBox("Provider", [{ value: "github", label: "GitHub" }, { value: "gitlab", label: "GitLab (prototype)" }], { value: "github" });
-  const host = textField("Host", { value: "github.com", required: true, class: "w-md", helper: "Hostname and optional port, without https://" });
-  provider.addEventListener("change", () => { host.value = provider.value === "gitlab" ? "gitlab.com" : "github.com"; });
-  const github = textField("Project path", { placeholder: "namespace/project", required: true, class: "w-md", autocapitalize: "none", spellcheck: false });
-  const mode = comboBox("Mode", [
-    { value: "authoritative_vcsstar", label: "vcsstar is authoritative", description: "Branches that exist only on the remote are removed" },
-    { value: "import_drift", label: "Import drift", description: "Branches pushed to the remote are imported" },
-    { value: "flag_drift", label: "Flag drift", description: "Differences are reported, not changed" },
-  ], { value: "import_drift" });
-  const pullEvery = spinBox("Pull requests every (minutes)", { min: 1, max: 10080, value: 15 });
-  const refsEvery = spinBox("Branches and tags every (minutes)", { min: 1, max: 10080, value: 15 });
-  const schedule = c.can("admin") && section("Schedule", "How often this repository reads remote changes. GitLab supports the branch and tag schedule only.",
-    form({ class: "form-row", onSubmit: () => void act(() => api.mirror.setSchedule({ ctx: ctx(), repo, pullSyncIntervalS: Math.round(Number(pullEvery.value) * 60), refReconcileIntervalS: Math.round(Number(refsEvery.value) * 60) }), { done: "Schedule saved.", after: () => void load() }) },
-      pullEvery, refsEvery, button("Save", { type: "submit", variant: "default" }),
-      textButton("Use the defaults", () => void act(() => api.mirror.setSchedule({ ctx: ctx(), repo, pullSyncIntervalS: 0, refReconcileIntervalS: 0 }), { done: "Schedule set to the defaults.", after: () => void load() }))));
-  const configure = c.can("admin") && section("Configure", "Set credentials on the organization page. GitLab supports branches and tags only. Create the remote project first.",
-    form({ class: "form-row", onSubmit: () => void act(() => api.mirror.configure({ ctx: ctx(), repo, provider: provider.value, host: host.value, githubRepo: github.value, mode: mode.value }), { done: "Mirror configured.", after: () => void load() }) }, provider, host, github, mode, button("Save", { type: "submit", variant: "default" })));
-
-  fill(statusBox, loading());
-  void load();
-  return { element: h("div", null, feedback.element, statusBox, blockedBox, schedule, configure), update() {}, refresh() { void load(); } };
-}
 
 // --- Settings ----------------------------------------------------------------
 

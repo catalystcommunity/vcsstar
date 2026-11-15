@@ -38,7 +38,7 @@ corndogs = { git = "https://github.com/catalystcommunity/corndogs", rev = "f1b6e
 # Server
 rocket = { version = "0.5", default-features = false }
 rocket_ws = "0.1"
-diesel = { version = "2.2", features = ["postgres", "r2d2", "uuid", "chrono"] }
+diesel = { version = "2.2", features = ["postgres", "r2d2", "uuid", "chrono", "serde_json"] }
 diesel_migrations = "2.2"
 r2d2 = "0.8"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }

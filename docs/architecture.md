@@ -1,19 +1,14 @@
 # vcsstar architecture
 
-vcsstar is the place a team works on code: pushes, pull requests, reviews,
-statuses, and the API around them. GitHub stays the published copy that the
-rest of the world reads, and vcsstar keeps both sides in step in both
-directions. When GitHub is down, work on vcsstar continues; when GitHub
-comes back, the mirror catches up. This document shows the pieces and how
-they fit. The repository guide (`CLAUDE.md`) holds the rules each piece
-follows; the plans under `plan/` hold the reasoning.
+VCSStar stores code and collaboration records. One repository can connect
+to multiple GitHub and GitLab repositories. Changes from any connected
+system can reach every configured destination. Each system keeps control
+of its authentication, authorization, visibility, and protection rules.
+Other VCSStar instances are future destinations.
 
-The GitLab prototype uses the same import queue and Git mirror engine.
-Each mirror stores a provider, host, and project path. Credentials must
-match the provider and host. GitLab imports read project metadata through
-REST API v4. Git transfers use HTTPS. Scheduled passes read branch and tag
-changes. GitLab does not use GitHub Apps, account links, webhooks, pull
-request jobs, or GitHub outage controls. See [GitLab setup](gitlab.md).
+The [sync guide](gitlab.md) describes setup, conflicts, history, and API
+limits. GitLab.com and self-hosted GitLab use REST API v4 and HTTPS Git.
+The repository guide (`CLAUDE.md`) gives the implementation rules.
 
 ## The pieces
 
@@ -53,7 +48,7 @@ flowchart TB
     subgraph Outside["Outside"]
         direction LR
         gh["GitHub<br/>mirrored repositories<br/>App · webhooks"]
-        gl["GitLab prototype<br/>branches and tags<br/>access token"]
+        gl["GitLab<br/>Git and collaboration<br/>access token · webhooks"]
         lk["LinkKeys<br/>sign-in · application keys"]
         prom["Prometheus · OTLP"]
     end
@@ -64,7 +59,7 @@ flowchart TB
     Instance <-->|"submit · claim · park"| cd
     Instance <-->|"REST · git push · ls-remote"| gh
     gh -->|"webhooks"| Instance
-    Instance <-->|"HTTPS git · project metadata"| gl
+    Instance <-->|"HTTPS Git · REST · webhooks"| gl
     Instance <-->|"Rp ops over TCP"| lk
     Instance -.->|"scrape · spans"| prom
 
@@ -113,66 +108,40 @@ sequenceDiagram
     P->>Q: one keyed task per hook delivery and per mirror object key
 ```
 
-## Keeping GitHub in step
-
-The dispatcher turns outbox events into at most one pending mirror action
-per object key (a ref, a pull request, a comment, a status). Workers claim
-tasks from corndogs, read the desired state from Postgres at that moment,
-and converge GitHub to it. Inbound, every GitHub webhook is captured first
-and processed later; a pull-based pass asks GitHub for what webhooks missed.
+## Connection sync
 
 ```mermaid
-%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Inter, Helvetica, Arial, sans-serif", "fontSize": "14px", "primaryColor": "#f4f6fb", "primaryBorderColor": "#5b6b8c", "primaryTextColor": "#1f2a44", "lineColor": "#5b6b8c", "clusterBkg": "#fafbfe", "clusterBorder": "#c9d2e3"}, "flowchart": {"curve": "basis"}}}%%
-flowchart TB
-    classDef pg fill:#eaf7ee,stroke:#2e8b57,color:#0d3b22
-    classDef work fill:#e8f1ff,stroke:#2f66b3,color:#0f2a55
-    classDef gh fill:#f3e8ff,stroke:#7a3fb0,color:#2d1152
-    classDef queue fill:#fff0f0,stroke:#b3402f,color:#4a1109
-    classDef guard fill:#fff4e5,stroke:#c77d12,color:#4a2e00
-
-    subgraph Out["vcsstar to GitHub"]
-        direction LR
-        ev[("outbox events<br/>origin stamped")]:::pg
-        disp["dispatcher<br/>skips origin=github<br/>and shadow actors"]:::work
-        act[("mirror_actions<br/>one pending per key<br/>newest state wins")]:::pg
-        q1[["mirror:org/repo"]]:::queue
-        mw["mirror-worker<br/>token: user link → App → credential"]:::work
-        ev --> disp --> act --> q1 --> mw
-    end
-
-    gh["GitHub<br/>repository · pull requests · statuses"]:::gh
-    mw -->|"git push --force-with-lease<br/>REST create / patch"| gh
-
-    subgraph In["GitHub to vcsstar"]
-        direction LR
-        hook["POST /hooks/github<br/>verify signature · capture · 202"]:::work
-        q2[["ingest:github"]]:::queue
-        ing["ingest-worker<br/>applies under origin=github"]:::work
-        rows[("pull requests · reviews<br/>comments · statuses<br/>github ids · updated_at")]:::pg
-        hook --> q2 --> ing --> rows
-    end
-    gh -->|"webhooks (App)"| hook
-
-    subgraph Floor["Floor under the webhooks"]
-        direction LR
-        rec["reconcile pass<br/>ls-remote refs every 15 min"]:::work
-        pull["pull pass<br/>pull requests by updated_at<br/>down to the watermark"]:::work
-    end
-    gh -.->|"state, not events"| rec
-    gh -.-> pull
-    rec --> act
-    pull --> rows
-
-    breaker{{"github_health<br/>lane breakers api · git<br/>per-token rate limits<br/>shared in Postgres"}}:::guard
-    breaker -.->|"hold while open<br/>probe · recover · re-check all"| mw
-    breaker -.-> rec
-    breaker -.-> pull
+flowchart LR
+    GH[GitHub] <--> W[Connection workers]
+    GL[GitLab] <--> W
+    W <--> P[(VCSStar records and Git history)]
+    U[Local API and Git changes] --> P
+    P --> O[Transactional outbox]
+    O --> Q[corndogs tasks]
+    Q --> W
 ```
 
-What makes this safe to repeat: every row remembers its GitHub id and
-GitHub's `updated_at`, bodies vcsstar posts carry a marker, a snapshot older
-than the applied one is ignored, and nothing written under origin `github`
-or by a shadow actor is ever sent back.
+Each connection stores its provider, host, project, setup options, and
+progress. Each object has a local record and a mapping at each destination.
+The worker compares both sides with their own accepted copies. This permits
+a full native record and a remote summary to differ without an echo loop.
+
+A conflict uses a preferred source or waits for an assigned identity or
+team. Only that item stops. The worker applies each native change with its
+outbox event in one transaction. It retains original provider responses
+and records of deleted items. Permission failures remain visible errors.
+
+The `mirror-worker` role runs `sync:connections` tasks. A PostgreSQL advisory
+lock permits one connection pass per repository. Polling retries failed
+work. Incoming webhooks authenticate and enter corndogs before the HTTP
+receiver acknowledges them. The worker stores the raw body and reads the
+remote API. A failed page cannot appear as a set of deleted records.
+
+Enabled legacy mirrors become connections after import. The old GitHub
+executors no longer process those repositories. Legacy tables remain for
+import status and old object IDs. The new policy replaces the old mirror
+mode. The generated CSIL operations expose connection setup, policy,
+resolution, account links, and stored records to both the UI and CLI.
 
 ## When GitHub is down
 

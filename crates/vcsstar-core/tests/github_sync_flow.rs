@@ -1917,3 +1917,494 @@ fn a_fork_in_another_org_is_listed_and_opens_a_pull_request_back() {
         (down.as_str(), up.as_str())
     );
 }
+
+// The star engine uses separate connection baselines. These tests use real
+// PostgreSQL and git, with a local REST server in place of each provider.
+#[test]
+fn star_sync_imports_history_resolves_one_item_and_keeps_permissions_local() {
+    use vcsstar_core::services::repos as repo_svc;
+    use vcsstar_core::star::{engine, local, service, store};
+    use vcsstar_types as t;
+    if std::env::var("DATABASE_URL").is_err() {
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let routes: Routes = Default::default();
+    let asked = Default::default();
+    let base = fake_api(routes.clone(), asked);
+    let app = app_with_api(tmp.path(), &base)
+        .expect("test database must be available and migrations must pass");
+    let principal = principal(&app);
+    let ctx = ReqCtx {
+        request_id: "star".into(),
+        principal: Some(principal.clone()),
+        peer: Peer::default(),
+    };
+    let org = format!("star{}", &uuid::Uuid::now_v7().simple().to_string()[20..]);
+    orgs::create(
+        &app,
+        &ctx,
+        t::CreateOrgRequest {
+            ctx: wire_ctx(),
+            name: org.clone(),
+            display_name: None,
+            github_owner: None,
+        },
+    )
+    .unwrap();
+    let repo = t::RepoRef {
+        org: org.clone(),
+        name: "thing".into(),
+        instance: None,
+    };
+    repo_svc::create(
+        &app,
+        &ctx,
+        t::CreateRepoRequest {
+            ctx: wire_ctx(),
+            org: org.clone(),
+            name: repo.name.clone(),
+            vcs_type: None,
+            visibility: Some("private".into()),
+            default_branch: None,
+            description: Some("local description".into()),
+        },
+    )
+    .unwrap();
+    let full = format!("{org}/thing");
+    let (_, main, feat) = fake_github(tmp.path(), &org, "thing");
+    let prefix = format!("/repos/{full}");
+    let mut pull = pull_json(1, &full, &feat, &main, "closed", true);
+    pull["merged_at"] = json!("2024-01-03T00:00:00Z");
+    let note = json!({"id":12,"body":"historic comment","user":{"id":91,"login":"author"},"created_at":"2024-01-02T00:00:00Z"});
+    routes.lock().unwrap().extend([
+        (prefix.clone(),json!({"description":"remote description","default_branch":"main","archived":false,"private":false})),
+        (format!("{prefix}/pulls"),json!([pull])),
+        (format!("{prefix}/pulls/1/commits"),json!([{"sha":main},{"sha":feat}])),
+        (format!("{prefix}/issues/1/comments"),json!([note])),
+        (format!("{prefix}/pulls/1/comments"),json!([])),
+        (format!("{prefix}/pulls/1/reviews"),json!([{"id":9,"state":"APPROVED","body":"historic review","commit_id":feat,"user":{"id":91,"login":"author"},"submitted_at":"2024-01-02T00:00:00Z"}])),
+        (format!("{prefix}/issues"),json!([])),
+        (format!("{prefix}/commits"),json!([{"sha":main},{"sha":feat}])),
+        (format!("{prefix}/commits/{main}/statuses"),json!([])),
+        (format!("{prefix}/commits/{feat}/statuses"),json!([{"id":3,"context":"ci","state":"success","creator":{"id":91,"login":"author"}}])),
+    ]);
+    let connected = service::connect(
+        &app,
+        &ctx,
+        t::ConnectRemoteRequest {
+            ctx: wire_ctx(),
+            repo: repo.clone(),
+            provider: "github".into(),
+            host: "github.com".into(),
+            project: full,
+            create_remote: None,
+            automatic_webhook: None,
+        },
+    )
+    .unwrap();
+    assert!(!connected.automatic_webhook);
+    let id = uuid::Uuid::parse_str(&connected.id).unwrap();
+    let task = engine::Task {
+        connection_id: id,
+        webhook: Some(b"{}".to_vec()),
+    };
+    assert!(engine::run(&app, &task).unwrap());
+    let mut conn = app.conn().unwrap();
+    let connection = store::connection(&mut conn, id).unwrap();
+    assert!(
+        connection.last_error.is_none(),
+        "{:?}",
+        connection.last_error
+    );
+    let (_, native) = local::load_repo(&mut conn, connection.repo_id).unwrap();
+    assert_eq!(native.visibility, "private");
+    let snapshot = local::snapshot(&mut conn, &native).unwrap();
+    assert_eq!(
+        snapshot
+            .values()
+            .filter(|i| i.kind == "pr" && i.data["state"] == "merged")
+            .count(),
+        1
+    );
+    assert_eq!(snapshot.values().filter(|i| i.kind == "comment").count(), 1);
+    assert_eq!(snapshot.values().filter(|i| i.kind == "review").count(), 1);
+    assert_eq!(snapshot.values().filter(|i| i.kind == "status").count(), 1);
+    assert_eq!(
+        refs::get(&mut conn, native.id, "refs/heads/main")
+            .unwrap()
+            .unwrap()
+            .0,
+        main
+    );
+    let conflicts = store::conflicts(&mut conn, native.id).unwrap();
+    assert_eq!(conflicts.len(), 1, "only metadata should conflict");
+    assert_eq!(conflicts[0].object_key, "settings");
+    drop(conn);
+    service::resolve(
+        &app,
+        &ctx,
+        t::ResolveSyncConflictRequest {
+            ctx: wire_ctx(),
+            repo: repo.clone(),
+            conflict_id: conflicts[0].id.to_string(),
+            choice: "remote".into(),
+        },
+    )
+    .unwrap();
+    engine::run(&app, &task).unwrap();
+    let mut conn = app.conn().unwrap();
+    let (_, native) = local::load_repo(&mut conn, native.id).unwrap();
+    assert_eq!(native.description.as_deref(), Some("remote description"));
+    assert_eq!(native.visibility, "private");
+    assert!(store::conflicts(&mut conn, native.id).unwrap().is_empty());
+    // A second pass is idempotent and keeps the original historical time.
+    drop(conn);
+    engine::run(&app, &task).unwrap();
+    let mut conn = app.conn().unwrap();
+    let before = local::snapshot(&mut conn, &native).unwrap();
+    let (comment_key, comment) = before.iter().find(|(_, i)| i.kind == "comment").unwrap();
+    assert_eq!(comment.created_at, 1704153600000);
+    // Remote deletion removes the native comment and retains its full record.
+    routes
+        .lock()
+        .unwrap()
+        .iter_mut()
+        .find(|(p, _)| p == &format!("{prefix}/issues/1/comments"))
+        .unwrap()
+        .1 = json!([]);
+    drop(conn);
+    engine::run(&app, &task).unwrap();
+    let mut conn = app.conn().unwrap();
+    assert!(!local::snapshot(&mut conn, &native)
+        .unwrap()
+        .contains_key(comment_key));
+    let archive = store::objects(&mut conn, native.id)
+        .unwrap()
+        .into_iter()
+        .find(|o| &o.object_key == comment_key)
+        .unwrap();
+    assert!(archive.deleted);
+    assert_eq!(archive.payload["data"]["body"], "historic comment");
+    // A protected branch blocks only that branch. Other refs still import.
+    diesel::sql_query("INSERT INTO branch_protections(id,repo_id,ref_pattern,required_approvals) VALUES($2,$1,'refs/heads/main',1)")
+        .bind::<diesel::sql_types::Uuid,_>(native.id).bind::<diesel::sql_types::Uuid,_>(uuid::Uuid::now_v7()).execute(&mut conn).unwrap();
+    let bare = tmp.path().join("github").join(&org).join("thing.git");
+    git(&bare, &["update-ref", "refs/heads/main", &feat]);
+    git(&bare, &["update-ref", "refs/tags/release", &feat]);
+    drop(conn);
+    engine::run(&app, &task).unwrap();
+    let mut conn = app.conn().unwrap();
+    assert_eq!(
+        refs::get(&mut conn, native.id, "refs/heads/main")
+            .unwrap()
+            .unwrap()
+            .0,
+        main
+    );
+    assert_eq!(
+        refs::get(&mut conn, native.id, "refs/tags/release")
+            .unwrap()
+            .unwrap()
+            .0,
+        feat
+    );
+    assert!(store::connection(&mut conn, id)
+        .unwrap()
+        .last_error
+        .unwrap()
+        .contains("requires a reviewed merge"));
+    // A second provider is a separate connection and has a separate policy target.
+    drop(conn);
+    let second = service::connect(
+        &app,
+        &ctx,
+        t::ConnectRemoteRequest {
+            ctx: wire_ctx(),
+            repo: repo.clone(),
+            provider: "gitlab".into(),
+            host: "gitlab.example.test".into(),
+            project: format!("{org}/nested/thing"),
+            create_remote: Some(true),
+            automatic_webhook: None,
+        },
+    )
+    .unwrap();
+    assert_ne!(second.id, connected.id);
+    assert_eq!(
+        service::list(
+            &app,
+            &ctx,
+            t::GetRepoRequest {
+                ctx: wire_ctx(),
+                repo: repo.clone()
+            }
+        )
+        .unwrap()
+        .connections
+        .len(),
+        2
+    );
+    // A token without management rights cannot add a connection.
+    let mut limited = ReqCtx {
+        request_id: "limited".into(),
+        principal: ctx.principal.clone(),
+        peer: Peer::default(),
+    };
+    limited.principal.as_mut().unwrap().scopes = vec!["repo:read".into()];
+    assert_eq!(
+        service::connect(
+            &app,
+            &limited,
+            t::ConnectRemoteRequest {
+                ctx: wire_ctx(),
+                repo,
+                provider: "gitlab".into(),
+                host: "gitlab.com".into(),
+                project: "group/other".into(),
+                create_remote: None,
+                automatic_webhook: None
+            }
+        )
+        .unwrap_err()
+        .code,
+        vcsstar_core::Code::Forbidden
+    );
+}
+
+#[test]
+fn star_gitlab_reads_closed_history_and_updates_summaries_without_duplicates() {
+    use vcsstar_core::services::repos as repo_svc;
+    use vcsstar_core::star::{remote, service, store, Item};
+    use vcsstar_types as t;
+    if std::env::var("DATABASE_URL").is_err() {
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let routes: Routes = Default::default();
+    let asked: std::sync::Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+    let base = fake_api(routes.clone(), asked.clone());
+    let app = app_with_api(tmp.path(), &base).expect("test database and migrations");
+    let principal = principal(&app);
+    let ctx = ReqCtx {
+        request_id: "gitlab".into(),
+        principal: Some(principal.clone()),
+        peer: Peer::default(),
+    };
+    let org = format!("glstar{}", &uuid::Uuid::now_v7().simple().to_string()[20..]);
+    orgs::create(
+        &app,
+        &ctx,
+        t::CreateOrgRequest {
+            ctx: wire_ctx(),
+            name: org.clone(),
+            display_name: None,
+            github_owner: None,
+        },
+    )
+    .unwrap();
+    let repo = t::RepoRef {
+        org: org.clone(),
+        name: "thing".into(),
+        instance: None,
+    };
+    repo_svc::create(
+        &app,
+        &ctx,
+        t::CreateRepoRequest {
+            ctx: wire_ctx(),
+            org: org.clone(),
+            name: repo.name.clone(),
+            vcs_type: None,
+            visibility: Some("private".into()),
+            default_branch: None,
+            description: None,
+        },
+    )
+    .unwrap();
+    let linked = service::connect(
+        &app,
+        &ctx,
+        t::ConnectRemoteRequest {
+            ctx: wire_ctx(),
+            repo: repo.clone(),
+            provider: "gitlab".into(),
+            host: "gitlab.example.test:8443".into(),
+            project: format!("{org}/nested/thing"),
+            create_remote: None,
+            automatic_webhook: None,
+        },
+    )
+    .unwrap();
+    let mut conn = app.conn().unwrap();
+    let c = store::connection(&mut conn, uuid::Uuid::parse_str(&linked.id).unwrap()).unwrap();
+    // Authentication and project binding are checked before queue submission.
+    drop(conn);
+    assert_eq!(
+        vcsstar_core::star::engine::accept_webhook(
+            &app,
+            c.id,
+            None,
+            Some("wrong"),
+            None,
+            b"not-json"
+        )
+        .unwrap_err()
+        .code,
+        vcsstar_core::Code::Forbidden
+    );
+    let secret = vcsstar_core::mirror::cred::open(&app, &c.webhook_secret).unwrap();
+    assert_eq!(
+        vcsstar_core::star::engine::accept_webhook(
+            &app,
+            c.id,
+            None,
+            Some(&secret),
+            None,
+            br#"{"project":{"path_with_namespace":"wrong/project"}}"#
+        )
+        .unwrap_err()
+        .code,
+        vcsstar_core::Code::InvalidArgument
+    );
+    let mut conn = app.conn().unwrap();
+    let mut client = remote::Client::new(&app, &c, "test-token".into(), false);
+    client.base = base;
+    let path = client.project_path(&c);
+    assert!(path.contains("%2Fnested%2Fthing"));
+    let main = "a".repeat(40);
+    let feat = "b".repeat(40);
+    let user = json!({"id":173,"username":"gl-author"});
+    let mr = json!({"iid":3,"title":"Historical MR","description":"original body","state":"merged","source_branch":"old-branch","target_branch":"main","sha":feat,"diff_refs":{"base_sha":main},"merge_commit_sha":main,"source_project_id":5,"target_project_id":5,"author":user,"created_at":"2020-03-01T00:00:00Z"});
+    routes.lock().unwrap().extend([
+        (path.clone(),json!({"description":"GitLab","default_branch":"main","archived":false,"visibility":"public"})),
+        (format!("{path}/merge_requests"),json!([mr])),
+        (format!("{path}/merge_requests/3"),mr),
+        (format!("{path}/merge_requests/3/commits"),json!([{"id":main},{"id":feat}])),
+        (format!("{path}/merge_requests/3/notes"),json!([{"id":7,"body":"old discussion","author":user,"created_at":"2020-03-02T00:00:00Z"}])),
+        (format!("{path}/merge_requests/3/discussions"),json!([])),
+        (format!("{path}/merge_requests/3/approvals"),json!({"approved_by":[{"user":user}]})),
+        (format!("{path}/issues"),json!([])),
+        (format!("{path}/repository/commits/{main}/statuses"),json!([])),
+        (format!("{path}/repository/commits/{feat}/statuses"),json!([{"id":15,"name":"ci","status":"failed","state":"failed","author":user},{"id":14,"name":"ci","status":"success","state":"success","author":user}])),
+    ]);
+    let snapshot = remote::snapshot_records(&mut conn, &c, &client, vec![]).unwrap();
+    let pr = snapshot.iter().find(|r| r.id == "pr:3").unwrap();
+    assert_eq!(pr.item.data["state"], "merged");
+    assert_eq!(pr.item.data["base_sha"], main);
+    assert_eq!(pr.item.author, "gl-author@gitlab.example.test:8443");
+    assert_eq!(
+        snapshot.iter().filter(|r| r.item.kind == "review").count(),
+        1
+    );
+    assert_eq!(
+        snapshot
+            .iter()
+            .find(|r| r.item.kind == "status")
+            .unwrap()
+            .item
+            .data["state"],
+        "failure"
+    );
+    assert!(asked
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|p| p.contains("scope=all&state=all")));
+    let review = Item {
+        kind: "review".into(),
+        data: json!({"parent":"pr:local","body":"keep this complete review","state":"changes_requested","head_sha":feat}),
+        actor: Some(principal.identity.id),
+        author: "reviewer@test".into(),
+        created_at: 1,
+        url: None,
+    };
+    let key = format!("review:{}", uuid::Uuid::now_v7());
+    // GitLab cannot create an attributed historical review. It gets one
+    // marked note; the next edit updates that note rather than posting again.
+    routes
+        .lock()
+        .unwrap()
+        .iter_mut()
+        .find(|(p, _)| p == &format!("{path}/merge_requests/3/notes"))
+        .unwrap()
+        .1 = json!({"id":71});
+    let written = remote::write(
+        &app,
+        &c,
+        &client,
+        tmp.path(),
+        &key,
+        Some(&review),
+        None,
+        Some("pr:3"),
+    )
+    .unwrap();
+    assert_eq!(written.id.as_deref(), Some("comment:3:71"));
+    let projection = written.remote.unwrap();
+    assert!(projection.data["body"]
+        .as_str()
+        .unwrap()
+        .contains("changes_requested"));
+    assert_eq!(
+        remote::expand_projection(&review, &projection)
+            .unwrap()
+            .data,
+        review.data
+    );
+    routes.lock().unwrap().push((
+        format!("{path}/merge_requests/3/notes/71"),
+        json!({"id":71}),
+    ));
+    let old = remote::RemoteItem {
+        id: written.id.unwrap(),
+        key: Some(key.clone()),
+        item: projection,
+        raw: Json::Null,
+    };
+    let updated = remote::write(
+        &app,
+        &c,
+        &client,
+        tmp.path(),
+        &key,
+        Some(&review),
+        Some(&old),
+        Some("pr:3"),
+    )
+    .unwrap();
+    assert_eq!(updated.id.as_deref(), Some("comment:3:71"));
+    assert!(asked.lock().unwrap().last().unwrap().ends_with("/notes/71"));
+    // The incoming projection never includes access-control fields.
+    let settings = &snapshot
+        .iter()
+        .find(|r| r.id == "settings")
+        .unwrap()
+        .item
+        .data;
+    assert_eq!(settings.as_object().unwrap().len(), 3);
+    assert!(settings.get("visibility").is_none());
+    let history = snapshot.iter().find(|r| r.item.kind == "history").unwrap();
+    assert_eq!(history.item.data["records"].as_array().unwrap().len(), 2);
+    routes
+        .lock()
+        .unwrap()
+        .iter_mut()
+        .find(|(p, _)| p == &format!("{path}/issues"))
+        .unwrap()
+        .1 = json!({"iid":10});
+    let copy = remote::write(
+        &app,
+        &c,
+        &client,
+        tmp.path(),
+        &history.id,
+        Some(&history.item),
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(copy.id.as_deref(), Some("summary:10"));
+    let restored = remote::expand_projection(&history.item, copy.remote.as_ref().unwrap()).unwrap();
+    assert_eq!(restored.data["records"], history.item.data["records"]);
+}

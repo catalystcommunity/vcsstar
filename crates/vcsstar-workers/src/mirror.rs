@@ -50,6 +50,18 @@ pub fn run(app: App, stop: Arc<AtomicBool>) -> anyhow::Result<()> {
                 })?,
         );
     }
+    for i in 0..2 {
+        let (app, stop) = (app.clone(), stop.clone());
+        imports.push(
+            std::thread::Builder::new()
+                .name(format!("connection-sync-{i}"))
+                .spawn(move || {
+                    if let Err(e) = crate::sync::run(app, stop) {
+                        tracing::warn!(error=%e,"connection sync thread ended");
+                    }
+                })?,
+        );
+    }
     let result = run_actions(app, stop);
     let _ = backfill.join();
     for t in imports {
@@ -219,6 +231,7 @@ fn reconcile_pass(app: &App) -> anyhow::Result<()> {
         .inner_join(repos::table.inner_join(orgs::table))
         .filter(repos::mirror_enabled.eq(true))
         .filter(mirror_state::paused.eq(false))
+        .filter(diesel::dsl::sql::<diesel::sql_types::Bool>("NOT EXISTS (SELECT 1 FROM sync_connections sc WHERE sc.repo_id = mirror_state.repo_id)"))
         .filter(mirror_state::provider.ne("github").or(
             diesel::dsl::sql::<diesel::sql_types::Bool>(if health::is_open(Lane::Git) {
                 "FALSE"
@@ -290,6 +303,7 @@ fn pull_sync_pass(app: &App) -> anyhow::Result<()> {
         .filter(repos::mirror_enabled.eq(true))
         .filter(mirror_state::provider.eq("github"))
         .filter(mirror_state::paused.eq(false))
+        .filter(diesel::dsl::sql::<diesel::sql_types::Bool>("NOT EXISTS (SELECT 1 FROM sync_connections sc WHERE sc.repo_id = mirror_state.repo_id)"))
         .filter(due_filter(
             "last_pull_pass_at",
             "pull_sync_interval_s",

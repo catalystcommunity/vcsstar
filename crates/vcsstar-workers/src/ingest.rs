@@ -103,6 +103,24 @@ fn handle(app: &App, q: &Queue, claimed: &Claimed) -> anyhow::Result<()> {
 /// into vcsstar rows.
 pub fn process(app: &App, item: &GithubInbound) -> anyhow::Result<String> {
     let body: serde_json::Value = serde_json::from_slice(&item.body)?;
+    if let Some(full) = body
+        .pointer("/repository/full_name")
+        .and_then(|v| v.as_str())
+    {
+        let mut conn = app.conn()?;
+        let connections: Vec<vcsstar_core::star::store::Connection> = diesel::sql_query(
+            "SELECT * FROM sync_connections WHERE provider='github' AND project=$1",
+        )
+        .bind::<diesel::sql_types::Text, _>(full)
+        .load(&mut conn)?;
+        if !connections.is_empty() {
+            for c in connections {
+                vcsstar_core::star::store::archive(&mut conn, c.id, "webhook", &body)?;
+                vcsstar_core::star::store::wake(&mut conn, c.repo_id)?;
+            }
+            return Ok("connection sync requested".into());
+        }
+    }
     match item.event.as_str() {
         "push" => process_push(app, &body),
         "pull_request"

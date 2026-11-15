@@ -1,6 +1,7 @@
 // Account: who you are, the GitHub connection, SSH keys, and API tokens.
 import { api, ctx, when, who } from "../api";
 import { button, comboBox, fill, form, h, textButton, textField, clear } from "../dom";
+import { providerLinks } from "./sync";
 import { Page } from "../page";
 import { act, badge, confirmDanger, csv, empty, Feedback, isoDate, loading, meta, mono, pageHead, panel, section, showSecretOnce, sortKey, table, td, timeCell, tr } from "../ui";
 
@@ -25,6 +26,7 @@ export class MePage extends Page {
       pageHead([], who(me.identity), meta(me.identity.displayName, h("span", null, "identity ", mono(`${me.identity.userId}@${me.identity.domain}`)), `signed in with ${me.credentialKind.replace("_", " ")}`, `scopes ${me.scopes.join(", ")}`)),
       this.feedback.element,
       section("GitHub", "With a connected GitHub account, what you do here on a mirrored repository is sent to GitHub as you, and what you do on GitHub is attributed to you here.", this.github),
+      providerLinks(),
       section("SSH keys", h("span", null, "Attested keys come from ", mono("vcsstar keys enroll"), " (LinkKeys application keys). An uploaded key works for access and is marked unattested."), this.keys.wrap, this.keysStatus, this.addKeyForm()),
       section("API tokens", "A token acts as you with the scopes you give it. Use it with the CLI or as the git HTTPS password.", this.tokens.wrap, this.tokensStatus, this.newTokenForm()),
       // Only an instance admin may see or change instance roles.

@@ -242,6 +242,62 @@ fn github_hook(shared: &State<Shared>, req: GithubHeaders, body: Vec<u8>) -> (Ht
     })
 }
 
+struct SyncHeaders {
+    signature: Option<String>,
+    token: Option<String>,
+    delivery: Option<String>,
+}
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for SyncHeaders {
+    type Error = ();
+    async fn from_request(req: &'r Request<'_>) -> Outcome<Self, ()> {
+        Outcome::Success(Self {
+            signature: req
+                .headers()
+                .get_one("X-Hub-Signature-256")
+                .map(str::to_owned),
+            token: req.headers().get_one("X-Gitlab-Token").map(str::to_owned),
+            delivery: req
+                .headers()
+                .get_one("X-GitHub-Delivery")
+                .or_else(|| req.headers().get_one("X-Gitlab-Event-UUID"))
+                .map(str::to_owned),
+        })
+    }
+}
+#[post("/hooks/sync/<id>", data = "<body>")]
+fn sync_hook(
+    shared: &State<Shared>,
+    id: &str,
+    headers: SyncHeaders,
+    body: Vec<u8>,
+) -> (HttpStatus, String) {
+    blocking(|| {
+        let Ok(id) = uuid::Uuid::parse_str(id) else {
+            return (HttpStatus::BadRequest, "invalid connection id".into());
+        };
+        match vcsstar_core::star::engine::accept_webhook(
+            &shared.app,
+            id,
+            headers.signature.as_deref(),
+            headers.token.as_deref(),
+            headers.delivery.as_deref(),
+            &body,
+        ) {
+            Ok(()) => (HttpStatus::Accepted, "accepted".into()),
+            Err(e) => (
+                match e.code {
+                    vcsstar_core::Code::Forbidden => HttpStatus::Unauthorized,
+                    vcsstar_core::Code::InvalidArgument => HttpStatus::BadRequest,
+                    vcsstar_core::Code::NotFound => HttpStatus::NotFound,
+                    _ => HttpStatus::ServiceUnavailable,
+                },
+                e.message,
+            ),
+        }
+    })
+}
+
 struct GithubHeaders {
     event: String,
     delivery: Option<String>,
@@ -321,7 +377,10 @@ pub fn serve(
                 .mount("/", routes![spa_fallback]);
         }
         let rocket = rocket
-            .mount("/", routes![rpc, healthz, readyz, metrics, github_hook])
+            .mount(
+                "/",
+                routes![rpc, healthz, readyz, metrics, github_hook, sync_hook],
+            )
             .mount("/", crate::auth_pages::routes())
             .mount("/", crate::gitwire::routes())
             .mount("/", crate::events_ws::routes())

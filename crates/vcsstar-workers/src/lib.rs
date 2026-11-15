@@ -10,6 +10,7 @@ pub mod ingest;
 pub mod mirror;
 pub mod repack;
 pub mod sweeper;
+pub mod sync;
 
 pub use vcsstar_core::queue;
 

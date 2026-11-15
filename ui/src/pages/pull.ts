@@ -98,7 +98,7 @@ export class PullPage extends Page {
     ].sort((a, b) => a.at - b.at);
     const items = timeline.map((item) => item.kind === "review"
       ? this.entry([h("strong", null, who(item.r.reviewer)), badge(item.r.state.replace("_", " "), item.r.state === "approved" ? "ok" : item.r.state === "changes_requested" ? "bad" : "neutral"), h("span", null, "at ", mono(short(item.r.headSha))), item.r.headSha !== p.headSha && badge("stale", "warn"), h("span", { class: "muted" }, when(item.at))], item.r.body)
-      : this.entry([h("strong", null, who(item.c.author)), h("span", { class: "muted" }, when(item.at)), item.c.path && h("span", null, "on ", mono(`${item.c.path}${item.c.line ? `:${item.c.line}` : ""}`))], item.c.body));
+      : this.commentEntry(item.c));
     fill(this.conversation,
       p.body && this.entry([h("strong", null, who(p.author)), h("span", { class: "muted" }, `opened ${when(p.createdAt)}`)], p.body),
       ...items,
@@ -106,6 +106,24 @@ export class PullPage extends Page {
       this.context.session && this.actions(p),
       p.state === "merged" && h("p", { class: "merged-note" }, "Merged as ", link(`/${this.org}/${this.name}/commits/${p.mergedCommit}`, mono(short(p.mergedCommit))), p.mergeKind ? ` (${p.mergeKind})` : "", p.mergedBy ? ` by ${who(p.mergedBy)}` : "", "."),
     );
+  }
+
+  private commentEntry(c: Comment) {
+    const entry = this.entry([h("strong", null, who(c.author)), h("span", { class: "muted" }, when(c.createdAt)), c.path && mono(`${c.path}:${c.line ?? ""}`)], c.body);
+    const me = this.context.session?.identity;
+    const mayEdit = me && ((me.userId === c.author.userId && me.domain === c.author.domain) || ["maintain", "admin"].includes(this.repoRole ?? ""));
+    if (mayEdit) {
+      const edit = h("div");
+      entry.append(h("div", { class: "row" }, button("Edit", { variant: "default", onClick: () => {
+        const body = textArea("Comment", { value: c.body, rows: 4, autogrow: true });
+        fill(edit, form({ onSubmit: () => void act(() => api.pullRequests.editComment({ ctx: ctx(), repo: this.ref, number: this.number, commentId: c.id, body: body.value }), { feedback: this.feedback, after: () => void this.load() }) }, body, button("Save", { type: "submit" }), button("Cancel", { onClick: () => fill(edit) })));
+      } }), button("Delete", { variant: "default", onClick: async () => {
+        if (await confirmDanger("Delete this comment?", "The deletion will be sent to connected repositories. VCSStar keeps a stored record.", "Delete")) {
+          void act(() => api.pullRequests.deleteComment({ ctx: ctx(), repo: this.ref, number: this.number, commentId: c.id }), { feedback: this.feedback, after: () => void this.load() });
+        }
+      } })), edit);
+    }
+    return entry;
   }
 
   private entry(head: unknown[], body?: string | null) {

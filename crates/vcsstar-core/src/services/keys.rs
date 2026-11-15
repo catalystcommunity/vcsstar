@@ -261,7 +261,7 @@ pub struct AllowedSigners {
 }
 
 impl AllowedSigners {
-    pub fn build(conn: &mut DbConn) -> Result<Self, Error> {
+    pub fn build(conn: &mut PgConnection) -> Result<Self, Error> {
         let keys: Vec<(KeyRow, Identity)> = ssh_keys::table
             .inner_join(identities::table)
             .filter(ssh_keys::usage.eq("signing"))
@@ -309,7 +309,7 @@ impl AllowedSigners {
     /// Classify a revision's signature with the time rules of plan/01.
     pub fn classify(
         &self,
-        _conn: &mut DbConn,
+        _conn: &mut PgConnection,
         backend: &dyn VcsBackend,
         dir: &Path,
         rev: &RevisionInfo,

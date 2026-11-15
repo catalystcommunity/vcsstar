@@ -376,6 +376,18 @@ pub trait PullRequests {
         ctx: &Self::Context,
         input: PrRef,
     ) -> Result<ListCommentsResponse, ServiceError>;
+    /// edit-comment (request/response).
+    fn edit_comment(
+        &self,
+        ctx: &Self::Context,
+        input: EditCommentRequest,
+    ) -> Result<Comment, ServiceError>;
+    /// delete-comment (request/response).
+    fn delete_comment(
+        &self,
+        ctx: &Self::Context,
+        input: DeleteCommentRequest,
+    ) -> Result<Ok, ServiceError>;
 }
 
 /// Wire-id ordinals for the PullRequests service (transport compact profiles).
@@ -393,6 +405,8 @@ pub mod pull_requests_wire_ids {
     pub const OP_UPDATE: u64 = 9;
     pub const OP_LIST_REVIEWS: u64 = 10;
     pub const OP_LIST_COMMENTS: u64 = 11;
+    pub const OP_EDIT_COMMENT: u64 = 12;
+    pub const OP_DELETE_COMMENT: u64 = 13;
 }
 
 /// Statuses service trait
@@ -558,6 +572,80 @@ pub trait Mirror {
         ctx: &Self::Context,
         input: SetMirrorScheduleRequest,
     ) -> Result<MirrorStatus, ServiceError>;
+    /// list-connections (request/response).
+    fn list_connections(
+        &self,
+        ctx: &Self::Context,
+        input: GetRepoRequest,
+    ) -> Result<SyncConnections, ServiceError>;
+    /// connect (request/response).
+    fn connect(
+        &self,
+        ctx: &Self::Context,
+        input: ConnectRemoteRequest,
+    ) -> Result<SyncConnection, ServiceError>;
+    /// update-connection (request/response).
+    fn update_connection(
+        &self,
+        ctx: &Self::Context,
+        input: UpdateConnectionRequest,
+    ) -> Result<SyncConnection, ServiceError>;
+    /// sync-now (request/response).
+    fn sync_now(&self, ctx: &Self::Context, input: SyncConnectionRef) -> Result<Ok, ServiceError>;
+    /// webhook-secret (request/response).
+    fn webhook_secret(
+        &self,
+        ctx: &Self::Context,
+        input: SyncConnectionRef,
+    ) -> Result<SyncWebhookSecret, ServiceError>;
+    /// get-policy (request/response).
+    fn get_policy(
+        &self,
+        ctx: &Self::Context,
+        input: GetRepoRequest,
+    ) -> Result<SyncPolicy, ServiceError>;
+    /// set-policy (request/response).
+    fn set_policy(
+        &self,
+        ctx: &Self::Context,
+        input: SetSyncPolicyRequest,
+    ) -> Result<SyncPolicy, ServiceError>;
+    /// list-conflicts (request/response).
+    fn list_conflicts(
+        &self,
+        ctx: &Self::Context,
+        input: GetRepoRequest,
+    ) -> Result<SyncConflicts, ServiceError>;
+    /// resolve-conflict (request/response).
+    fn resolve_conflict(
+        &self,
+        ctx: &Self::Context,
+        input: ResolveSyncConflictRequest,
+    ) -> Result<Ok, ServiceError>;
+    /// link-provider (request/response).
+    fn link_provider(
+        &self,
+        ctx: &Self::Context,
+        input: LinkProviderRequest,
+    ) -> Result<ProviderLink, ServiceError>;
+    /// list-provider-links (request/response).
+    fn list_provider_links(
+        &self,
+        ctx: &Self::Context,
+        input: Empty,
+    ) -> Result<ProviderLinks, ServiceError>;
+    /// unlink-provider (request/response).
+    fn unlink_provider(
+        &self,
+        ctx: &Self::Context,
+        input: UnlinkProviderRequest,
+    ) -> Result<Ok, ServiceError>;
+    /// list-sync-records (request/response).
+    fn list_sync_records(
+        &self,
+        ctx: &Self::Context,
+        input: SyncRecordsRequest,
+    ) -> Result<SyncRecords, ServiceError>;
 }
 
 /// Wire-id ordinals for the Mirror service (transport compact profiles).
@@ -580,6 +668,19 @@ pub mod mirror_wire_ids {
     pub const OP_LIST_GITHUB_INSTALLATIONS: u64 = 14;
     pub const OP_IMPORT_ALL: u64 = 15;
     pub const OP_SET_SCHEDULE: u64 = 16;
+    pub const OP_LIST_CONNECTIONS: u64 = 17;
+    pub const OP_CONNECT: u64 = 18;
+    pub const OP_UPDATE_CONNECTION: u64 = 19;
+    pub const OP_SYNC_NOW: u64 = 20;
+    pub const OP_WEBHOOK_SECRET: u64 = 21;
+    pub const OP_GET_POLICY: u64 = 22;
+    pub const OP_SET_POLICY: u64 = 23;
+    pub const OP_LIST_CONFLICTS: u64 = 24;
+    pub const OP_RESOLVE_CONFLICT: u64 = 25;
+    pub const OP_LINK_PROVIDER: u64 = 26;
+    pub const OP_LIST_PROVIDER_LINKS: u64 = 27;
+    pub const OP_UNLINK_PROVIDER: u64 = 28;
+    pub const OP_LIST_SYNC_RECORDS: u64 = 29;
 }
 
 /// Instance service trait

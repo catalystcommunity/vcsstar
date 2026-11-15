@@ -1,15 +1,16 @@
 # vcsstar
 
-Self-hosted VCS collaboration platform: the GitHub interaction plane for an
-organization, with GitHub kept as a mirrored golden source. Rust, sync
-threads, CSIL on every wire. `README.md` is the front page and
-`docs/architecture.md` shows the pieces with diagrams; keep both current
-when a piece changes. Design documents live in `plan/` (local only,
-gitignored); read `plan/00-overview.md` first and the document for the
-area you touch. Ecosystem notes live in `~/agent-learning/`; read
-`vcsstar-design.md`, `csilgen-usage.md`, `corndogs-client-behavior.md`,
-`linkkeys-regular-rp-sdk.md`, `tls-for-csil-services.md`, and
-`rust-services-on-kubernetes.md` before work that touches those systems.
+Self-hosted VCS collaboration platform. A repository can connect to
+multiple GitHub and GitLab repositories. Changes can start at any connected
+system. Access rules stay local to each destination. Rust, sync threads,
+and CSIL on every wire. Keep `README.md`, `docs/architecture.md`, and
+`docs/gitlab.md` current. The files under `plan/` contain older designs;
+the sync guide records the current star model.
+
+Read the applicable ecosystem notes in `~/agent-learning/` before work.
+They include `vcsstar-design.md`, `csilgen-usage.md`,
+`corndogs-client-behavior.md`, `linkkeys-regular-rp-sdk.md`,
+`tls-for-csil-services.md`, and `rust-services-on-kubernetes.md`.
 
 ## Rules that are not negotiable
 
@@ -188,62 +189,35 @@ helm/                    chart for the catalyst cluster
   and the receiver answers 202 `duplicate`
   (`vcsstar_github_webhooks_total{outcome="duplicate"}`).
 
-## GitHub sync of pull requests (both ways)
+## Repository connection sync
 
-GitLab prototype: `Mirror/import-repo` and `Mirror/configure` also accept
-`provider=gitlab` and a `host`. The existing `github_repo` field holds the
-GitLab project path. GitLab supports import and mirror operations for
-branches and tags only. Credentials are selected by provider and host.
-GitHub sync jobs and webhook lookup exclude GitLab mirrors. See
-`docs/gitlab.md` for setup and limits. This prototype has not been built or
-tested.
+- `vcsstar_core::star` owns connections, provider adapters, native records,
+  policy, and reconciliation. Migration 18 adds the `sync_*` tables.
+- `mirror-worker` runs the `sync:connections` queue. The legacy import
+  queue remains `import:github` for both providers. After import, enabled
+  legacy mirrors become connections. Legacy executors skip managed repos.
+- Changes can start on any connection. Each destination has separate
+  local and remote baselines. Do not use provider-wide echo suppression
+  for connection sync. A remote change must reach the other connections.
+- A conflict stops one object. Use the preferred source or the assigned
+  identity/team. Resolutions are queued and checked again by the worker.
+- Keep native records and raw provider data. Use an attributed summary
+  when the remote cannot represent the record. Treat API capability limits
+  separately from permission errors and outages.
+- Sync description, default branch, and archive state only. Do not sync
+  visibility, membership, permissions, or protection rules. Local ref
+  imports must obey local protections too.
+- Connection webhooks use `/hooks/sync/<connection-id>`. Authenticate
+  before raw submission to corndogs. Manual setup is the default.
+- GitLab uses API v4, HTTPS, and provider/host-scoped PAT credentials.
+  GitHub retains App and linked-user credentials and outage/rate controls.
+- The `mirror:manage` scope and repository admin role control setup.
+  The assigned resolver also needs repository read access. Account link
+  changes reject act-as bearers and require `tokens:manage` on API tokens.
+- See `docs/gitlab.md` for setup, API operations, and prototype limits.
 
-- `vcsstar_core::github_sync`. Outbound: PR, comment, review, and
-  `status_set` events become mirror actions (`pr:{n}`, `pr-comment:{id}`,
-  `pr-review:{id}`, `status:{sha}:{ctx}`, purpose `mirror_api`); the
-  executors create or patch the GitHub pull request, post the comment or
-  review, or report the status. Inbound: `pull_request`,
-  `pull_request_review`, `pull_request_review_comment`, `issue_comment`,
-  `status`, and `check_run` webhooks upsert the vcsstar rows and emit the
-  usual PR events.
-- Shadow identities stand for GitHub accounts: `user_id` is UUID v5 of
-  `https://api.github.com/user/{id}`, domain `github.com`, handle = login,
-  table `github_identities`. They never log in. The dispatcher skips the
-  mirror for every event whose actor is a shadow, so nothing GitHub caused
-  is sent back. Rows remember their GitHub id (`pull_requests.github_number`,
-  `pr_reviews.github_id`, `pr_comments.github_id`), and bodies vcsstar
-  posts carry `<!-- vcsstar:<kind>:<id> -->` markers so an early webhook
-  links instead of duplicating.
-- Both-ways sync needs mirror mode `import_drift`: a branch pushed to
-  GitHub (a PR head) is imported into vcsstar; in `authoritative_vcsstar`
-  mode the reconcile pass deletes GitHub-only branches. A PR from a fork is
-  imported (`head_remote = github:<owner/name>`) but a vcsstar fork PR is
-  not created on GitHub. A squash or rebase merge on vcsstar closes the
-  GitHub PR with a comment; a merge commit lets GitHub detect the merge
-  itself. GitHub refuses a self-review from the mirror credential; the
-  verdict is then posted as a review comment.
-- A deleted base branch retargets its open PRs to the default branch
-  (`pr_retargeted`). GitHub closes such PRs instead, and a closed PR cannot
-  change its base, so the mirror moves the GitHub PRs first and deletes
-  the branch after. A branch deleted on GitHub is deleted here when vcsstar
-  did not move it since the mirror (else it is pushed back).
-- A PR that GitHub closed because its base branch was deleted *there* is
-  dead on GitHub (state and base cannot change any more); vcsstar closes
-  its PR too. Delete the base of a stacked PR through vcsstar, or merge
-  the stack bottom-up, to keep both open. GitHub also refuses a rebase
-  merge of a stacked PR after the bottom was squashed; merge commits work.
-- The runtime image is Debian trixie: rebase merges run
-  `git merge-tree --merge-base`, which needs git 2.40 or newer.
-- Never call `vcs::hydrate` for the pushed repository from inside the
-  push hook path (`prs::on_push` and what it calls): materialize deletes
-  refs that are gone from Postgres before `git receive-pack` writes them,
-  and the push fails after the transaction committed.
-- Metrics: `vcsstar_mirror_actions_total{kind,outcome}`,
-  `vcsstar_github_webhooks_total{event,outcome}`,
-  `vcsstar_github_ingest_total{event,outcome}`.
-- Tracing: `VCSSTAR__OTLP_ENDPOINT` (OTLP/HTTP, `/v1/traces` appended)
-  turns on span export; unset means logs only. Chart: `otlp.endpoint`,
-  `metrics.serviceMonitor.enabled`.
+The sections below also describe legacy GitHub operations. Their old
+mapping and echo rules apply only before connection adoption.
 
 ## GitHub account links and the instance GitHub App
 

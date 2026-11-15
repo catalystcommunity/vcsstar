@@ -743,6 +743,32 @@ impl<T: AsyncTransport> PullRequestsAsyncClient<T> {
             .await?;
         decode_list_comments_response(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
     }
+
+    /// edit-comment (request/response).
+    pub async fn edit_comment(&self, req: EditCommentRequest) -> Result<Comment, ClientError> {
+        let csil_resp = self
+            .transport
+            .call(
+                "PullRequests",
+                "edit-comment",
+                &encode_edit_comment_request(&req),
+            )
+            .await?;
+        decode_comment(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// delete-comment (request/response).
+    pub async fn delete_comment(&self, req: DeleteCommentRequest) -> Result<Ok, ClientError> {
+        let csil_resp = self
+            .transport
+            .call(
+                "PullRequests",
+                "delete-comment",
+                &encode_delete_comment_request(&req),
+            )
+            .await?;
+        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
 }
 
 /// Typed client for the Statuses service.
@@ -1074,6 +1100,169 @@ impl<T: AsyncTransport> MirrorAsyncClient<T> {
             )
             .await?;
         decode_mirror_status(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// list-connections (request/response).
+    pub async fn list_connections(
+        &self,
+        req: GetRepoRequest,
+    ) -> Result<SyncConnections, ClientError> {
+        let csil_resp = self
+            .transport
+            .call("Mirror", "list-connections", &encode_get_repo_request(&req))
+            .await?;
+        decode_sync_connections(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// connect (request/response).
+    pub async fn connect(&self, req: ConnectRemoteRequest) -> Result<SyncConnection, ClientError> {
+        let csil_resp = self
+            .transport
+            .call("Mirror", "connect", &encode_connect_remote_request(&req))
+            .await?;
+        decode_sync_connection(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// update-connection (request/response).
+    pub async fn update_connection(
+        &self,
+        req: UpdateConnectionRequest,
+    ) -> Result<SyncConnection, ClientError> {
+        let csil_resp = self
+            .transport
+            .call(
+                "Mirror",
+                "update-connection",
+                &encode_update_connection_request(&req),
+            )
+            .await?;
+        decode_sync_connection(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// sync-now (request/response).
+    pub async fn sync_now(&self, req: SyncConnectionRef) -> Result<Ok, ClientError> {
+        let csil_resp = self
+            .transport
+            .call("Mirror", "sync-now", &encode_sync_connection_ref(&req))
+            .await?;
+        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// webhook-secret (request/response).
+    pub async fn webhook_secret(
+        &self,
+        req: SyncConnectionRef,
+    ) -> Result<SyncWebhookSecret, ClientError> {
+        let csil_resp = self
+            .transport
+            .call(
+                "Mirror",
+                "webhook-secret",
+                &encode_sync_connection_ref(&req),
+            )
+            .await?;
+        decode_sync_webhook_secret(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// get-policy (request/response).
+    pub async fn get_policy(&self, req: GetRepoRequest) -> Result<SyncPolicy, ClientError> {
+        let csil_resp = self
+            .transport
+            .call("Mirror", "get-policy", &encode_get_repo_request(&req))
+            .await?;
+        decode_sync_policy(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// set-policy (request/response).
+    pub async fn set_policy(&self, req: SetSyncPolicyRequest) -> Result<SyncPolicy, ClientError> {
+        let csil_resp = self
+            .transport
+            .call(
+                "Mirror",
+                "set-policy",
+                &encode_set_sync_policy_request(&req),
+            )
+            .await?;
+        decode_sync_policy(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// list-conflicts (request/response).
+    pub async fn list_conflicts(&self, req: GetRepoRequest) -> Result<SyncConflicts, ClientError> {
+        let csil_resp = self
+            .transport
+            .call("Mirror", "list-conflicts", &encode_get_repo_request(&req))
+            .await?;
+        decode_sync_conflicts(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// resolve-conflict (request/response).
+    pub async fn resolve_conflict(
+        &self,
+        req: ResolveSyncConflictRequest,
+    ) -> Result<Ok, ClientError> {
+        let csil_resp = self
+            .transport
+            .call(
+                "Mirror",
+                "resolve-conflict",
+                &encode_resolve_sync_conflict_request(&req),
+            )
+            .await?;
+        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// link-provider (request/response).
+    pub async fn link_provider(
+        &self,
+        req: LinkProviderRequest,
+    ) -> Result<ProviderLink, ClientError> {
+        let csil_resp = self
+            .transport
+            .call(
+                "Mirror",
+                "link-provider",
+                &encode_link_provider_request(&req),
+            )
+            .await?;
+        decode_provider_link(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// list-provider-links (request/response).
+    pub async fn list_provider_links(&self, req: Empty) -> Result<ProviderLinks, ClientError> {
+        let csil_resp = self
+            .transport
+            .call("Mirror", "list-provider-links", &encode_empty(&req))
+            .await?;
+        decode_provider_links(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// unlink-provider (request/response).
+    pub async fn unlink_provider(&self, req: UnlinkProviderRequest) -> Result<Ok, ClientError> {
+        let csil_resp = self
+            .transport
+            .call(
+                "Mirror",
+                "unlink-provider",
+                &encode_unlink_provider_request(&req),
+            )
+            .await?;
+        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// list-sync-records (request/response).
+    pub async fn list_sync_records(
+        &self,
+        req: SyncRecordsRequest,
+    ) -> Result<SyncRecords, ClientError> {
+        let csil_resp = self
+            .transport
+            .call(
+                "Mirror",
+                "list-sync-records",
+                &encode_sync_records_request(&req),
+            )
+            .await?;
+        decode_sync_records(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
     }
 }
 
