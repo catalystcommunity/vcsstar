@@ -527,3 +527,82 @@ pub fn signature_status(sig: &SigStatus) -> &'static str {
         SigStatus::Missing => "missing",
     }
 }
+
+/// Sync is subject to the local branch rules. It has no admin override.
+pub(crate) fn check_sync_ref(
+    app: &App,
+    conn: &mut PgConnection,
+    repo: &Repo,
+    update: &RefUpdate,
+) -> Result<bool, Error> {
+    if repo.archived {
+        return Err(Error::forbidden(
+            "repository is archived; unarchive it before sync can change refs",
+        ));
+    }
+    let protections: Vec<Protection> = branch_protections::table
+        .filter(branch_protections::repo_id.eq(repo.id))
+        .select(Protection::as_select())
+        .load(conn)?;
+    let matching: Vec<_> = protections
+        .iter()
+        .filter(|p| ref_pattern_matches(&p.ref_pattern, &update.name))
+        .collect();
+    if update.new.is_none() {
+        if update.name == format!("refs/heads/{}", repo.default_branch)
+            || matching.iter().any(|p| !p.allow_delete)
+        {
+            return Err(Error::forbidden(
+                "local protection prevents this ref deletion",
+            ));
+        }
+        return Ok(false);
+    }
+    let dir = app.store.repo_dir(repo.id);
+    let backend = app.store.backend();
+    let env = vec![];
+    let new = update.new.as_ref().expect("present");
+    if !backend.object_exists(&dir, new, &env) {
+        return Err(Error::invalid("sync ref object is missing"));
+    }
+    let forced = update.old.as_ref().is_some_and(|old| {
+        update.name.starts_with("refs/tags/")
+            || !backend.is_ancestor(&dir, old, new, &env).unwrap_or(false)
+    });
+    if forced && matching.iter().any(|p| !p.allow_force_push) {
+        return Err(Error::forbidden(
+            "local protection prevents this force push",
+        ));
+    }
+    if matching
+        .iter()
+        .any(|p| p.required_approvals > 0 || !p.required_checks.is_empty())
+    {
+        return Err(Error::forbidden(
+            "local protection requires a reviewed merge; sync cannot override it",
+        ));
+    }
+    if matching
+        .iter()
+        .any(|p| p.required_signature_level != "none")
+    {
+        let allowed = keys::AllowedSigners::build(conn)?;
+        let commits = backend.rev_list(&dir, update.old.as_ref(), new, usize::MAX, &env)?;
+        for commit in commits {
+            let sig = allowed.classify(conn, backend, &dir, &commit, &env)?;
+            if matching
+                .iter()
+                .any(|p| match p.required_signature_level.as_str() {
+                    "attested" => sig.status != "verified",
+                    "none" => false,
+                    _ => sig.status != "verified" && sig.status != "valid_unattested",
+                })
+            {
+                return Err(Error::forbidden(
+                    "local signature rule prevents this sync update",
+                ));
+            }
+        }
+    }
+    Ok(forced)
+}

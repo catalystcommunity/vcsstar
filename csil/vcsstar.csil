@@ -676,7 +676,11 @@ service PullRequests {
     @wire-id(10)
     list-reviews: PrRef -> ListReviewsResponse / ServiceError,
     @wire-id(11)
-    list-comments: PrRef -> ListCommentsResponse / ServiceError
+    list-comments: PrRef -> ListCommentsResponse / ServiceError,
+    @wire-id(12)
+    edit-comment: EditCommentRequest -> Comment / ServiceError,
+    @wire-id(13)
+    delete-comment: DeleteCommentRequest -> Ok / ServiceError
 }
 
 ;; ---------------------------------------------------------------------
@@ -1025,6 +1029,51 @@ GithubHealth = {
     ? oldest_pending_at: Timestamp
 }
 
+;;; A remote connection of one repository. Access rules stay remote-local.
+SyncConnection = {
+    id: text, provider: text, host: text, project: text, paused: bool,
+    automatic_webhook: bool, setup_done: bool, webhook_url: text,
+    ? last_success_at: Timestamp, ? last_error: text,
+    pending: uint, blocked: uint, skipped: uint
+}
+SyncConnections = { connections: [* SyncConnection] }
+ConnectRemoteRequest = {
+    ctx: Ctx, repo: RepoRef, provider: text, host: text, project: text,
+    ? create_remote: bool, ? automatic_webhook: bool
+}
+SyncConnectionRef = { ctx: Ctx, repo: RepoRef, connection_id: text }
+UpdateConnectionRequest = {
+    ctx: Ctx, repo: RepoRef, connection_id: text,
+    ? paused: bool, ? automatic_webhook: bool
+}
+SyncWebhookSecret = { url: text, secret: text }
+SyncPolicy = {
+    ;;; "local" or a connection id. Absent means a resolver is required.
+    ? preferred_source: text,
+    ? resolver_identity: text,
+    ? resolver_team: text
+}
+SetSyncPolicyRequest = { ctx: Ctx, repo: RepoRef, policy: SyncPolicy }
+SyncConflict = {
+    id: text, connection_id: text, object_key: text,
+    local_json: text, remote_json: text, created_at: Timestamp
+}
+SyncConflicts = { conflicts: [* SyncConflict] }
+ResolveSyncConflictRequest = {
+    ctx: Ctx, repo: RepoRef, conflict_id: text,
+    ;;; "local" or "remote"; rejected if either value has changed.
+    choice: text
+}
+ProviderLink = { provider: text, host: text, login: text, ? broken_reason: text }
+ProviderLinks = { links: [* ProviderLink] }
+LinkProviderRequest = { ctx: Ctx, provider: text, host: text, token: text }
+UnlinkProviderRequest = { ctx: Ctx, provider: text, host: text }
+SyncRecord = { object_key: text, payload_json: text, deleted: bool, source: text }
+SyncRecords = { records: [* SyncRecord], ? next_cursor: text }
+SyncRecordsRequest = { ctx: Ctx, repo: RepoRef, ? page: Page }
+EditCommentRequest = { ctx: Ctx, repo: RepoRef, number: uint, comment_id: text, body: text }
+DeleteCommentRequest = { ctx: Ctx, repo: RepoRef, number: uint, comment_id: text }
+
 @wire-id(7)
 service Mirror {
     @wire-id(0)
@@ -1071,7 +1120,33 @@ service Mirror {
     @wire-id(15)
     import-all: ImportAllRequest -> ImportAllResult / ServiceError,
     @wire-id(16)
-    set-schedule: SetMirrorScheduleRequest -> MirrorStatus / ServiceError
+    set-schedule: SetMirrorScheduleRequest -> MirrorStatus / ServiceError,
+    @wire-id(17)
+    list-connections: GetRepoRequest -> SyncConnections / ServiceError,
+    @wire-id(18)
+    connect: ConnectRemoteRequest -> SyncConnection / ServiceError,
+    @wire-id(19)
+    update-connection: UpdateConnectionRequest -> SyncConnection / ServiceError,
+    @wire-id(20)
+    sync-now: SyncConnectionRef -> Ok / ServiceError,
+    @wire-id(21)
+    webhook-secret: SyncConnectionRef -> SyncWebhookSecret / ServiceError,
+    @wire-id(22)
+    get-policy: GetRepoRequest -> SyncPolicy / ServiceError,
+    @wire-id(23)
+    set-policy: SetSyncPolicyRequest -> SyncPolicy / ServiceError,
+    @wire-id(24)
+    list-conflicts: GetRepoRequest -> SyncConflicts / ServiceError,
+    @wire-id(25)
+    resolve-conflict: ResolveSyncConflictRequest -> Ok / ServiceError,
+    @wire-id(26)
+    link-provider: LinkProviderRequest -> ProviderLink / ServiceError,
+    @wire-id(27)
+    list-provider-links: Empty -> ProviderLinks / ServiceError,
+    @wire-id(28)
+    unlink-provider: UnlinkProviderRequest -> Ok / ServiceError,
+    @wire-id(29)
+    list-sync-records: SyncRecordsRequest -> SyncRecords / ServiceError
 }
 
 ;; ---------------------------------------------------------------------

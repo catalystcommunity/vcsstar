@@ -126,6 +126,12 @@ pub fn configure(
 ) -> Result<MirrorStatus, Error> {
     let (mut conn, org, repo) =
         open_admin(app, ctx, &req.repo.org, &req.repo.name, RepoRole::Admin)?;
+    if crate::star::store::managed(&mut conn, repo.id)? {
+        return Err(Error::new(
+            Code::PreconditionFailed,
+            "this repository uses connection sync; use Mirror/connect and set-policy",
+        ));
+    }
     let previous = mirror::state_for(&mut conn, repo.id)?;
     let (provider, host) = mirror::target(
         req.provider
@@ -211,6 +217,12 @@ pub fn configure(
 pub fn pause(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<WireOk, Error> {
     let (mut conn, _org, repo) =
         open_admin(app, ctx, &req.repo.org, &req.repo.name, RepoRole::Admin)?;
+    if crate::star::store::managed(&mut conn, repo.id)? {
+        return Err(Error::new(
+            Code::PreconditionFailed,
+            "this repository uses connection sync; use Mirror/update-connection",
+        ));
+    }
     let n = diesel::update(mirror_state::table.find(repo.id))
         .set(mirror_state::paused.eq(true))
         .execute(&mut conn)?;
@@ -226,6 +238,12 @@ pub fn pause(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<WireOk, Err
 pub fn resume(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<WireOk, Error> {
     let (mut conn, org, repo) =
         open_admin(app, ctx, &req.repo.org, &req.repo.name, RepoRole::Admin)?;
+    if crate::star::store::managed(&mut conn, repo.id)? {
+        return Err(Error::new(
+            Code::PreconditionFailed,
+            "this repository uses connection sync; use Mirror/update-connection",
+        ));
+    }
     let n = diesel::update(mirror_state::table.find(repo.id))
         .set(mirror_state::paused.eq(false))
         .execute(&mut conn)?;
@@ -522,6 +540,12 @@ pub fn remove_credential(app: &App, ctx: &ReqCtx, req: CredentialRef) -> Result<
 pub fn reconcile(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<ReconcileReport, Error> {
     let (mut conn, org, repo) =
         open_admin(app, ctx, &req.repo.org, &req.repo.name, RepoRole::Maintain)?;
+    if crate::star::store::managed(&mut conn, repo.id)? {
+        return Err(Error::new(
+            Code::PreconditionFailed,
+            "this repository uses connection sync; use Mirror/sync-now",
+        ));
+    }
     let started = now_ms();
     let outcome = mirror::reconcile(app, &mut conn, repo.id);
     let (refs_checked, pushed, drift, mut error) = match outcome {
@@ -574,6 +598,12 @@ pub fn reconcile(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<Reconci
 pub fn backfill(app: &App, ctx: &ReqCtx, req: GetRepoRequest) -> Result<MirrorStatus, Error> {
     let (mut conn, org, repo) =
         open_admin(app, ctx, &req.repo.org, &req.repo.name, RepoRole::Admin)?;
+    if crate::star::store::managed(&mut conn, repo.id)? {
+        return Err(Error::new(
+            Code::PreconditionFailed,
+            "this repository uses connection sync; use Mirror/sync-now",
+        ));
+    }
     let Some(_) = mirror::state_for(&mut conn, repo.id)?.filter(|s| s.is_github()) else {
         return Err(Error::new(
             Code::PreconditionFailed,

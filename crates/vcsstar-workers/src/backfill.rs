@@ -62,6 +62,7 @@ pub fn tick(app: &App) -> anyhow::Result<Duration> {
         .inner_join(repos::table.inner_join(orgs::table))
         .filter(repos::mirror_enabled.eq(true))
         .filter(mirror_state::paused.eq(false))
+        .filter(diesel::dsl::sql::<diesel::sql_types::Bool>("NOT EXISTS (SELECT 1 FROM sync_connections sc WHERE sc.repo_id = mirror_state.repo_id)"))
         .filter(mirror_state::provider.eq("github"))
         .filter(mirror_state::backfill_done_at.is_null())
         .filter(due())

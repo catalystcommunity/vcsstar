@@ -24,6 +24,7 @@ pub mod push;
 pub mod queue;
 pub mod ratelimit;
 pub mod services;
+pub mod star;
 pub mod tokens;
 pub mod vcs;
 

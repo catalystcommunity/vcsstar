@@ -9,7 +9,7 @@ use vcsstar_types::{encode_event, Event, EventPayload, Identity, RepoRef};
 use crate::{now_ms, Error};
 
 thread_local! {
-    static ORIGIN: std::cell::RefCell<Option<&'static str>> = const { std::cell::RefCell::new(None) };
+    static ORIGIN: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
 }
 
 /// Run `f` with every event it emits on this thread stamped with
@@ -17,12 +17,12 @@ thread_local! {
 /// delivery in `with_origin("github", ..)`: whatever rows and events that
 /// produces came from GitHub, whoever the actor is, and the dispatcher
 /// must not mirror them back.
-pub fn with_origin<T>(origin: &'static str, f: impl FnOnce() -> T) -> T {
-    let previous = ORIGIN.with(|o| o.replace(Some(origin)));
-    struct Reset(Option<&'static str>);
+pub fn with_origin<T>(origin: &str, f: impl FnOnce() -> T) -> T {
+    let previous = ORIGIN.with(|o| o.replace(Some(origin.to_string())));
+    struct Reset(Option<String>);
     impl Drop for Reset {
         fn drop(&mut self) {
-            let p = self.0;
+            let p = self.0.take();
             ORIGIN.with(|o| *o.borrow_mut() = p);
         }
     }
@@ -31,8 +31,8 @@ pub fn with_origin<T>(origin: &'static str, f: impl FnOnce() -> T) -> T {
 }
 
 /// The origin events emitted on this thread carry right now.
-pub fn current_origin() -> Option<&'static str> {
-    ORIGIN.with(|o| *o.borrow())
+pub fn current_origin() -> Option<String> {
+    ORIGIN.with(|o| o.borrow().clone())
 }
 
 pub struct Emit<'a> {
@@ -70,6 +70,7 @@ pub fn emit(conn: &mut PgConnection, e: Emit<'_>) -> Result<i64, Error> {
         at: now_ms(),
         payload: e.payload,
     };
+    let origin = current_origin();
     let row = NewEvent {
         lane: &e.lane,
         seq,
@@ -79,11 +80,14 @@ pub fn emit(conn: &mut PgConnection, e: Emit<'_>) -> Result<i64, Error> {
         actor: e.actor_id,
         subject: e.subject.as_deref(),
         payload_cbor: encode_event(&event),
-        origin: current_origin(),
+        origin: origin.as_deref(),
     };
     diesel::insert_into(events::table)
         .values(&row)
         .execute(conn)?;
+    if let Some(repo_id) = e.repo_id {
+        crate::star::store::wake(conn, repo_id)?;
+    }
     Ok(seq)
 }
 
@@ -95,10 +99,22 @@ mod tests {
     fn origin_is_scoped_to_the_closure() {
         assert_eq!(current_origin(), None);
         let inner = with_origin("github", || {
-            assert_eq!(current_origin(), Some("github"));
+            assert_eq!(current_origin(), Some("github".into()));
             with_origin("peer", current_origin)
         });
-        assert_eq!(inner, Some("peer"));
+        assert_eq!(inner, Some("peer".into()));
+        assert_eq!(current_origin(), None);
+    }
+    #[test]
+    fn owned_origin_is_restored_after_a_panic() {
+        let connection_id = uuid::Uuid::now_v7().to_string();
+        let result = std::panic::catch_unwind(|| {
+            with_origin(&connection_id, || {
+                assert_eq!(current_origin().as_deref(), Some(connection_id.as_str()));
+                panic!("rollback");
+            })
+        });
+        assert!(result.is_err());
         assert_eq!(current_origin(), None);
     }
 }

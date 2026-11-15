@@ -1414,6 +1414,153 @@ export interface GithubHealth {
 }
 
 /**
+ * A remote connection of one repository. Access rules stay remote-local.
+ */
+export interface SyncConnection {
+  id: string;
+  provider: string;
+  host: string;
+  project: string;
+  paused: boolean;
+  automaticWebhook: boolean;
+  setupDone: boolean;
+  webhookUrl: string;
+  lastSuccessAt?: Timestamp;
+  lastError?: string;
+  pending: number;
+  blocked: number;
+  skipped: number;
+}
+
+export interface SyncConnections {
+  connections: SyncConnection[];
+}
+
+export interface ConnectRemoteRequest {
+  ctx: Ctx;
+  repo: RepoRef;
+  provider: string;
+  host: string;
+  project: string;
+  createRemote?: boolean;
+  automaticWebhook?: boolean;
+}
+
+export interface SyncConnectionRef {
+  ctx: Ctx;
+  repo: RepoRef;
+  connectionId: string;
+}
+
+export interface UpdateConnectionRequest {
+  ctx: Ctx;
+  repo: RepoRef;
+  connectionId: string;
+  paused?: boolean;
+  automaticWebhook?: boolean;
+}
+
+export interface SyncWebhookSecret {
+  url: string;
+  secret: string;
+}
+
+export interface SyncPolicy {
+  /**
+   * "local" or a connection id. Absent means a resolver is required.
+   */
+  preferredSource?: string;
+  resolverIdentity?: string;
+  resolverTeam?: string;
+}
+
+export interface SetSyncPolicyRequest {
+  ctx: Ctx;
+  repo: RepoRef;
+  policy: SyncPolicy;
+}
+
+export interface SyncConflict {
+  id: string;
+  connectionId: string;
+  objectKey: string;
+  localJson: string;
+  remoteJson: string;
+  createdAt: Timestamp;
+}
+
+export interface SyncConflicts {
+  conflicts: SyncConflict[];
+}
+
+export interface ResolveSyncConflictRequest {
+  ctx: Ctx;
+  repo: RepoRef;
+  conflictId: string;
+  /**
+   * "local" or "remote"; rejected if either value has changed.
+   */
+  choice: string;
+}
+
+export interface ProviderLink {
+  provider: string;
+  host: string;
+  login: string;
+  brokenReason?: string;
+}
+
+export interface ProviderLinks {
+  links: ProviderLink[];
+}
+
+export interface LinkProviderRequest {
+  ctx: Ctx;
+  provider: string;
+  host: string;
+  token: string;
+}
+
+export interface UnlinkProviderRequest {
+  ctx: Ctx;
+  provider: string;
+  host: string;
+}
+
+export interface SyncRecord {
+  objectKey: string;
+  payloadJson: string;
+  deleted: boolean;
+  source: string;
+}
+
+export interface SyncRecords {
+  records: SyncRecord[];
+  nextCursor?: string;
+}
+
+export interface SyncRecordsRequest {
+  ctx: Ctx;
+  repo: RepoRef;
+  page?: Page;
+}
+
+export interface EditCommentRequest {
+  ctx: Ctx;
+  repo: RepoRef;
+  number: number;
+  commentId: string;
+  body: string;
+}
+
+export interface DeleteCommentRequest {
+  ctx: Ctx;
+  repo: RepoRef;
+  number: number;
+  commentId: string;
+}
+
+/**
  * An identity owned by an organization that never signs in. It holds API
  * tokens for integrations that do not come through LinkKeys. Its identity
  * key is `<user_id>@svc.<instance host>`; grant it roles like any identity.

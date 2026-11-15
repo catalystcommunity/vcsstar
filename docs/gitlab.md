@@ -1,96 +1,181 @@
-# GitLab prototype
+# GitLab and repository sync
 
-This prototype adds GitLab project import and Git mirroring. It supports
-GitLab.com and self-hosted servers with HTTPS. Project paths can include
-subgroups, for example `group/subgroup/project`.
+VCSStar connects one repository to multiple GitHub and GitLab repositories.
+Changes can start in VCSStar or any connected repository. The worker sends
+them to the other connections. GitLab.com and self-hosted GitLab use the
+same adapter. Connections to other VCSStar instances are future work.
 
-The prototype has not been built or tested. No migration or deployment was
-run for this change.
+## Scope
+
+Sync includes branches, tags, requests, comments, reviews, and commit
+statuses. The first pass reads all request pages, including closed and
+merged requests. It reads commit status history for branches, tags, and
+request commits. Each source keeps a complete status history record. Other
+destinations receive that record as an attributed summary. Later passes compare each item with its last accepted
+copy at that connection.
+
+VCSStar stores native collaboration records and the original provider
+responses. A deletion removes the active local item where the data model
+permits it. The stored record remains available through **Stored records**
+on the repository **Sync** tab and `Mirror/list-sync-records`.
+
+| Data | Sync rule |
+| --- | --- |
+| Description, default branch, archive state | Send changes to each connection |
+| Visibility, membership, permissions | Keep local to each destination |
+| Branch and tag protection rules | Keep local to each destination |
+| Authentication and authorization | Each system controls its own rules |
+
+A permission refusal blocks the affected operation. VCSStar does not change
+access rules to make sync succeed. Local ref imports also obey VCSStar
+branch protections. A resolver assignment does not grant remote access.
+
+## Conflicts
+
+Each repository selects a preferred source or a resolver identity or team.
+A preferred source can be VCSStar or a connection. A new connection uses
+its creator as the resolver until an administrator changes the policy.
+An adopted legacy mirror without a policy uses repository administrators
+as resolvers.
+
+The worker compares each side with its own last accepted copy. If both
+sides changed, it applies the conflict policy. It stops only the affected
+item. Unrelated items continue. Deletions use the same policy.
+
+A resolver selects the local or remote version on the **Sync** tab. The
+worker reads both sides again before it applies the choice. If either side
+changed, the item needs another decision. A summary must contain the full
+stored data before it can replace a native record. Status history is an
+audit record. Change the actual status at its source; an edited history
+summary needs a resolver and does not replace the audit record.
+
+## History and attribution
+
+The worker uses a linked account when one is available. Otherwise, it uses
+a repository or organization credential, or the instance GitHub App. It
+includes the original author, time, and source link when available. Link a
+GitLab account on the **Account** page. GitHub account links still work.
+
+A destination does not always support the original record:
+
+- A closed, merged, or fork request can use an attributed issue with its
+  full data. Child comments and reviews attach to that record.
+- GitLab receives historical reviews as attributed notes. This preserves
+  the verdict and commit without making a bot approve another user's work.
+- An inline comment can use a conversation comment with its original
+  file and line. The full local record keeps the location.
+- A merge made elsewhere can close the remote request and add its merge
+  information. Sync does not execute another merge at the destination.
+- A request deletion uses deletion where supported, or a closed request
+  with an explanation. A review that cannot be deleted gets a deletion
+  notice where the API permits one.
+
+If neither the record nor a summary can be sent because of an API
+capability limit, the worker marks that destination copy as omitted and
+complete. VCSStar keeps the full record. Missing permissions, rate limits,
+and network failures are errors; they are not successful omissions.
+
+Markers and connection mappings let a retry find a copy that it already
+created. Each connection stores separate local and remote baselines. A
+summary can therefore differ from the native record without a sync loop.
 
 ## Setup
 
-1. Apply migration `2026111400000017_gitlab_mirrors` before you start a server
-   with this code. Existing mirrors receive provider `github` and host
-   `github.com`.
-2. Create the project on GitLab if it does not exist.
-3. Create a personal, project, or group access token. For import and
-   mirroring, give the token `read_api` and `write_repository` scopes.
-   For import without push access, use `read_api` and `read_repository`.
-   The token account must have access to the project. See the
-   [GitLab token documentation](https://docs.gitlab.com/user/profile/personal_access_tokens/).
-4. Open the vcsstar organization page. Under **Mirror credentials**, select
-   provider `gitlab`, method `pat`, and purpose `mirror_git_push`. Enter the
-   GitLab host and token. Use the same host for the import. The stored token
-   uses the existing instance credential key.
-5. Under **Import from GitLab (prototype)**, enter the host, project path,
-   and local repository name. Select **Import project**.
-6. Open the repository **Mirror** tab to read import progress. Use
-   **Reconcile now** to request a branch and tag pass.
+1. Apply all database migrations, including
+   `2026111400000017_gitlab_mirrors` and `2026111400000018_star_sync`.
+2. Configure `SECRET_VCSSTAR__CREDENTIAL_KEY` on the instance. The key
+   encrypts stored credentials, account tokens, and webhook secrets.
+3. On the organization page, add a credential with provider `gitlab`,
+   method `pat`, purpose `mirror_api`, and the GitLab host. A GitLab token
+   with `api` scope supports API changes and Git access, subject to its
+   account permissions. See the [GitLab token documentation](https://docs.gitlab.com/user/profile/personal_access_tokens/).
+4. Create a local repository or use **Import from GitLab** on the
+   organization page. Imports first fetch Git data through the existing
+   import queue. The connection worker then imports collaboration history.
+5. On the repository **Sync** tab, select **Add a connection**. Enter a
+   provider, host, and project path. Paths can include GitLab subgroups.
+6. Select **Create the remote repository** if the target does not exist.
+   The initial remote visibility is private. Teams manage visibility after
+   creation. Leave the option clear to connect an existing repository.
+7. Set the conflict policy. An identity can use `user_id@domain`. A team
+   uses its VCSStar team ID.
+8. Use **Webhook setup** to get the URL and secret. Create the webhook at
+   the destination. Manual setup is the default. Select automatic setup
+   only when VCSStar should create or update its own webhook.
 
-Imports default to private visibility and mode `import_drift`. A non-public
-GitLab project cannot be imported into a public vcsstar repository. The
-worker reads the default branch and description from the
-[GitLab Projects API](https://docs.gitlab.com/api/projects/).
+A token might permit content changes but refuse repository or webhook
+creation. The connection error identifies the failed operation and tells
+you to supply the required permissions or complete setup manually. Select
+manual webhook setup if you cannot grant webhook permissions. Polling
+continues without a webhook.
 
-For an existing vcsstar repository, use its **Mirror** tab to configure a
-GitLab target. Create that target on GitLab first. A configured mirror
-cannot change its provider, host, or project path. Use a new local repository
-for a different target.
+GitLab webhooks use `X-Gitlab-Token`. GitHub webhooks use an HMAC signature.
+The receiver authenticates the request and submits the raw body to
+corndogs before it returns success. The worker stores the body and reads
+the current remote state. Paused connections retain received webhook data.
 
-## API and CLI
+## API and operation
 
-`Mirror/import-repo` and `Mirror/configure` accept optional `provider` and
-`host` fields. `Mirror/status` returns these fields. The default provider is
-`github`. The default host is `github.com` or `gitlab.com`, as applicable.
-Use a hostname with an optional port, without a scheme or path.
+All controls use CSIL. The generated CLI exposes the same operations.
 
-The existing `github_repo` field holds the remote project path for either
-provider. Its name stays unchanged for existing clients. Do not include a
-URL or a `.git` suffix.
+| Purpose | Mirror operations |
+| --- | --- |
+| Connections | `list-connections`, `connect`, `update-connection`, `sync-now` |
+| Webhook setup | `webhook-secret` |
+| Conflict policy | `get-policy`, `set-policy`, `list-conflicts`, `resolve-conflict` |
+| Account links | `link-provider`, `list-provider-links`, `unlink-provider` |
+| Stored history | `list-sync-records` |
 
-Example after CLI login and credential setup:
+`PullRequests/edit-comment` and `PullRequests/delete-comment` also work
+through the UI and CLI. Only the author or a repository maintainer can
+change a comment.
+
+Example for an existing remote after login and credential setup:
 
 ```sh
-vcsstar api Mirror import-repo \
-  --set org=example \
-  --set name=project \
+vcsstar api Mirror connect \
+  --set repo.org=example \
+  --set repo.name=project \
   --set provider=gitlab \
   --set host=gitlab.com \
-  --set github_repo=group/subgroup/project \
-  --set mode=import_drift \
-  --set visibility=private
+  --set project=group/subgroup/project
 ```
 
-`Mirror/set-credential` accepts `provider=gitlab` and `auth_method=pat`.
-The supported purposes are `import_fetch`, `mirror_git_push`, and
-`mirror_api`. An import can use any of these purposes. Git push can use
-`mirror_git_push` or `mirror_api`. Repository credentials take precedence
-over organization credentials for the same provider, host, and purpose.
-Public projects can be imported without a token. Push operations need one.
+The `mirror-worker` role runs connection tasks on `sync:connections`.
+Outbox events request another pass. Polling also runs approximately once
+a minute. A repository lock permits one connection pass at a time. Each
+item has its own mapping, accepted copies, error, and conflict state.
+Incomplete API reads do not trigger deletion detection.
 
-## Operation and limits
+Existing enabled mirrors become connections after their Git import
+finishes. Their provider, host, project, and pause state remain in place.
+The old mode no longer controls them; the repository conflict policy does.
+Legacy configure, pause, resume, reconcile, and backfill operations direct
+callers to the connection operations after adoption. The legacy import
+contract keeps its `github_repo` field for both providers.
 
-- The import worker uses the existing durable queue. Its legacy name remains
-  `import:github`. The task identifies a repository; its database row selects
-  the provider.
-- Branch and tag actions use the existing lease checks, retries, blocked
-  action list, and replay operation. The default reconcile interval is
-  900 seconds. The three existing mirror modes are available.
-- `import_drift` imports remote branches and compatible ref changes.
-  `authoritative_vcsstar` can remove branches that exist only on GitLab.
-  `flag_drift` reports remote changes for review.
-- Merge requests, comments, reviews, commit statuses, releases, and project
-  settings do not sync. There is no GitLab webhook receiver, account link,
-  project discovery, or bulk import. GitHub discovery remains GitHub only.
-- The prototype uses HTTPS with certificate verification. It does not
-  support HTTP, SSH credentials, URL path prefixes, IPv6 host literals,
-  or redirects. Use the final GitLab hostname and project path.
-- GitLab API failures with status 429 or 5xx use import retries. There is no
-  GitLab rate limit table or shared outage control yet. GitLab transfers do
-  not change the GitHub outage state.
+## Prototype limits and validation
+
+The implementation uses GitLab API v4 and HTTPS with certificate checks.
+Hosts can include a port. HTTP, SSH credentials, URL path prefixes, IPv6
+host literals, GitLab OAuth, project discovery, and bulk GitLab import are
+not implemented. Federation is not part of this change.
+
+The worker scans history on each pass. Large repositories can need many
+API calls. Pagination errors stop deletion detection and the pass retries.
+This prototype has no incremental history cursor for connection sync. If
+a provider no longer exposes the Git objects of a closed request, VCSStar
+keeps the request data and available history.
+
+Local validation uses PostgreSQL, temporary Git repositories, and mock
+provider APIs. It covers history, conflict resolution, deletion retention,
+protection enforcement, connection isolation, and GitLab summaries. No
+live GitLab or GitHub account was changed for validation. A live service
+check remains a separate step before deployment.
 
 ## Next Actions
 
-Keep this change as an untested prototype. Before operational use, review
-the migration and validate private import, nested project paths, token
-selection, ref changes, and retries against a disposable GitLab project.
+Review the implementation and local check results before commit and push.
+Before deployment, check the connection against a disposable project on
+each supported provider. Use that check to confirm the selected token
+permissions and the installed GitLab version.

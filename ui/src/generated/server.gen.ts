@@ -2,7 +2,7 @@
 // Source: <csil spec>
 // Target: typescript-server
 
-import type { ActAsExchangeRequest, ApiToken, BeginDeviceRequest, BeginLoginRequest, BeginLoginResponse, BlobRequest, BlobResponse, BranchProtection, CaptureReport, Comment, CommentRequest, Commit, CommitPage, CommitStatus, CompleteLoginRequest, ConfigureMirrorRequest, CreateEndpointRequest, CreateOrgRequest, CreateRepoRequest, CreateServiceAccountRequest, CreateServiceAccountTokenRequest, CreateTeamRequest, CreateTokenRequest, Credential, CredentialRef, DeleteRepoRequest, DeliveryPage, DeliveryQuery, DeliveryRef, DeviceApproveRequest, DeviceCode, DevicePollRequest, DevicePollResponse, DiffRequest, DiffResponse, Empty, Endpoint, EndpointRef, FedHello, FedHelloAck, ForkRequest, GetCommitRequest, GetOrgRequest, GetRepoRequest, GithubHealth, GithubInstallationList, GithubLink, GithubRepoPage, Grant, HeadInfo, HeadQuery, ImportAllRequest, ImportAllResult, ImportRequest, InstanceRoleGrant, InstanceRoleList, KeyRef, ListBlockedResponse, ListCommentsResponse, ListCredentialsRequest, ListCredentialsResponse, ListEndpointsRequest, ListEndpointsResponse, ListGithubReposRequest, ListGrantsResponse, ListKeysResponse, ListOrgMembersRequest, ListOrgsRequest, ListPrRequest, ListProtectionsResponse, ListRefsRequest, ListRefsResponse, ListReposRequest, ListReviewsResponse, ListServiceAccountsResponse, ListStatusRequest, ListStatusResponse, ListTeamsResponse, ListTokensResponse, LogRequest, MergeRequest, MergeResult, MirrorStatus, Ok, OpenPrRequest, Org, OrgMember, OrgMemberPage, OrgPage, PrPage, PrRef, Preferences, PullRequest, ReconcileReport, RefInfo, RegisterKeyRequest, RemoveGrantRequest, RemoveInstanceRoleRequest, RemoveOrgMemberRequest, RemoveProtectionRequest, ReplayRequest, ReplayResult, Repo, RepoPage, RetargetRequest, Review, ReviewRequest, RevokeServiceAccountTokenRequest, RevokeTokenRequest, ScopeSetRequest, ScopedBearer, ServerInfo, ServiceAccount, ServiceAccountRef, ServiceError, Session, SetCredentialRequest, SetGithubTokenRequest, SetGrantRequest, SetInstanceRoleRequest, SetMirrorScheduleRequest, SetOrgMemberRequest, SetPreferencesRequest, SetProtectionRequest, SetStatusRequest, SetTeamMemberRequest, SignedActAsScopeSet, SshKeyInfo, StreamControl, StreamMessage, Team, TeamRef, TreeRequest, TreeResponse, UpdateEndpointRequest, UpdateOrgRequest, UpdatePrRequest, UpdateRefRequest, UpdateRepoRequest, VerifyHeadRequest, WhoAmI } from "./types.gen.ts";
+import type { ActAsExchangeRequest, ApiToken, BeginDeviceRequest, BeginLoginRequest, BeginLoginResponse, BlobRequest, BlobResponse, BranchProtection, CaptureReport, Comment, CommentRequest, Commit, CommitPage, CommitStatus, CompleteLoginRequest, ConfigureMirrorRequest, ConnectRemoteRequest, CreateEndpointRequest, CreateOrgRequest, CreateRepoRequest, CreateServiceAccountRequest, CreateServiceAccountTokenRequest, CreateTeamRequest, CreateTokenRequest, Credential, CredentialRef, DeleteCommentRequest, DeleteRepoRequest, DeliveryPage, DeliveryQuery, DeliveryRef, DeviceApproveRequest, DeviceCode, DevicePollRequest, DevicePollResponse, DiffRequest, DiffResponse, EditCommentRequest, Empty, Endpoint, EndpointRef, FedHello, FedHelloAck, ForkRequest, GetCommitRequest, GetOrgRequest, GetRepoRequest, GithubHealth, GithubInstallationList, GithubLink, GithubRepoPage, Grant, HeadInfo, HeadQuery, ImportAllRequest, ImportAllResult, ImportRequest, InstanceRoleGrant, InstanceRoleList, KeyRef, LinkProviderRequest, ListBlockedResponse, ListCommentsResponse, ListCredentialsRequest, ListCredentialsResponse, ListEndpointsRequest, ListEndpointsResponse, ListGithubReposRequest, ListGrantsResponse, ListKeysResponse, ListOrgMembersRequest, ListOrgsRequest, ListPrRequest, ListProtectionsResponse, ListRefsRequest, ListRefsResponse, ListReposRequest, ListReviewsResponse, ListServiceAccountsResponse, ListStatusRequest, ListStatusResponse, ListTeamsResponse, ListTokensResponse, LogRequest, MergeRequest, MergeResult, MirrorStatus, Ok, OpenPrRequest, Org, OrgMember, OrgMemberPage, OrgPage, PrPage, PrRef, Preferences, ProviderLink, ProviderLinks, PullRequest, ReconcileReport, RefInfo, RegisterKeyRequest, RemoveGrantRequest, RemoveInstanceRoleRequest, RemoveOrgMemberRequest, RemoveProtectionRequest, ReplayRequest, ReplayResult, Repo, RepoPage, ResolveSyncConflictRequest, RetargetRequest, Review, ReviewRequest, RevokeServiceAccountTokenRequest, RevokeTokenRequest, ScopeSetRequest, ScopedBearer, ServerInfo, ServiceAccount, ServiceAccountRef, ServiceError, Session, SetCredentialRequest, SetGithubTokenRequest, SetGrantRequest, SetInstanceRoleRequest, SetMirrorScheduleRequest, SetOrgMemberRequest, SetPreferencesRequest, SetProtectionRequest, SetStatusRequest, SetSyncPolicyRequest, SetTeamMemberRequest, SignedActAsScopeSet, SshKeyInfo, StreamControl, StreamMessage, SyncConflicts, SyncConnection, SyncConnectionRef, SyncConnections, SyncPolicy, SyncRecords, SyncRecordsRequest, SyncWebhookSecret, Team, TeamRef, TreeRequest, TreeResponse, UnlinkProviderRequest, UpdateConnectionRequest, UpdateEndpointRequest, UpdateOrgRequest, UpdatePrRequest, UpdateRefRequest, UpdateRepoRequest, VerifyHeadRequest, WhoAmI } from "./types.gen.ts";
 
 // The consumer-defined context carries auth, request id, etc. It is opaque to
 // generated code; the adapter defines its shape.
@@ -246,6 +246,19 @@ export interface MirrorHandlers {
   listGithubInstallations(req: Empty, ctx: RequestContext): Promise<GithubInstallationList>;
   importAll(req: ImportAllRequest, ctx: RequestContext): Promise<ImportAllResult>;
   setSchedule(req: SetMirrorScheduleRequest, ctx: RequestContext): Promise<MirrorStatus>;
+  listConnections(req: GetRepoRequest, ctx: RequestContext): Promise<SyncConnections>;
+  connect(req: ConnectRemoteRequest, ctx: RequestContext): Promise<SyncConnection>;
+  updateConnection(req: UpdateConnectionRequest, ctx: RequestContext): Promise<SyncConnection>;
+  syncNow(req: SyncConnectionRef, ctx: RequestContext): Promise<Ok>;
+  webhookSecret(req: SyncConnectionRef, ctx: RequestContext): Promise<SyncWebhookSecret>;
+  getPolicy(req: GetRepoRequest, ctx: RequestContext): Promise<SyncPolicy>;
+  setPolicy(req: SetSyncPolicyRequest, ctx: RequestContext): Promise<SyncPolicy>;
+  listConflicts(req: GetRepoRequest, ctx: RequestContext): Promise<SyncConflicts>;
+  resolveConflict(req: ResolveSyncConflictRequest, ctx: RequestContext): Promise<Ok>;
+  linkProvider(req: LinkProviderRequest, ctx: RequestContext): Promise<ProviderLink>;
+  listProviderLinks(req: Empty, ctx: RequestContext): Promise<ProviderLinks>;
+  unlinkProvider(req: UnlinkProviderRequest, ctx: RequestContext): Promise<Ok>;
+  listSyncRecords(req: SyncRecordsRequest, ctx: RequestContext): Promise<SyncRecords>;
 }
 
 export const MirrorWireIds = {
@@ -268,6 +281,19 @@ export const MirrorWireIds = {
     listGithubInstallations: 14,
     importAll: 15,
     setSchedule: 16,
+    listConnections: 17,
+    connect: 18,
+    updateConnection: 19,
+    syncNow: 20,
+    webhookSecret: 21,
+    getPolicy: 22,
+    setPolicy: 23,
+    listConflicts: 24,
+    resolveConflict: 25,
+    linkProvider: 26,
+    listProviderLinks: 27,
+    unlinkProvider: 28,
+    listSyncRecords: 29,
   },
 } as const;
 
@@ -315,6 +341,8 @@ export interface PullRequestsHandlers {
   update(req: UpdatePrRequest, ctx: RequestContext): Promise<PullRequest>;
   listReviews(req: PrRef, ctx: RequestContext): Promise<ListReviewsResponse>;
   listComments(req: PrRef, ctx: RequestContext): Promise<ListCommentsResponse>;
+  editComment(req: EditCommentRequest, ctx: RequestContext): Promise<Comment>;
+  deleteComment(req: DeleteCommentRequest, ctx: RequestContext): Promise<Ok>;
 }
 
 export const PullRequestsWireIds = {
@@ -332,6 +360,8 @@ export const PullRequestsWireIds = {
     update: 9,
     listReviews: 10,
     listComments: 11,
+    editComment: 12,
+    deleteComment: 13,
   },
 } as const;
 
@@ -757,6 +787,71 @@ export async function dispatch(
           const res = await handlers.mirror.setSchedule(req, ctx);
           return codec.encode(res);
         }
+        case "list-connections": {
+          const req = codec.decode<GetRepoRequest>(reqBytes);
+          const res = await handlers.mirror.listConnections(req, ctx);
+          return codec.encode(res);
+        }
+        case "connect": {
+          const req = codec.decode<ConnectRemoteRequest>(reqBytes);
+          const res = await handlers.mirror.connect(req, ctx);
+          return codec.encode(res);
+        }
+        case "update-connection": {
+          const req = codec.decode<UpdateConnectionRequest>(reqBytes);
+          const res = await handlers.mirror.updateConnection(req, ctx);
+          return codec.encode(res);
+        }
+        case "sync-now": {
+          const req = codec.decode<SyncConnectionRef>(reqBytes);
+          const res = await handlers.mirror.syncNow(req, ctx);
+          return codec.encode(res);
+        }
+        case "webhook-secret": {
+          const req = codec.decode<SyncConnectionRef>(reqBytes);
+          const res = await handlers.mirror.webhookSecret(req, ctx);
+          return codec.encode(res);
+        }
+        case "get-policy": {
+          const req = codec.decode<GetRepoRequest>(reqBytes);
+          const res = await handlers.mirror.getPolicy(req, ctx);
+          return codec.encode(res);
+        }
+        case "set-policy": {
+          const req = codec.decode<SetSyncPolicyRequest>(reqBytes);
+          const res = await handlers.mirror.setPolicy(req, ctx);
+          return codec.encode(res);
+        }
+        case "list-conflicts": {
+          const req = codec.decode<GetRepoRequest>(reqBytes);
+          const res = await handlers.mirror.listConflicts(req, ctx);
+          return codec.encode(res);
+        }
+        case "resolve-conflict": {
+          const req = codec.decode<ResolveSyncConflictRequest>(reqBytes);
+          const res = await handlers.mirror.resolveConflict(req, ctx);
+          return codec.encode(res);
+        }
+        case "link-provider": {
+          const req = codec.decode<LinkProviderRequest>(reqBytes);
+          const res = await handlers.mirror.linkProvider(req, ctx);
+          return codec.encode(res);
+        }
+        case "list-provider-links": {
+          const req = codec.decode<Empty>(reqBytes);
+          const res = await handlers.mirror.listProviderLinks(req, ctx);
+          return codec.encode(res);
+        }
+        case "unlink-provider": {
+          const req = codec.decode<UnlinkProviderRequest>(reqBytes);
+          const res = await handlers.mirror.unlinkProvider(req, ctx);
+          return codec.encode(res);
+        }
+        case "list-sync-records": {
+          const req = codec.decode<SyncRecordsRequest>(reqBytes);
+          const res = await handlers.mirror.listSyncRecords(req, ctx);
+          return codec.encode(res);
+        }
         default:
           throw { code: 404, message: `unknown method ${service}.${method}` } satisfies ServiceError;
       }
@@ -882,6 +977,16 @@ export async function dispatch(
         case "list-comments": {
           const req = codec.decode<PrRef>(reqBytes);
           const res = await handlers.pullRequests.listComments(req, ctx);
+          return codec.encode(res);
+        }
+        case "edit-comment": {
+          const req = codec.decode<EditCommentRequest>(reqBytes);
+          const res = await handlers.pullRequests.editComment(req, ctx);
+          return codec.encode(res);
+        }
+        case "delete-comment": {
+          const req = codec.decode<DeleteCommentRequest>(reqBytes);
+          const res = await handlers.pullRequests.deleteComment(req, ctx);
           return codec.encode(res);
         }
         default:
@@ -1370,6 +1475,71 @@ export async function dispatchCompact(
           const res = await handlers.mirror.setSchedule(req, ctx);
           return codec.encode(res);
         }
+        case 17: {
+          const req = codec.decode<GetRepoRequest>(reqBytes);
+          const res = await handlers.mirror.listConnections(req, ctx);
+          return codec.encode(res);
+        }
+        case 18: {
+          const req = codec.decode<ConnectRemoteRequest>(reqBytes);
+          const res = await handlers.mirror.connect(req, ctx);
+          return codec.encode(res);
+        }
+        case 19: {
+          const req = codec.decode<UpdateConnectionRequest>(reqBytes);
+          const res = await handlers.mirror.updateConnection(req, ctx);
+          return codec.encode(res);
+        }
+        case 20: {
+          const req = codec.decode<SyncConnectionRef>(reqBytes);
+          const res = await handlers.mirror.syncNow(req, ctx);
+          return codec.encode(res);
+        }
+        case 21: {
+          const req = codec.decode<SyncConnectionRef>(reqBytes);
+          const res = await handlers.mirror.webhookSecret(req, ctx);
+          return codec.encode(res);
+        }
+        case 22: {
+          const req = codec.decode<GetRepoRequest>(reqBytes);
+          const res = await handlers.mirror.getPolicy(req, ctx);
+          return codec.encode(res);
+        }
+        case 23: {
+          const req = codec.decode<SetSyncPolicyRequest>(reqBytes);
+          const res = await handlers.mirror.setPolicy(req, ctx);
+          return codec.encode(res);
+        }
+        case 24: {
+          const req = codec.decode<GetRepoRequest>(reqBytes);
+          const res = await handlers.mirror.listConflicts(req, ctx);
+          return codec.encode(res);
+        }
+        case 25: {
+          const req = codec.decode<ResolveSyncConflictRequest>(reqBytes);
+          const res = await handlers.mirror.resolveConflict(req, ctx);
+          return codec.encode(res);
+        }
+        case 26: {
+          const req = codec.decode<LinkProviderRequest>(reqBytes);
+          const res = await handlers.mirror.linkProvider(req, ctx);
+          return codec.encode(res);
+        }
+        case 27: {
+          const req = codec.decode<Empty>(reqBytes);
+          const res = await handlers.mirror.listProviderLinks(req, ctx);
+          return codec.encode(res);
+        }
+        case 28: {
+          const req = codec.decode<UnlinkProviderRequest>(reqBytes);
+          const res = await handlers.mirror.unlinkProvider(req, ctx);
+          return codec.encode(res);
+        }
+        case 29: {
+          const req = codec.decode<SyncRecordsRequest>(reqBytes);
+          const res = await handlers.mirror.listSyncRecords(req, ctx);
+          return codec.encode(res);
+        }
         default:
           throw { code: 404, message: `unknown ordinal ${service}.${method}` } satisfies ServiceError;
       }
@@ -1495,6 +1665,16 @@ export async function dispatchCompact(
         case 11: {
           const req = codec.decode<PrRef>(reqBytes);
           const res = await handlers.pullRequests.listComments(req, ctx);
+          return codec.encode(res);
+        }
+        case 12: {
+          const req = codec.decode<EditCommentRequest>(reqBytes);
+          const res = await handlers.pullRequests.editComment(req, ctx);
+          return codec.encode(res);
+        }
+        case 13: {
+          const req = codec.decode<DeleteCommentRequest>(reqBytes);
+          const res = await handlers.pullRequests.deleteComment(req, ctx);
           return codec.encode(res);
         }
         default:

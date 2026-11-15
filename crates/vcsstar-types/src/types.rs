@@ -1171,6 +1171,164 @@ pub struct GithubHealth {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct SyncConnection {
+    pub id: String,
+    pub provider: String,
+    pub host: String,
+    pub project: String,
+    pub paused: bool,
+    pub automatic_webhook: bool,
+    pub setup_done: bool,
+    pub webhook_url: String,
+    pub last_success_at: Option<Timestamp>,
+    pub last_error: Option<String>,
+    pub pending: u64,
+    pub blocked: u64,
+    pub skipped: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SyncConnections {
+    pub connections: Vec<SyncConnection>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConnectRemoteRequest {
+    pub ctx: Ctx,
+    pub repo: RepoRef,
+    pub provider: String,
+    pub host: String,
+    pub project: String,
+    pub create_remote: Option<bool>,
+    pub automatic_webhook: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SyncConnectionRef {
+    pub ctx: Ctx,
+    pub repo: RepoRef,
+    pub connection_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UpdateConnectionRequest {
+    pub ctx: Ctx,
+    pub repo: RepoRef,
+    pub connection_id: String,
+    pub paused: Option<bool>,
+    pub automatic_webhook: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SyncWebhookSecret {
+    pub url: String,
+    pub secret: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SyncPolicy {
+    pub preferred_source: Option<String>,
+    pub resolver_identity: Option<String>,
+    pub resolver_team: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetSyncPolicyRequest {
+    pub ctx: Ctx,
+    pub repo: RepoRef,
+    pub policy: SyncPolicy,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SyncConflict {
+    pub id: String,
+    pub connection_id: String,
+    pub object_key: String,
+    pub local_json: String,
+    pub remote_json: String,
+    pub created_at: Timestamp,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SyncConflicts {
+    pub conflicts: Vec<SyncConflict>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolveSyncConflictRequest {
+    pub ctx: Ctx,
+    pub repo: RepoRef,
+    pub conflict_id: String,
+    pub choice: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProviderLink {
+    pub provider: String,
+    pub host: String,
+    pub login: String,
+    pub broken_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProviderLinks {
+    pub links: Vec<ProviderLink>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinkProviderRequest {
+    pub ctx: Ctx,
+    pub provider: String,
+    pub host: String,
+    pub token: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnlinkProviderRequest {
+    pub ctx: Ctx,
+    pub provider: String,
+    pub host: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SyncRecord {
+    pub object_key: String,
+    pub payload_json: String,
+    pub deleted: bool,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SyncRecords {
+    pub records: Vec<SyncRecord>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SyncRecordsRequest {
+    pub ctx: Ctx,
+    pub repo: RepoRef,
+    pub page: Option<Page>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EditCommentRequest {
+    pub ctx: Ctx,
+    pub repo: RepoRef,
+    pub number: u64,
+    pub comment_id: String,
+    pub body: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeleteCommentRequest {
+    pub ctx: Ctx,
+    pub repo: RepoRef,
+    pub number: u64,
+    pub comment_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct ServiceAccount {
     pub identity: Identity,
     pub org: String,

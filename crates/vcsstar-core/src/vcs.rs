@@ -6,7 +6,6 @@ use std::path::PathBuf;
 
 use diesel::PgConnection;
 use vcsstar_db::models::{Org, Repo};
-use vcsstar_db::DbConn;
 use vcsstar_store::refs;
 use vcsstar_vcs::{RevId, RevisionInfo, VcsError};
 
@@ -35,7 +34,7 @@ impl From<vcsstar_store::StoreError> for Error {
 }
 
 /// Materialize refs from Postgres into the cache directory and return it.
-pub fn hydrate(app: &App, conn: &mut DbConn, repo: &Repo) -> Result<PathBuf, Error> {
+pub fn hydrate(app: &App, conn: &mut PgConnection, repo: &Repo) -> Result<PathBuf, Error> {
     let refs = refs::load(conn, repo.id)?;
     let manifest = if app.store.has_segment_store() {
         vcsstar_store::segments::manifest(conn, repo.id)?

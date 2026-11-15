@@ -214,6 +214,9 @@ fn dispatch_one(
         return Ok(());
     }
     if let Some(repo_id) = ev.repo_id {
+        if vcsstar_core::star::store::managed(conn, repo_id)? {
+            return Ok(());
+        }
         let mirrored: Option<(bool, bool, String, String, String)> = mirror_state::table
             .inner_join(repos::table.inner_join(orgs::table))
             .filter(mirror_state::repo_id.eq(repo_id))

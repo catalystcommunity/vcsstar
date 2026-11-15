@@ -1415,6 +1415,12 @@ pub fn execute(app: &App, conn: &mut DbConn, action_id: Uuid) -> Result<Exec, Er
     if action.state != "pending" {
         return Ok(Exec::Skipped(format!("action is {}", action.state)));
     }
+    if crate::star::store::managed(conn, action.repo_id)? {
+        diesel::update(mirror_actions::table.find(action_id))
+            .set(mirror_actions::state.eq("skipped"))
+            .execute(conn)?;
+        return Ok(Exec::Skipped("handled by connection sync".into()));
+    }
     let (org, repo) = load_repo(conn, action.repo_id)?;
     let Some(state) = state_for(conn, repo.id)? else {
         return Ok(Exec::Skipped("mirror not configured".into()));
@@ -1998,7 +2004,6 @@ fn exec_settings(
     let default_mirrored = mirrored_sha(conn, repo.id, &default_ref)?.is_some();
     let mut patch = serde_json::json!({
         "description": repo.description.clone().unwrap_or_default(),
-        "private": private,
         "archived": repo.archived,
     });
     if default_mirrored {
@@ -2025,6 +2030,13 @@ pub struct ReconcileOutcome {
 /// (and a delete for GitHub-only refs in authoritative mode); stamps
 /// verified refs. The caller submits tasks for `scheduled`.
 pub fn reconcile(app: &App, conn: &mut DbConn, repo_id: Uuid) -> Result<ReconcileOutcome, Error> {
+    if crate::star::store::managed(conn, repo_id)? {
+        return Ok(ReconcileOutcome {
+            refs_checked: 0,
+            scheduled: vec![],
+            drift: vec![],
+        });
+    }
     let (org, repo) = load_repo(conn, repo_id)?;
     let state = state_for(conn, repo_id)?
         .ok_or_else(|| Error::new(Code::PreconditionFailed, "mirror not configured"))?;

@@ -2,7 +2,7 @@
 // Source: <csil spec>
 // Target: typescript-codec
 
-import type { ActAsExchangeRequest, ApiToken, BeginDeviceRequest, BeginLoginRequest, BeginLoginResponse, BlobRequest, BlobResponse, BlockedAction, BranchProtection, CaptureReport, Comment, CommentRequest, Commit, CommitPage, CommitStatus, CommitSummary, CompleteLoginRequest, ConfigureMirrorRequest, CreateEndpointRequest, CreateOrgRequest, CreateRepoRequest, CreateServiceAccountRequest, CreateServiceAccountTokenRequest, CreateTeamRequest, CreateTokenRequest, Credential, CredentialRef, Ctx, DeleteRepoRequest, Delivery, DeliveryPage, DeliveryQuery, DeliveryRef, DeviceApproveRequest, DeviceCode, DevicePollRequest, DevicePollResponse, DiffRequest, DiffResponse, Empty, Endpoint, EndpointRef, Event, EventPayload, FedCapabilities, FedHello, FedHelloAck, FileDiff, ForkRequest, GetCommitRequest, GetOrgRequest, GetRepoRequest, GithubHealth, GithubInstallation, GithubInstallationList, GithubLink, GithubRepoInfo, GithubRepoPage, Grant, HeadInfo, HeadQuery, Identity, ImportAllRequest, ImportAllResult, ImportRequest, InstanceRoleGrant, InstanceRoleList, KeyRef, LaneHealth, ListBlockedResponse, ListCommentsResponse, ListCredentialsRequest, ListCredentialsResponse, ListEndpointsRequest, ListEndpointsResponse, ListGithubReposRequest, ListGrantsResponse, ListKeysResponse, ListOrgMembersRequest, ListOrgsRequest, ListPrRequest, ListProtectionsResponse, ListRefsRequest, ListRefsResponse, ListReposRequest, ListReviewsResponse, ListServiceAccountsResponse, ListStatusRequest, ListStatusResponse, ListTeamsResponse, ListTokensResponse, LogRequest, MembershipPayload, MergeRequest, MergeResult, MirrorPayload, MirrorStatus, Ok, OpenPrRequest, Org, OrgMember, OrgMemberPage, OrgPage, OrgRef, OrgRepoRef, Page, PrHead, PrPage, PrPayload, PrRef, Preferences, PullRequest, PushPayload, RateLimitInfo, ReconcileReport, RefInfo, RefPayload, RegisterKeyRequest, ReleasePayload, RemoveGrantRequest, RemoveInstanceRoleRequest, RemoveOrgMemberRequest, RemoveProtectionRequest, ReplayRequest, ReplayResult, Repo, RepoPage, RepoRef, RetargetRequest, Review, ReviewRequest, RevokeServiceAccountTokenRequest, RevokeTokenRequest, ScopeSetRequest, ScopedBearer, ServerInfo, ServiceAccount, ServiceAccountRef, ServiceError, Session, SetCredentialRequest, SetGithubTokenRequest, SetGrantRequest, SetInstanceRoleRequest, SetMirrorScheduleRequest, SetOrgMemberRequest, SetPreferencesRequest, SetProtectionRequest, SetStatusRequest, SetTeamMemberRequest, SettingsPayload, Signature, SignedActAsScopeSet, SshKeyInfo, StatusPayload, StreamAck, StreamControl, StreamMessage, SubscribeRequest, Team, TeamRef, Timestamp, TreeEntry, TreeRequest, TreeResponse, UnsribeMarker, UnsubscribeRequest, UpdateEndpointRequest, UpdateOrgRequest, UpdatePrRequest, UpdateRefRequest, UpdateRepoRequest, VerifyHeadRequest, WhoAmI } from "./types.gen.ts";
+import type { ActAsExchangeRequest, ApiToken, BeginDeviceRequest, BeginLoginRequest, BeginLoginResponse, BlobRequest, BlobResponse, BlockedAction, BranchProtection, CaptureReport, Comment, CommentRequest, Commit, CommitPage, CommitStatus, CommitSummary, CompleteLoginRequest, ConfigureMirrorRequest, ConnectRemoteRequest, CreateEndpointRequest, CreateOrgRequest, CreateRepoRequest, CreateServiceAccountRequest, CreateServiceAccountTokenRequest, CreateTeamRequest, CreateTokenRequest, Credential, CredentialRef, Ctx, DeleteCommentRequest, DeleteRepoRequest, Delivery, DeliveryPage, DeliveryQuery, DeliveryRef, DeviceApproveRequest, DeviceCode, DevicePollRequest, DevicePollResponse, DiffRequest, DiffResponse, EditCommentRequest, Empty, Endpoint, EndpointRef, Event, EventPayload, FedCapabilities, FedHello, FedHelloAck, FileDiff, ForkRequest, GetCommitRequest, GetOrgRequest, GetRepoRequest, GithubHealth, GithubInstallation, GithubInstallationList, GithubLink, GithubRepoInfo, GithubRepoPage, Grant, HeadInfo, HeadQuery, Identity, ImportAllRequest, ImportAllResult, ImportRequest, InstanceRoleGrant, InstanceRoleList, KeyRef, LaneHealth, LinkProviderRequest, ListBlockedResponse, ListCommentsResponse, ListCredentialsRequest, ListCredentialsResponse, ListEndpointsRequest, ListEndpointsResponse, ListGithubReposRequest, ListGrantsResponse, ListKeysResponse, ListOrgMembersRequest, ListOrgsRequest, ListPrRequest, ListProtectionsResponse, ListRefsRequest, ListRefsResponse, ListReposRequest, ListReviewsResponse, ListServiceAccountsResponse, ListStatusRequest, ListStatusResponse, ListTeamsResponse, ListTokensResponse, LogRequest, MembershipPayload, MergeRequest, MergeResult, MirrorPayload, MirrorStatus, Ok, OpenPrRequest, Org, OrgMember, OrgMemberPage, OrgPage, OrgRef, OrgRepoRef, Page, PrHead, PrPage, PrPayload, PrRef, Preferences, ProviderLink, ProviderLinks, PullRequest, PushPayload, RateLimitInfo, ReconcileReport, RefInfo, RefPayload, RegisterKeyRequest, ReleasePayload, RemoveGrantRequest, RemoveInstanceRoleRequest, RemoveOrgMemberRequest, RemoveProtectionRequest, ReplayRequest, ReplayResult, Repo, RepoPage, RepoRef, ResolveSyncConflictRequest, RetargetRequest, Review, ReviewRequest, RevokeServiceAccountTokenRequest, RevokeTokenRequest, ScopeSetRequest, ScopedBearer, ServerInfo, ServiceAccount, ServiceAccountRef, ServiceError, Session, SetCredentialRequest, SetGithubTokenRequest, SetGrantRequest, SetInstanceRoleRequest, SetMirrorScheduleRequest, SetOrgMemberRequest, SetPreferencesRequest, SetProtectionRequest, SetStatusRequest, SetSyncPolicyRequest, SetTeamMemberRequest, SettingsPayload, Signature, SignedActAsScopeSet, SshKeyInfo, StatusPayload, StreamAck, StreamControl, StreamMessage, SubscribeRequest, SyncConflict, SyncConflicts, SyncConnection, SyncConnectionRef, SyncConnections, SyncPolicy, SyncRecord, SyncRecords, SyncRecordsRequest, SyncWebhookSecret, Team, TeamRef, Timestamp, TreeEntry, TreeRequest, TreeResponse, UnlinkProviderRequest, UnsribeMarker, UnsubscribeRequest, UpdateConnectionRequest, UpdateEndpointRequest, UpdateOrgRequest, UpdatePrRequest, UpdateRefRequest, UpdateRepoRequest, VerifyHeadRequest, WhoAmI } from "./types.gen.ts";
 
 /** A CBOR semantic tag wrapping an inner value (e.g. tag 0 timestamp, tag 4 decimal). */
 export type CborTag = { readonly tag: number; readonly value: CborValue };
@@ -4070,6 +4070,522 @@ export function toGithubHealthCbor(v: GithubHealth): Uint8Array {
 
 export function fromGithubHealthCbor(bytes: Uint8Array): GithubHealth {
   return fromGithubHealthCborValue(decode(bytes));
+}
+
+export function toSyncConnectionCborValue(v: SyncConnection): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("id", v.id);
+  csilMap.set("host", v.host);
+  csilMap.set("paused", v.paused);
+  csilMap.set("blocked", v.blocked);
+  csilMap.set("pending", v.pending);
+  csilMap.set("project", v.project);
+  csilMap.set("skipped", v.skipped);
+  csilMap.set("provider", v.provider);
+  if (v.lastError !== undefined) csilMap.set("last_error", v.lastError);
+  csilMap.set("setup_done", v.setupDone);
+  csilMap.set("webhook_url", v.webhookUrl);
+  if (v.lastSuccessAt !== undefined) csilMap.set("last_success_at", v.lastSuccessAt);
+  csilMap.set("automatic_webhook", v.automaticWebhook);
+  return csilMap;
+}
+
+export function fromSyncConnectionCborValue(value: CborValue): SyncConnection {
+  return {
+    id: asString(requireKey(value, "id")),
+    provider: asString(requireKey(value, "provider")),
+    host: asString(requireKey(value, "host")),
+    project: asString(requireKey(value, "project")),
+    paused: asBool(requireKey(value, "paused")),
+    automaticWebhook: asBool(requireKey(value, "automatic_webhook")),
+    setupDone: asBool(requireKey(value, "setup_done")),
+    webhookUrl: asString(requireKey(value, "webhook_url")),
+    lastSuccessAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "last_success_at")),
+    lastError: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "last_error")),
+    pending: asNumber(requireKey(value, "pending")),
+    blocked: asNumber(requireKey(value, "blocked")),
+    skipped: asNumber(requireKey(value, "skipped")),
+  };
+}
+
+export function toSyncConnectionCbor(v: SyncConnection): Uint8Array {
+  return encodeValue(toSyncConnectionCborValue(v));
+}
+
+export function fromSyncConnectionCbor(bytes: Uint8Array): SyncConnection {
+  return fromSyncConnectionCborValue(decode(bytes));
+}
+
+export function toSyncConnectionsCborValue(v: SyncConnections): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("connections", v.connections.map((csilE): CborValue => toSyncConnectionCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromSyncConnectionsCborValue(value: CborValue): SyncConnections {
+  return {
+    connections: asArray(requireKey(value, "connections")).map((csilE) => fromSyncConnectionCborValue(csilE)),
+  };
+}
+
+export function toSyncConnectionsCbor(v: SyncConnections): Uint8Array {
+  return encodeValue(toSyncConnectionsCborValue(v));
+}
+
+export function fromSyncConnectionsCbor(bytes: Uint8Array): SyncConnections {
+  return fromSyncConnectionsCborValue(decode(bytes));
+}
+
+export function toConnectRemoteRequestCborValue(v: ConnectRemoteRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("ctx", toCtxCborValue(v.ctx));
+  csilMap.set("host", v.host);
+  csilMap.set("repo", toRepoRefCborValue(v.repo));
+  csilMap.set("project", v.project);
+  csilMap.set("provider", v.provider);
+  if (v.createRemote !== undefined) csilMap.set("create_remote", v.createRemote);
+  if (v.automaticWebhook !== undefined) csilMap.set("automatic_webhook", v.automaticWebhook);
+  return csilMap;
+}
+
+export function fromConnectRemoteRequestCborValue(value: CborValue): ConnectRemoteRequest {
+  return {
+    ctx: fromCtxCborValue(requireKey(value, "ctx")),
+    repo: fromRepoRefCborValue(requireKey(value, "repo")),
+    provider: asString(requireKey(value, "provider")),
+    host: asString(requireKey(value, "host")),
+    project: asString(requireKey(value, "project")),
+    createRemote: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "create_remote")),
+    automaticWebhook: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "automatic_webhook")),
+  };
+}
+
+export function toConnectRemoteRequestCbor(v: ConnectRemoteRequest): Uint8Array {
+  return encodeValue(toConnectRemoteRequestCborValue(v));
+}
+
+export function fromConnectRemoteRequestCbor(bytes: Uint8Array): ConnectRemoteRequest {
+  return fromConnectRemoteRequestCborValue(decode(bytes));
+}
+
+export function toSyncConnectionRefCborValue(v: SyncConnectionRef): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("ctx", toCtxCborValue(v.ctx));
+  csilMap.set("repo", toRepoRefCborValue(v.repo));
+  csilMap.set("connection_id", v.connectionId);
+  return csilMap;
+}
+
+export function fromSyncConnectionRefCborValue(value: CborValue): SyncConnectionRef {
+  return {
+    ctx: fromCtxCborValue(requireKey(value, "ctx")),
+    repo: fromRepoRefCborValue(requireKey(value, "repo")),
+    connectionId: asString(requireKey(value, "connection_id")),
+  };
+}
+
+export function toSyncConnectionRefCbor(v: SyncConnectionRef): Uint8Array {
+  return encodeValue(toSyncConnectionRefCborValue(v));
+}
+
+export function fromSyncConnectionRefCbor(bytes: Uint8Array): SyncConnectionRef {
+  return fromSyncConnectionRefCborValue(decode(bytes));
+}
+
+export function toUpdateConnectionRequestCborValue(v: UpdateConnectionRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("ctx", toCtxCborValue(v.ctx));
+  csilMap.set("repo", toRepoRefCborValue(v.repo));
+  if (v.paused !== undefined) csilMap.set("paused", v.paused);
+  csilMap.set("connection_id", v.connectionId);
+  if (v.automaticWebhook !== undefined) csilMap.set("automatic_webhook", v.automaticWebhook);
+  return csilMap;
+}
+
+export function fromUpdateConnectionRequestCborValue(value: CborValue): UpdateConnectionRequest {
+  return {
+    ctx: fromCtxCborValue(requireKey(value, "ctx")),
+    repo: fromRepoRefCborValue(requireKey(value, "repo")),
+    connectionId: asString(requireKey(value, "connection_id")),
+    paused: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "paused")),
+    automaticWebhook: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "automatic_webhook")),
+  };
+}
+
+export function toUpdateConnectionRequestCbor(v: UpdateConnectionRequest): Uint8Array {
+  return encodeValue(toUpdateConnectionRequestCborValue(v));
+}
+
+export function fromUpdateConnectionRequestCbor(bytes: Uint8Array): UpdateConnectionRequest {
+  return fromUpdateConnectionRequestCborValue(decode(bytes));
+}
+
+export function toSyncWebhookSecretCborValue(v: SyncWebhookSecret): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("url", v.url);
+  csilMap.set("secret", v.secret);
+  return csilMap;
+}
+
+export function fromSyncWebhookSecretCborValue(value: CborValue): SyncWebhookSecret {
+  return {
+    url: asString(requireKey(value, "url")),
+    secret: asString(requireKey(value, "secret")),
+  };
+}
+
+export function toSyncWebhookSecretCbor(v: SyncWebhookSecret): Uint8Array {
+  return encodeValue(toSyncWebhookSecretCborValue(v));
+}
+
+export function fromSyncWebhookSecretCbor(bytes: Uint8Array): SyncWebhookSecret {
+  return fromSyncWebhookSecretCborValue(decode(bytes));
+}
+
+export function toSyncPolicyCborValue(v: SyncPolicy): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.resolverTeam !== undefined) csilMap.set("resolver_team", v.resolverTeam);
+  if (v.preferredSource !== undefined) csilMap.set("preferred_source", v.preferredSource);
+  if (v.resolverIdentity !== undefined) csilMap.set("resolver_identity", v.resolverIdentity);
+  return csilMap;
+}
+
+export function fromSyncPolicyCborValue(value: CborValue): SyncPolicy {
+  return {
+    preferredSource: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "preferred_source")),
+    resolverIdentity: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "resolver_identity")),
+    resolverTeam: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "resolver_team")),
+  };
+}
+
+export function toSyncPolicyCbor(v: SyncPolicy): Uint8Array {
+  return encodeValue(toSyncPolicyCborValue(v));
+}
+
+export function fromSyncPolicyCbor(bytes: Uint8Array): SyncPolicy {
+  return fromSyncPolicyCborValue(decode(bytes));
+}
+
+export function toSetSyncPolicyRequestCborValue(v: SetSyncPolicyRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("ctx", toCtxCborValue(v.ctx));
+  csilMap.set("repo", toRepoRefCborValue(v.repo));
+  csilMap.set("policy", toSyncPolicyCborValue(v.policy));
+  return csilMap;
+}
+
+export function fromSetSyncPolicyRequestCborValue(value: CborValue): SetSyncPolicyRequest {
+  return {
+    ctx: fromCtxCborValue(requireKey(value, "ctx")),
+    repo: fromRepoRefCborValue(requireKey(value, "repo")),
+    policy: fromSyncPolicyCborValue(requireKey(value, "policy")),
+  };
+}
+
+export function toSetSyncPolicyRequestCbor(v: SetSyncPolicyRequest): Uint8Array {
+  return encodeValue(toSetSyncPolicyRequestCborValue(v));
+}
+
+export function fromSetSyncPolicyRequestCbor(bytes: Uint8Array): SetSyncPolicyRequest {
+  return fromSetSyncPolicyRequestCborValue(decode(bytes));
+}
+
+export function toSyncConflictCborValue(v: SyncConflict): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("id", v.id);
+  csilMap.set("created_at", v.createdAt);
+  csilMap.set("local_json", v.localJson);
+  csilMap.set("object_key", v.objectKey);
+  csilMap.set("remote_json", v.remoteJson);
+  csilMap.set("connection_id", v.connectionId);
+  return csilMap;
+}
+
+export function fromSyncConflictCborValue(value: CborValue): SyncConflict {
+  return {
+    id: asString(requireKey(value, "id")),
+    connectionId: asString(requireKey(value, "connection_id")),
+    objectKey: asString(requireKey(value, "object_key")),
+    localJson: asString(requireKey(value, "local_json")),
+    remoteJson: asString(requireKey(value, "remote_json")),
+    createdAt: asNumber(requireKey(value, "created_at")),
+  };
+}
+
+export function toSyncConflictCbor(v: SyncConflict): Uint8Array {
+  return encodeValue(toSyncConflictCborValue(v));
+}
+
+export function fromSyncConflictCbor(bytes: Uint8Array): SyncConflict {
+  return fromSyncConflictCborValue(decode(bytes));
+}
+
+export function toSyncConflictsCborValue(v: SyncConflicts): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("conflicts", v.conflicts.map((csilE): CborValue => toSyncConflictCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromSyncConflictsCborValue(value: CborValue): SyncConflicts {
+  return {
+    conflicts: asArray(requireKey(value, "conflicts")).map((csilE) => fromSyncConflictCborValue(csilE)),
+  };
+}
+
+export function toSyncConflictsCbor(v: SyncConflicts): Uint8Array {
+  return encodeValue(toSyncConflictsCborValue(v));
+}
+
+export function fromSyncConflictsCbor(bytes: Uint8Array): SyncConflicts {
+  return fromSyncConflictsCborValue(decode(bytes));
+}
+
+export function toResolveSyncConflictRequestCborValue(v: ResolveSyncConflictRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("ctx", toCtxCborValue(v.ctx));
+  csilMap.set("repo", toRepoRefCborValue(v.repo));
+  csilMap.set("choice", v.choice);
+  csilMap.set("conflict_id", v.conflictId);
+  return csilMap;
+}
+
+export function fromResolveSyncConflictRequestCborValue(value: CborValue): ResolveSyncConflictRequest {
+  return {
+    ctx: fromCtxCborValue(requireKey(value, "ctx")),
+    repo: fromRepoRefCborValue(requireKey(value, "repo")),
+    conflictId: asString(requireKey(value, "conflict_id")),
+    choice: asString(requireKey(value, "choice")),
+  };
+}
+
+export function toResolveSyncConflictRequestCbor(v: ResolveSyncConflictRequest): Uint8Array {
+  return encodeValue(toResolveSyncConflictRequestCborValue(v));
+}
+
+export function fromResolveSyncConflictRequestCbor(bytes: Uint8Array): ResolveSyncConflictRequest {
+  return fromResolveSyncConflictRequestCborValue(decode(bytes));
+}
+
+export function toProviderLinkCborValue(v: ProviderLink): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("host", v.host);
+  csilMap.set("login", v.login);
+  csilMap.set("provider", v.provider);
+  if (v.brokenReason !== undefined) csilMap.set("broken_reason", v.brokenReason);
+  return csilMap;
+}
+
+export function fromProviderLinkCborValue(value: CborValue): ProviderLink {
+  return {
+    provider: asString(requireKey(value, "provider")),
+    host: asString(requireKey(value, "host")),
+    login: asString(requireKey(value, "login")),
+    brokenReason: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "broken_reason")),
+  };
+}
+
+export function toProviderLinkCbor(v: ProviderLink): Uint8Array {
+  return encodeValue(toProviderLinkCborValue(v));
+}
+
+export function fromProviderLinkCbor(bytes: Uint8Array): ProviderLink {
+  return fromProviderLinkCborValue(decode(bytes));
+}
+
+export function toProviderLinksCborValue(v: ProviderLinks): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("links", v.links.map((csilE): CborValue => toProviderLinkCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromProviderLinksCborValue(value: CborValue): ProviderLinks {
+  return {
+    links: asArray(requireKey(value, "links")).map((csilE) => fromProviderLinkCborValue(csilE)),
+  };
+}
+
+export function toProviderLinksCbor(v: ProviderLinks): Uint8Array {
+  return encodeValue(toProviderLinksCborValue(v));
+}
+
+export function fromProviderLinksCbor(bytes: Uint8Array): ProviderLinks {
+  return fromProviderLinksCborValue(decode(bytes));
+}
+
+export function toLinkProviderRequestCborValue(v: LinkProviderRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("ctx", toCtxCborValue(v.ctx));
+  csilMap.set("host", v.host);
+  csilMap.set("token", v.token);
+  csilMap.set("provider", v.provider);
+  return csilMap;
+}
+
+export function fromLinkProviderRequestCborValue(value: CborValue): LinkProviderRequest {
+  return {
+    ctx: fromCtxCborValue(requireKey(value, "ctx")),
+    provider: asString(requireKey(value, "provider")),
+    host: asString(requireKey(value, "host")),
+    token: asString(requireKey(value, "token")),
+  };
+}
+
+export function toLinkProviderRequestCbor(v: LinkProviderRequest): Uint8Array {
+  return encodeValue(toLinkProviderRequestCborValue(v));
+}
+
+export function fromLinkProviderRequestCbor(bytes: Uint8Array): LinkProviderRequest {
+  return fromLinkProviderRequestCborValue(decode(bytes));
+}
+
+export function toUnlinkProviderRequestCborValue(v: UnlinkProviderRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("ctx", toCtxCborValue(v.ctx));
+  csilMap.set("host", v.host);
+  csilMap.set("provider", v.provider);
+  return csilMap;
+}
+
+export function fromUnlinkProviderRequestCborValue(value: CborValue): UnlinkProviderRequest {
+  return {
+    ctx: fromCtxCborValue(requireKey(value, "ctx")),
+    provider: asString(requireKey(value, "provider")),
+    host: asString(requireKey(value, "host")),
+  };
+}
+
+export function toUnlinkProviderRequestCbor(v: UnlinkProviderRequest): Uint8Array {
+  return encodeValue(toUnlinkProviderRequestCborValue(v));
+}
+
+export function fromUnlinkProviderRequestCbor(bytes: Uint8Array): UnlinkProviderRequest {
+  return fromUnlinkProviderRequestCborValue(decode(bytes));
+}
+
+export function toSyncRecordCborValue(v: SyncRecord): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("source", v.source);
+  csilMap.set("deleted", v.deleted);
+  csilMap.set("object_key", v.objectKey);
+  csilMap.set("payload_json", v.payloadJson);
+  return csilMap;
+}
+
+export function fromSyncRecordCborValue(value: CborValue): SyncRecord {
+  return {
+    objectKey: asString(requireKey(value, "object_key")),
+    payloadJson: asString(requireKey(value, "payload_json")),
+    deleted: asBool(requireKey(value, "deleted")),
+    source: asString(requireKey(value, "source")),
+  };
+}
+
+export function toSyncRecordCbor(v: SyncRecord): Uint8Array {
+  return encodeValue(toSyncRecordCborValue(v));
+}
+
+export function fromSyncRecordCbor(bytes: Uint8Array): SyncRecord {
+  return fromSyncRecordCborValue(decode(bytes));
+}
+
+export function toSyncRecordsCborValue(v: SyncRecords): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("records", v.records.map((csilE): CborValue => toSyncRecordCborValue(csilE)));
+  if (v.nextCursor !== undefined) csilMap.set("next_cursor", v.nextCursor);
+  return csilMap;
+}
+
+export function fromSyncRecordsCborValue(value: CborValue): SyncRecords {
+  return {
+    records: asArray(requireKey(value, "records")).map((csilE) => fromSyncRecordCborValue(csilE)),
+    nextCursor: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "next_cursor")),
+  };
+}
+
+export function toSyncRecordsCbor(v: SyncRecords): Uint8Array {
+  return encodeValue(toSyncRecordsCborValue(v));
+}
+
+export function fromSyncRecordsCbor(bytes: Uint8Array): SyncRecords {
+  return fromSyncRecordsCborValue(decode(bytes));
+}
+
+export function toSyncRecordsRequestCborValue(v: SyncRecordsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("ctx", toCtxCborValue(v.ctx));
+  if (v.page !== undefined) csilMap.set("page", toPageCborValue(v.page));
+  csilMap.set("repo", toRepoRefCborValue(v.repo));
+  return csilMap;
+}
+
+export function fromSyncRecordsRequestCborValue(value: CborValue): SyncRecordsRequest {
+  return {
+    ctx: fromCtxCborValue(requireKey(value, "ctx")),
+    repo: fromRepoRefCborValue(requireKey(value, "repo")),
+    page: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromPageCborValue(csilV))(mapGet(value, "page")),
+  };
+}
+
+export function toSyncRecordsRequestCbor(v: SyncRecordsRequest): Uint8Array {
+  return encodeValue(toSyncRecordsRequestCborValue(v));
+}
+
+export function fromSyncRecordsRequestCbor(bytes: Uint8Array): SyncRecordsRequest {
+  return fromSyncRecordsRequestCborValue(decode(bytes));
+}
+
+export function toEditCommentRequestCborValue(v: EditCommentRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("ctx", toCtxCborValue(v.ctx));
+  csilMap.set("body", v.body);
+  csilMap.set("repo", toRepoRefCborValue(v.repo));
+  csilMap.set("number", v.number);
+  csilMap.set("comment_id", v.commentId);
+  return csilMap;
+}
+
+export function fromEditCommentRequestCborValue(value: CborValue): EditCommentRequest {
+  return {
+    ctx: fromCtxCborValue(requireKey(value, "ctx")),
+    repo: fromRepoRefCborValue(requireKey(value, "repo")),
+    number: asNumber(requireKey(value, "number")),
+    commentId: asString(requireKey(value, "comment_id")),
+    body: asString(requireKey(value, "body")),
+  };
+}
+
+export function toEditCommentRequestCbor(v: EditCommentRequest): Uint8Array {
+  return encodeValue(toEditCommentRequestCborValue(v));
+}
+
+export function fromEditCommentRequestCbor(bytes: Uint8Array): EditCommentRequest {
+  return fromEditCommentRequestCborValue(decode(bytes));
+}
+
+export function toDeleteCommentRequestCborValue(v: DeleteCommentRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("ctx", toCtxCborValue(v.ctx));
+  csilMap.set("repo", toRepoRefCborValue(v.repo));
+  csilMap.set("number", v.number);
+  csilMap.set("comment_id", v.commentId);
+  return csilMap;
+}
+
+export function fromDeleteCommentRequestCborValue(value: CborValue): DeleteCommentRequest {
+  return {
+    ctx: fromCtxCborValue(requireKey(value, "ctx")),
+    repo: fromRepoRefCborValue(requireKey(value, "repo")),
+    number: asNumber(requireKey(value, "number")),
+    commentId: asString(requireKey(value, "comment_id")),
+  };
+}
+
+export function toDeleteCommentRequestCbor(v: DeleteCommentRequest): Uint8Array {
+  return encodeValue(toDeleteCommentRequestCborValue(v));
+}
+
+export function fromDeleteCommentRequestCbor(bytes: Uint8Array): DeleteCommentRequest {
+  return fromDeleteCommentRequestCborValue(decode(bytes));
 }
 
 export function toServiceAccountCborValue(v: ServiceAccount): CborValue {

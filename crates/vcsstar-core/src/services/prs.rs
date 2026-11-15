@@ -1145,7 +1145,7 @@ pub fn merge(app: &App, ctx: &ReqCtx, req: MergeRequest) -> Result<MergeResult, 
 /// head ref changed, and invalidate mergeability for PRs on a moved base.
 pub fn on_push(
     app: &App,
-    conn: &mut DbConn,
+    conn: &mut PgConnection,
     org: &OrgRow,
     repo: &RepoRow,
     actor: Option<&Principal>,
@@ -1244,7 +1244,7 @@ pub fn on_push(
 /// `pr_retargeted` event.
 fn retarget_on_base_delete(
     app: &App,
-    conn: &mut DbConn,
+    conn: &mut PgConnection,
     org: &OrgRow,
     repo: &RepoRow,
     actor: Option<&Principal>,
@@ -1283,4 +1283,94 @@ fn retarget_on_base_delete(
         outbox::emit(conn, pr_event(org, repo, actor, "pr_retargeted", &u))?;
     }
     Ok(())
+}
+
+pub fn edit_comment(
+    app: &App,
+    ctx: &ReqCtx,
+    req: vcsstar_types::EditCommentRequest,
+) -> Result<vcsstar_types::Comment, Error> {
+    let p = ctx.require()?;
+    p.require_scope("pr:write")?;
+    if req.body.trim().is_empty() || req.body.len() > 65536 {
+        return Err(Error::invalid("body is required (max 64 KiB)"));
+    }
+    let (mut conn, org, repo, pr, role) = open_pr(app, ctx, &req.repo, req.number, RepoRole::Read)?;
+    let id = uuid::Uuid::parse_str(&req.comment_id).map_err(|_| Error::invalid("comment id"))?;
+    let old: CommentRow = pr_comments::table
+        .find(id)
+        .filter(pr_comments::pr_id.eq(pr.id))
+        .select(CommentRow::as_select())
+        .first(&mut conn)?;
+    if old.author != p.identity.id && role < RepoRole::Maintain {
+        return Err(Error::forbidden(
+            "only the author or a maintainer can edit a comment",
+        ));
+    }
+    let row = conn.transaction::<CommentRow, Error, _>(|conn| {
+        let row = diesel::update(pr_comments::table.find(id))
+            .set((
+                pr_comments::body.eq(req.body),
+                pr_comments::edited_at.eq(Utc::now()),
+            ))
+            .returning(CommentRow::as_returning())
+            .get_result(conn)?;
+        outbox::emit(
+            conn,
+            pr_event_about(
+                &org,
+                &repo,
+                Some(p),
+                "pr_comment_edited",
+                &pr,
+                Some(id),
+                None,
+            ),
+        )?;
+        Ok(row)
+    })?;
+    comment_wire(&mut conn, &pr, &row)
+}
+pub fn delete_comment(
+    app: &App,
+    ctx: &ReqCtx,
+    req: vcsstar_types::DeleteCommentRequest,
+) -> Result<vcsstar_types::Ok, Error> {
+    let p = ctx.require()?;
+    p.require_scope("pr:write")?;
+    let (mut conn, org, repo, pr, role) = open_pr(app, ctx, &req.repo, req.number, RepoRole::Read)?;
+    let id = uuid::Uuid::parse_str(&req.comment_id).map_err(|_| Error::invalid("comment id"))?;
+    conn.transaction::<(), Error, _>(|conn| {
+        let old: CommentRow = pr_comments::table
+            .find(id)
+            .filter(pr_comments::pr_id.eq(pr.id))
+            .for_update()
+            .select(CommentRow::as_select())
+            .first(conn)?;
+        if old.author != p.identity.id && role < RepoRole::Maintain {
+            return Err(Error::forbidden(
+                "only the author or a maintainer can delete a comment",
+            ));
+        }
+        let key = format!("comment:{id}");
+        if let Some(item) = crate::star::local::snapshot(conn, &repo)?.get(&key) {
+            crate::star::store::save_object(conn, repo.id, &key, Some(item), "local")?;
+        }
+        crate::star::store::save_object(conn, repo.id, &key, None, "local")?;
+        diesel::delete(pr_comments::table.find(id)).execute(conn)?;
+        outbox::emit(
+            conn,
+            pr_event_about(
+                &org,
+                &repo,
+                Some(p),
+                "pr_comment_deleted",
+                &pr,
+                Some(id),
+                None,
+            ),
+        )?;
+        Ok(())
+    })?;
+    Ok(vcsstar_types::Ok { ok: true })
 }
