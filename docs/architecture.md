@@ -255,6 +255,37 @@ must authenticate metadata about objects and events through LinkKeys.
 It must not infer identity from Git author fields or require attested Git
 commit signatures. GitHub and GitLab use their own provider credentials.
 
+## LinkKeys trust-guard integration
+
+VCSStar stores review head and base SHAs, an optional approval scope, and
+review invalidation state. These fields do not complete the Reactorcide
+approval integration. That integration remains unimplemented.
+
+The Reactorcide provider adapter must convert an approved VCSStar review
+into a coordinator approval. It must verify the reviewer's LinkKeys
+identity and resolve membership in the provider-neutral group
+`reactorcide_group:linkkeys-trust-maintainers`. The approval must name the
+PR, current head SHA, current base SHA, and content scope
+`linkkeys-trust-anchors`. A content approval must remain separate from
+permission to run CI. A head or base change must invalidate the approval.
+Reactorcide must evaluate the trust guard again after approval.
+
+The original request for mandatory attested Git commit signatures was
+superseded by the agreed branch authority and metadata trust rules.
+Required checks must use configured trusted reporter accounts. Each
+protected branch has one update authority. A conflict decision must not
+permit an update from another source.
+
+### Next Actions
+
+Agree on the Reactorcide provider and approval contract. Implement the
+adapter, group resolution, content approval handling, and evaluation after
+approval. Verify that a maintainer's scoped approval reaches the LinkKeys
+trust guard with the current head and base SHAs. Verify that stale or
+unauthorized approvals are refused before using VCSStar as the job source.
+Implement and verify LinkKeys-authenticated metadata before enabling
+VCSStar-to-VCSStar exchange.
+
 ## Where to read more
 
 | Topic | Where |
