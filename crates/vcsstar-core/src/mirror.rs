@@ -1729,7 +1729,16 @@ fn handle_drift(
                     &RevId(remote_sha.clone()),
                 )?;
                 conn.transaction::<(), Error, _>(|conn| {
-                    push::apply_ref_change(conn, org, repo, None, &update, false, commits)?;
+                    push::apply_ref_change(
+                        conn,
+                        org,
+                        repo,
+                        None,
+                        &update,
+                        false,
+                        commits,
+                        crate::protection::Source::Direct,
+                    )?;
                     mirror_event(
                         conn,
                         org,
@@ -1871,7 +1880,16 @@ pub fn note_drift(
                             &RevId(sha.to_string()),
                         )?;
                         conn.transaction::<(), Error, _>(|conn| {
-                            push::apply_ref_change(conn, org, repo, None, &update, false, commits)?;
+                            push::apply_ref_change(
+                                conn,
+                                org,
+                                repo,
+                                None,
+                                &update,
+                                false,
+                                commits,
+                                crate::protection::Source::Direct,
+                            )?;
                             mirror_event(
                                 conn,
                                 org,
@@ -1918,7 +1936,16 @@ pub fn note_drift(
                             new: None,
                         };
                         conn.transaction::<(), Error, _>(|conn| {
-                            push::apply_ref_change(conn, org, repo, None, &update, false, vec![])?;
+                            push::apply_ref_change(
+                                conn,
+                                org,
+                                repo,
+                                None,
+                                &update,
+                                false,
+                                vec![],
+                                crate::protection::Source::Direct,
+                            )?;
                             mirror_event(
                                 conn,
                                 org,

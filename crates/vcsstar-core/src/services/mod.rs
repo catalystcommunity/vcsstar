@@ -6,6 +6,7 @@ pub mod auth;
 pub mod hooks;
 pub mod instance;
 pub mod keys;
+pub mod local_login;
 pub mod login;
 pub mod meta;
 pub mod mirror;

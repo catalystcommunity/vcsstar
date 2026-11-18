@@ -77,6 +77,7 @@ pub struct BeginLoginRequest {
     pub identity_input: String,
     pub return_to: Option<String>,
     pub device_user_code: Option<String>,
+    pub link_local: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -268,6 +269,44 @@ pub struct GithubLink {
 pub struct SetGithubTokenRequest {
     pub ctx: Ctx,
     pub token: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocalLoginRequest {
+    pub ctx: Ctx,
+    pub username: String,
+    pub password: String,
+    pub return_to: Option<String>,
+    pub device_user_code: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CreateLocalAccountRequest {
+    pub ctx: Ctx,
+    pub username: String,
+    pub password: String,
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResetLocalPasswordRequest {
+    pub ctx: Ctx,
+    pub identity: String,
+    pub password: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChangeLocalPasswordRequest {
+    pub ctx: Ctx,
+    pub current_password: String,
+    pub new_password: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocalAccount {
+    pub identity: Identity,
+    pub username: Option<String>,
+    pub password_login: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -644,6 +683,15 @@ pub struct BranchProtection {
     pub allowed_merge_kinds: Vec<String>,
     pub allow_force_push: bool,
     pub allow_delete: bool,
+    pub require_pull_request: Option<bool>,
+    pub merge_authority: Option<String>,
+    pub override_accounts: Option<Vec<String>>,
+    pub allow_self_approval: Option<bool>,
+    pub require_base_approval: Option<bool>,
+    pub allowed_approvers: Option<Vec<String>>,
+    pub required_check_reporters: Option<Vec<String>>,
+    pub allow_delegated_approval: Option<bool>,
+    pub block_changes_requested: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -728,6 +776,10 @@ pub struct PrPage {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Review {
+    pub id: Option<String>,
+    pub invalidated: Option<bool>,
+    pub base_sha: Option<String>,
+    pub approval_scope: Option<String>,
     pub number: u64,
     pub reviewer: Identity,
     pub state: String,
@@ -744,6 +796,8 @@ pub struct ReviewRequest {
     pub state: String,
     pub body: Option<String>,
     pub head_sha: String,
+    pub base_sha: Option<String>,
+    pub approval_scope: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -815,6 +869,7 @@ pub struct UpdatePrRequest {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CommitStatus {
+    pub base_sha: Option<String>,
     pub sha: String,
     pub context: String,
     pub state: String,
@@ -826,6 +881,7 @@ pub struct CommitStatus {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SetStatusRequest {
+    pub base_sha: Option<String>,
     pub ctx: Ctx,
     pub repo: RepoRef,
     pub sha: String,
@@ -1177,6 +1233,8 @@ pub struct SyncConnection {
     pub host: String,
     pub project: String,
     pub paused: bool,
+    pub inbound_enabled: bool,
+    pub outbound_enabled: bool,
     pub automatic_webhook: bool,
     pub setup_done: bool,
     pub webhook_url: String,
@@ -1201,6 +1259,8 @@ pub struct ConnectRemoteRequest {
     pub project: String,
     pub create_remote: Option<bool>,
     pub automatic_webhook: Option<bool>,
+    pub inbound_enabled: Option<bool>,
+    pub outbound_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1217,6 +1277,8 @@ pub struct UpdateConnectionRequest {
     pub connection_id: String,
     pub paused: Option<bool>,
     pub automatic_webhook: Option<bool>,
+    pub inbound_enabled: Option<bool>,
+    pub outbound_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1494,6 +1556,7 @@ pub struct RefPayload {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PrPayload {
+    pub base_sha: Option<String>,
     pub number: u64,
     pub head_sha: Option<String>,
     pub base_ref: Option<String>,

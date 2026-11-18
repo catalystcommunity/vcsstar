@@ -186,6 +186,7 @@ pub(crate) fn pr_event_about<'a>(
         org: Some(org.name.clone()),
         subject: Some(pr.number.to_string()),
         payload: EventPayload::Variant2(PrPayload {
+            base_sha: Some(pr.base_sha.clone()),
             number: pr.number.max(0) as u64,
             head_sha: Some(pr.head_sha.clone()),
             base_ref: Some(pr.base_ref.clone()),
@@ -665,6 +666,12 @@ pub(crate) struct ReviewRow {
     pub reviewer: uuid::Uuid,
     pub state: String,
     pub head_sha_at_review: String,
+    pub base_sha_at_review: Option<String>,
+    pub base_ref_at_review: Option<String>,
+    pub head_invalidated: bool,
+    pub base_invalidated: bool,
+    pub acting_via: Option<String>,
+    pub approval_scope: Option<String>,
     pub body: Option<String>,
     pub created_at: DateTime<Utc>,
     pub github_id: Option<i64>,
@@ -677,6 +684,10 @@ pub(crate) fn review_wire(
 ) -> Result<Review, Error> {
     let _ = r.pr_id;
     Ok(Review {
+        id: Some(r.id.to_string()),
+        base_sha: r.base_sha_at_review.clone(),
+        invalidated: Some(r.head_invalidated || r.base_invalidated),
+        approval_scope: r.approval_scope.clone(),
         number: pr.number.max(0) as u64,
         reviewer: identity(conn, r.reviewer)?,
         state: r.state.clone(),
@@ -711,12 +722,48 @@ pub fn review(app: &App, ctx: &ReqCtx, req: ReviewRequest) -> Result<Review, Err
             ),
         ));
     }
-    if req.state == "approved" && pr.author_identity_id == p.identity.id {
+    let policies = repo_svc::protections_for(&mut conn, repo.id)?;
+    if req.state == "approved"
+        && req.base_sha.is_none()
+        && policies.iter().any(|r| {
+            crate::protection::matches(r, &pr.base_ref, &repo.default_branch)
+                && r.require_base_approval
+        })
+    {
+        return Err(Error::invalid("approval requires the reviewed base_sha"));
+    }
+    if req.state == "approved"
+        && pr.author_identity_id == p.identity.id
+        && !policies
+            .iter()
+            .filter(|r| crate::protection::matches(r, &pr.base_ref, &repo.default_branch))
+            .all(|r| r.allow_self_approval)
+    {
         return Err(Error::forbidden(
             "an author cannot approve their own pull request",
         ));
     }
     let row = conn.transaction::<ReviewRow, Error, _>(|conn| {
+        crate::protection::lock(conn, repo.id)?;
+        let pr: PrRow = pull_requests::table
+            .find(pr.id)
+            .for_update()
+            .select(PrRow::as_select())
+            .first(conn)?;
+        let base = refs::get(conn, repo.id, &pr.base_ref)?
+            .ok_or_else(|| Error::not_found("base branch"))?;
+        if pr.state != "open"
+            || pr.head_sha != req.head_sha
+            || req.base_sha.as_deref().is_some_and(|sha| sha != base.0)
+        {
+            return Err(Error::new(
+                Code::Conflict,
+                "review target changed; reload the pull request",
+            ));
+        }
+        if req.approval_scope.is_some() && req.base_sha.is_none() {
+            return Err(Error::invalid("content approval requires base_sha"));
+        }
         let row: ReviewRow = diesel::insert_into(pr_reviews::table)
             .values((
                 pr_reviews::id.eq(vcsstar_db::new_id()),
@@ -724,6 +771,10 @@ pub fn review(app: &App, ctx: &ReqCtx, req: ReviewRequest) -> Result<Review, Err
                 pr_reviews::reviewer.eq(p.identity.id),
                 pr_reviews::state.eq(&req.state),
                 pr_reviews::head_sha_at_review.eq(&req.head_sha),
+                pr_reviews::base_sha_at_review.eq(&base.0),
+                pr_reviews::base_ref_at_review.eq(&pr.base_ref),
+                pr_reviews::acting_via.eq(p.acting_via.as_deref()),
+                pr_reviews::approval_scope.eq(req.approval_scope.as_deref()),
                 pr_reviews::body.eq(req.body.as_deref()),
             ))
             .returning(ReviewRow::as_returning())
@@ -845,11 +896,12 @@ fn check_gates(
     dir: &std::path::Path,
     pr: &PrRow,
     kind: MergeKind,
+    actor: &crate::principal::Principal,
 ) -> Result<(), Error> {
     let protections = repo_svc::protections_for(conn, repo.id)?;
     let matching: Vec<_> = protections
         .iter()
-        .filter(|p| vcsstar_vcs::ref_pattern_matches(&p.ref_pattern, &pr.base_ref))
+        .filter(|p| crate::protection::matches(p, &pr.base_ref, &repo.default_branch))
         .collect();
     let caps = app.store.backend().caps();
     let cap_ok = match kind {
@@ -864,6 +916,15 @@ fn check_gates(
         ));
     }
     for pr_rule in &matching {
+        if pr_rule.merge_authority != "local" {
+            return Err(Error::forbidden(
+                "this instance is not the merge authority for the branch",
+            ));
+        }
+        if crate::protection::override_allowed(pr_rule, Some(actor)) {
+            continue;
+        }
+
         let allowed: Vec<&str> = pr_rule
             .allowed_merge_kinds
             .iter()
@@ -881,16 +942,77 @@ fn check_gates(
                 ),
             ));
         }
-        if pr_rule.required_approvals > 0 {
-            let mut q = pr_reviews::table
+        if pr_rule.required_approvals > 0 || pr_rule.block_changes_requested {
+            // Only the latest decision by each reviewer counts. A later comment
+            // leaves the decision unchanged; changes_requested withdraws approval.
+            let reviews: Vec<ReviewRow> = pr_reviews::table
                 .filter(pr_reviews::pr_id.eq(pr.id))
-                .filter(pr_reviews::state.eq("approved"))
-                .into_boxed();
-            if pr_rule.dismiss_stale {
-                q = q.filter(pr_reviews::head_sha_at_review.eq(&pr.head_sha));
+                .order((pr_reviews::created_at.desc(), pr_reviews::id.desc()))
+                .select(ReviewRow::as_select())
+                .load(conn)?;
+            let mut seen = std::collections::HashSet::new();
+            let mut approvers = Vec::new();
+            let org: vcsstar_db::models::Org = vcsstar_db::schema::orgs::table
+                .find(repo.org_id)
+                .select(vcsstar_db::models::Org::as_select())
+                .first(conn)?;
+            for r in reviews {
+                if r.state == "comment" || !seen.insert(r.reviewer) {
+                    continue;
+                }
+                if !["approved", "changes_requested"].contains(&r.state.as_str())
+                    || (!pr_rule.allow_self_approval && r.reviewer == pr.author_identity_id)
+                    || (pr_rule.dismiss_stale
+                        && (r.head_invalidated || r.head_sha_at_review != pr.head_sha))
+                    || (pr_rule.require_base_approval
+                        && (r.base_invalidated
+                            || r.base_sha_at_review.as_deref() != Some(pr.base_sha.as_str())
+                            || r.base_ref_at_review.as_deref() != Some(pr.base_ref.as_str())))
+                    || (!pr_rule.allow_delegated_approval && r.acting_via.is_some())
+                {
+                    continue;
+                }
+                let i: Identity = identities::table
+                    .find(r.reviewer)
+                    .select(Identity::as_select())
+                    .first(conn)?;
+                if i.disabled_at.is_some() {
+                    continue;
+                }
+                let reviewer = crate::principal::Principal {
+                    identity: i,
+                    scopes: vec![],
+                    kind: crate::principal::CredentialKind::Session,
+                    acting_via: None,
+                    credential_id: None,
+                    expires_at: None,
+                    instance_role: crate::principal::load_instance_role(conn, r.reviewer)?,
+                };
+                if !pr_rule.allowed_approvers.is_empty() {
+                    if !pr_rule
+                        .allowed_approvers
+                        .iter()
+                        .flatten()
+                        .any(|key| key == &reviewer.key())
+                    {
+                        continue;
+                    }
+                } else if crate::authz::repo_role(app, conn, &org, repo, Some(&reviewer))?
+                    .is_none_or(|role| role < RepoRole::Write)
+                {
+                    continue;
+                }
+                if r.state == "changes_requested" {
+                    if pr_rule.block_changes_requested {
+                        return Err(Error::new(
+                            Code::PreconditionFailed,
+                            "an eligible reviewer requested changes",
+                        ));
+                    }
+                } else {
+                    approvers.push(r.reviewer);
+                }
             }
-            let approvers: Vec<uuid::Uuid> =
-                q.select(pr_reviews::reviewer).distinct().load(conn)?;
             if (approvers.len() as i32) < pr_rule.required_approvals {
                 return Err(Error::new(
                     Code::PreconditionFailed,
@@ -912,7 +1034,22 @@ fn check_gates(
             let have = statuses::for_sha(conn, repo.id, &pr.head_sha)?;
             for ctx_name in required {
                 match have.iter().find(|s| s.context == ctx_name) {
-                    Some(s) if s.state == "success" => {}
+                    Some(s) if s.state == "success" => {
+                        let reporter = s.reporter.map(|id| identity(conn, id)).transpose()?;
+                        let trusted = reporter.is_some_and(|i| {
+                            pr_rule
+                                .required_check_reporters
+                                .iter()
+                                .flatten()
+                                .any(|key| key == &format!("{}@{}", i.user_id, i.domain))
+                        });
+                        if !trusted
+                            || (pr_rule.require_base_approval
+                                && s.base_sha.as_deref() != Some(pr.base_sha.as_str()))
+                        {
+                            return Err(Error::new(Code::PreconditionFailed,format!("required check {ctx_name} has no trusted result for the current base")));
+                        }
+                    }
                     Some(s) => {
                         return Err(Error::new(
                             Code::PreconditionFailed,
@@ -937,12 +1074,18 @@ fn check_gates(
                 dir,
                 Some(&RevId(pr.base_sha.clone())),
                 &RevId(pr.head_sha.clone()),
-                1000,
+                usize::MAX,
                 &Env::new(),
             )?;
             let signers = AllowedSigners::build(conn)?;
             for c in &commits {
-                let sig = signers.classify(conn, backend, dir, c, &Env::new())?;
+                let sig = signers.classify(
+                    conn,
+                    backend,
+                    dir,
+                    &backend.revision(dir, &c.id, &Env::new())?,
+                    &Env::new(),
+                )?;
                 let ok = match pr_rule.required_signature_level.as_str() {
                     "attested" => sig.status == "verified",
                     _ => sig.status == "verified" || sig.status == "valid_unattested",
@@ -1004,7 +1147,7 @@ pub fn merge(app: &App, ctx: &ReqCtx, req: MergeRequest) -> Result<MergeResult, 
     } else {
         pr
     };
-    check_gates(app, &mut conn, &repo, &dir, &pr, kind)?;
+    check_gates(app, &mut conn, &repo, &dir, &pr, kind, p)?;
     let author: Identity = identities::table
         .find(pr.author_identity_id)
         .select(Identity::as_select())
@@ -1105,6 +1248,23 @@ pub fn merge(app: &App, ctx: &ReqCtx, req: MergeRequest) -> Result<MergeResult, 
     };
     let commits = crate::services::vcs_ops::summaries(app, &dir, Some(&base_now), &merged)?;
     let updated = conn.transaction::<PrRow, Error, _>(|conn| {
+        crate::protection::lock(conn, repo.id)?;
+        let current: PrRow = pull_requests::table
+            .find(pr.id)
+            .for_update()
+            .select(PrRow::as_select())
+            .first(conn)?;
+        if current.state != "open"
+            || current.head_sha != pr.head_sha
+            || current.base_sha != pr.base_sha
+            || current.base_ref != pr.base_ref
+        {
+            return Err(Error::new(
+                Code::Conflict,
+                "pull request changed during merge; retry",
+            ));
+        }
+        check_gates(app, conn, &repo, &dir, &current, kind, p)?;
         vcs::capture(
             app,
             conn,
@@ -1118,7 +1278,16 @@ pub fn merge(app: &App, ctx: &ReqCtx, req: MergeRequest) -> Result<MergeResult, 
             old: Some(base_now.clone()),
             new: Some(merged.clone()),
         };
-        push::apply_ref_change(conn, &org, &repo, Some(p), &update, false, commits)?;
+        push::apply_ref_change(
+            conn,
+            &org,
+            &repo,
+            Some(p),
+            &update,
+            false,
+            commits,
+            crate::protection::Source::Merge,
+        )?;
         let u: PrRow = diesel::update(pull_requests::table.find(pr.id))
             .set((
                 pull_requests::state.eq("merged"),

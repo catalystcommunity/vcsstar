@@ -20,6 +20,7 @@ pub mod mirror;
 pub mod mirror_import;
 pub mod outbox;
 pub mod principal;
+pub mod protection;
 pub mod push;
 pub mod queue;
 pub mod ratelimit;

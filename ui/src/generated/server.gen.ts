@@ -2,7 +2,7 @@
 // Source: <csil spec>
 // Target: typescript-server
 
-import type { ActAsExchangeRequest, ApiToken, BeginDeviceRequest, BeginLoginRequest, BeginLoginResponse, BlobRequest, BlobResponse, BranchProtection, CaptureReport, Comment, CommentRequest, Commit, CommitPage, CommitStatus, CompleteLoginRequest, ConfigureMirrorRequest, ConnectRemoteRequest, CreateEndpointRequest, CreateOrgRequest, CreateRepoRequest, CreateServiceAccountRequest, CreateServiceAccountTokenRequest, CreateTeamRequest, CreateTokenRequest, Credential, CredentialRef, DeleteCommentRequest, DeleteRepoRequest, DeliveryPage, DeliveryQuery, DeliveryRef, DeviceApproveRequest, DeviceCode, DevicePollRequest, DevicePollResponse, DiffRequest, DiffResponse, EditCommentRequest, Empty, Endpoint, EndpointRef, FedHello, FedHelloAck, ForkRequest, GetCommitRequest, GetOrgRequest, GetRepoRequest, GithubHealth, GithubInstallationList, GithubLink, GithubRepoPage, Grant, HeadInfo, HeadQuery, ImportAllRequest, ImportAllResult, ImportRequest, InstanceRoleGrant, InstanceRoleList, KeyRef, LinkProviderRequest, ListBlockedResponse, ListCommentsResponse, ListCredentialsRequest, ListCredentialsResponse, ListEndpointsRequest, ListEndpointsResponse, ListGithubReposRequest, ListGrantsResponse, ListKeysResponse, ListOrgMembersRequest, ListOrgsRequest, ListPrRequest, ListProtectionsResponse, ListRefsRequest, ListRefsResponse, ListReposRequest, ListReviewsResponse, ListServiceAccountsResponse, ListStatusRequest, ListStatusResponse, ListTeamsResponse, ListTokensResponse, LogRequest, MergeRequest, MergeResult, MirrorStatus, Ok, OpenPrRequest, Org, OrgMember, OrgMemberPage, OrgPage, PrPage, PrRef, Preferences, ProviderLink, ProviderLinks, PullRequest, ReconcileReport, RefInfo, RegisterKeyRequest, RemoveGrantRequest, RemoveInstanceRoleRequest, RemoveOrgMemberRequest, RemoveProtectionRequest, ReplayRequest, ReplayResult, Repo, RepoPage, ResolveSyncConflictRequest, RetargetRequest, Review, ReviewRequest, RevokeServiceAccountTokenRequest, RevokeTokenRequest, ScopeSetRequest, ScopedBearer, ServerInfo, ServiceAccount, ServiceAccountRef, ServiceError, Session, SetCredentialRequest, SetGithubTokenRequest, SetGrantRequest, SetInstanceRoleRequest, SetMirrorScheduleRequest, SetOrgMemberRequest, SetPreferencesRequest, SetProtectionRequest, SetStatusRequest, SetSyncPolicyRequest, SetTeamMemberRequest, SignedActAsScopeSet, SshKeyInfo, StreamControl, StreamMessage, SyncConflicts, SyncConnection, SyncConnectionRef, SyncConnections, SyncPolicy, SyncRecords, SyncRecordsRequest, SyncWebhookSecret, Team, TeamRef, TreeRequest, TreeResponse, UnlinkProviderRequest, UpdateConnectionRequest, UpdateEndpointRequest, UpdateOrgRequest, UpdatePrRequest, UpdateRefRequest, UpdateRepoRequest, VerifyHeadRequest, WhoAmI } from "./types.gen.ts";
+import type { ActAsExchangeRequest, ApiToken, BeginDeviceRequest, BeginLoginRequest, BeginLoginResponse, BlobRequest, BlobResponse, BranchProtection, CaptureReport, ChangeLocalPasswordRequest, Comment, CommentRequest, Commit, CommitPage, CommitStatus, CompleteLoginRequest, ConfigureMirrorRequest, ConnectRemoteRequest, CreateEndpointRequest, CreateLocalAccountRequest, CreateOrgRequest, CreateRepoRequest, CreateServiceAccountRequest, CreateServiceAccountTokenRequest, CreateTeamRequest, CreateTokenRequest, Credential, CredentialRef, DeleteCommentRequest, DeleteRepoRequest, DeliveryPage, DeliveryQuery, DeliveryRef, DeviceApproveRequest, DeviceCode, DevicePollRequest, DevicePollResponse, DiffRequest, DiffResponse, EditCommentRequest, Empty, Endpoint, EndpointRef, FedHello, FedHelloAck, ForkRequest, GetCommitRequest, GetOrgRequest, GetRepoRequest, GithubHealth, GithubInstallationList, GithubLink, GithubRepoPage, Grant, HeadInfo, HeadQuery, ImportAllRequest, ImportAllResult, ImportRequest, InstanceRoleGrant, InstanceRoleList, KeyRef, LinkProviderRequest, ListBlockedResponse, ListCommentsResponse, ListCredentialsRequest, ListCredentialsResponse, ListEndpointsRequest, ListEndpointsResponse, ListGithubReposRequest, ListGrantsResponse, ListKeysResponse, ListOrgMembersRequest, ListOrgsRequest, ListPrRequest, ListProtectionsResponse, ListRefsRequest, ListRefsResponse, ListReposRequest, ListReviewsResponse, ListServiceAccountsResponse, ListStatusRequest, ListStatusResponse, ListTeamsResponse, ListTokensResponse, LocalAccount, LocalLoginRequest, LogRequest, MergeRequest, MergeResult, MirrorStatus, Ok, OpenPrRequest, Org, OrgMember, OrgMemberPage, OrgPage, PrPage, PrRef, Preferences, ProviderLink, ProviderLinks, PullRequest, ReconcileReport, RefInfo, RegisterKeyRequest, RemoveGrantRequest, RemoveInstanceRoleRequest, RemoveOrgMemberRequest, RemoveProtectionRequest, ReplayRequest, ReplayResult, Repo, RepoPage, ResetLocalPasswordRequest, ResolveSyncConflictRequest, RetargetRequest, Review, ReviewRequest, RevokeServiceAccountTokenRequest, RevokeTokenRequest, ScopeSetRequest, ScopedBearer, ServerInfo, ServiceAccount, ServiceAccountRef, ServiceError, Session, SetCredentialRequest, SetGithubTokenRequest, SetGrantRequest, SetInstanceRoleRequest, SetMirrorScheduleRequest, SetOrgMemberRequest, SetPreferencesRequest, SetProtectionRequest, SetStatusRequest, SetSyncPolicyRequest, SetTeamMemberRequest, SignedActAsScopeSet, SshKeyInfo, StreamControl, StreamMessage, SyncConflicts, SyncConnection, SyncConnectionRef, SyncConnections, SyncPolicy, SyncRecords, SyncRecordsRequest, SyncWebhookSecret, Team, TeamRef, TreeRequest, TreeResponse, UnlinkProviderRequest, UpdateConnectionRequest, UpdateEndpointRequest, UpdateOrgRequest, UpdatePrRequest, UpdateRefRequest, UpdateRepoRequest, VerifyHeadRequest, WhoAmI } from "./types.gen.ts";
 
 // The consumer-defined context carries auth, request id, etc. It is opaque to
 // generated code; the adapter defines its shape.
@@ -48,6 +48,9 @@ export interface AuthHandlers {
    * Save the given fields; absent fields keep their value.
    */
   setPreferences(req: SetPreferencesRequest, ctx: RequestContext): Promise<Preferences>;
+  localLogin(req: LocalLoginRequest, ctx: RequestContext): Promise<Session>;
+  localAccount(req: Empty, ctx: RequestContext): Promise<LocalAccount>;
+  changeLocalPassword(req: ChangeLocalPasswordRequest, ctx: RequestContext): Promise<Ok>;
 }
 
 export const AuthWireIds = {
@@ -73,6 +76,9 @@ export const AuthWireIds = {
     unlinkGithub: 17,
     getPreferences: 18,
     setPreferences: 19,
+    localLogin: 20,
+    localAccount: 21,
+    changeLocalPassword: 22,
   },
 } as const;
 
@@ -185,6 +191,8 @@ export interface InstanceHandlers {
   listRoles(req: Empty, ctx: RequestContext): Promise<InstanceRoleList>;
   setRole(req: SetInstanceRoleRequest, ctx: RequestContext): Promise<InstanceRoleGrant>;
   removeRole(req: RemoveInstanceRoleRequest, ctx: RequestContext): Promise<Ok>;
+  createLocalAccount(req: CreateLocalAccountRequest, ctx: RequestContext): Promise<LocalAccount>;
+  resetLocalPassword(req: ResetLocalPasswordRequest, ctx: RequestContext): Promise<Ok>;
 }
 
 export const InstanceWireIds = {
@@ -193,6 +201,8 @@ export const InstanceWireIds = {
     listRoles: 0,
     setRole: 1,
     removeRole: 2,
+    createLocalAccount: 3,
+    resetLocalPassword: 4,
   },
 } as const;
 
@@ -596,6 +606,21 @@ export async function dispatch(
           const res = await handlers.auth.setPreferences(req, ctx);
           return codec.encode(res);
         }
+        case "local-login": {
+          const req = codec.decode<LocalLoginRequest>(reqBytes);
+          const res = await handlers.auth.localLogin(req, ctx);
+          return codec.encode(res);
+        }
+        case "local-account": {
+          const req = codec.decode<Empty>(reqBytes);
+          const res = await handlers.auth.localAccount(req, ctx);
+          return codec.encode(res);
+        }
+        case "change-local-password": {
+          const req = codec.decode<ChangeLocalPasswordRequest>(reqBytes);
+          const res = await handlers.auth.changeLocalPassword(req, ctx);
+          return codec.encode(res);
+        }
         default:
           throw { code: 404, message: `unknown method ${service}.${method}` } satisfies ServiceError;
       }
@@ -683,6 +708,16 @@ export async function dispatch(
         case "remove-role": {
           const req = codec.decode<RemoveInstanceRoleRequest>(reqBytes);
           const res = await handlers.instance.removeRole(req, ctx);
+          return codec.encode(res);
+        }
+        case "create-local-account": {
+          const req = codec.decode<CreateLocalAccountRequest>(reqBytes);
+          const res = await handlers.instance.createLocalAccount(req, ctx);
+          return codec.encode(res);
+        }
+        case "reset-local-password": {
+          const req = codec.decode<ResetLocalPasswordRequest>(reqBytes);
+          const res = await handlers.instance.resetLocalPassword(req, ctx);
           return codec.encode(res);
         }
         default:
@@ -1284,6 +1319,21 @@ export async function dispatchCompact(
           const res = await handlers.auth.setPreferences(req, ctx);
           return codec.encode(res);
         }
+        case 20: {
+          const req = codec.decode<LocalLoginRequest>(reqBytes);
+          const res = await handlers.auth.localLogin(req, ctx);
+          return codec.encode(res);
+        }
+        case 21: {
+          const req = codec.decode<Empty>(reqBytes);
+          const res = await handlers.auth.localAccount(req, ctx);
+          return codec.encode(res);
+        }
+        case 22: {
+          const req = codec.decode<ChangeLocalPasswordRequest>(reqBytes);
+          const res = await handlers.auth.changeLocalPassword(req, ctx);
+          return codec.encode(res);
+        }
         default:
           throw { code: 404, message: `unknown ordinal ${service}.${method}` } satisfies ServiceError;
       }
@@ -1371,6 +1421,16 @@ export async function dispatchCompact(
         case 2: {
           const req = codec.decode<RemoveInstanceRoleRequest>(reqBytes);
           const res = await handlers.instance.removeRole(req, ctx);
+          return codec.encode(res);
+        }
+        case 3: {
+          const req = codec.decode<CreateLocalAccountRequest>(reqBytes);
+          const res = await handlers.instance.createLocalAccount(req, ctx);
+          return codec.encode(res);
+        }
+        case 4: {
+          const req = codec.decode<ResetLocalPasswordRequest>(reqBytes);
+          const res = await handlers.instance.resetLocalPassword(req, ctx);
           return codec.encode(res);
         }
         default:

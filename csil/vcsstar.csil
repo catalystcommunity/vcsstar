@@ -87,7 +87,9 @@ BeginLoginRequest = {
     identity_input: text,
     ? return_to: text,
     ;;; Present when a CLI device login is being approved.
-    ? device_user_code: text
+    ? device_user_code: text,
+    ;;; Bind the authenticated local account to the verified LinkKeys identity.
+    ? link_local: bool
 }
 BeginLoginResponse = {
     redirect_url: text,
@@ -241,6 +243,12 @@ GithubLink = {
 ;;; Link by a personal access token instead of the App authorization.
 SetGithubTokenRequest = { ctx: Ctx, token: text }
 
+LocalLoginRequest = { ctx: Ctx, username: text, password: text, ? return_to: text, ? device_user_code: text }
+CreateLocalAccountRequest = { ctx: Ctx, username: text, password: text, ? display_name: text }
+ResetLocalPasswordRequest = { ctx: Ctx, identity: text, password: text }
+ChangeLocalPasswordRequest = { ctx: Ctx, current_password: text, new_password: text }
+LocalAccount = { identity: Identity, ? username: text, password_login: bool }
+
 @wire-id(1)
 service Auth {
     @wire-id(0)
@@ -286,7 +294,13 @@ service Auth {
     get-preferences: Empty -> Preferences / ServiceError,
     ;;; Save the given fields; absent fields keep their value.
     @wire-id(19)
-    set-preferences: SetPreferencesRequest -> Preferences / ServiceError
+    set-preferences: SetPreferencesRequest -> Preferences / ServiceError,
+    @wire-id(20)
+    local-login: LocalLoginRequest -> Session / ServiceError,
+    @wire-id(21)
+    local-account: Empty -> LocalAccount / ServiceError,
+    @wire-id(22)
+    change-local-password: ChangeLocalPasswordRequest -> Ok / ServiceError
 }
 
 ;; ---------------------------------------------------------------------
@@ -503,7 +517,17 @@ BranchProtection = {
     ;;; subset of "merge" | "squash" | "rebase"
     allowed_merge_kinds: [* text],
     allow_force_push: bool,
-    allow_delete: bool
+    allow_delete: bool,
+    ;;; @default selects the current default branch. Authority is local or a connection UUID.
+    ? require_pull_request: bool,
+    ? merge_authority: text,
+    ? override_accounts: [* text],
+    ? allow_self_approval: bool,
+    ? require_base_approval: bool,
+    ? allowed_approvers: [* text],
+    ? required_check_reporters: [* text],
+    ? allow_delegated_approval: bool,
+    ? block_changes_requested: bool
 }
 SetProtectionRequest = { ctx: Ctx, repo: RepoRef, protection: BranchProtection }
 RemoveProtectionRequest = { ctx: Ctx, repo: RepoRef, ref_pattern: text }
@@ -605,6 +629,10 @@ ListPrRequest = { ctx: Ctx, repo: RepoRef, ? state: text, ? page: Page }
 PrPage = { pull_requests: [* PullRequest], ? next_cursor: text }
 
 Review = {
+    ? id: text,
+    ? invalidated: bool,
+    ? base_sha: text,
+    ? approval_scope: text,
     number: uint,
     reviewer: Identity,
     ;;; "approved" | "changes_requested" | "comment"
@@ -613,7 +641,7 @@ Review = {
     ? body: text,
     created_at: Timestamp
 }
-ReviewRequest = { ctx: Ctx, repo: RepoRef, number: uint, state: text, ? body: text, head_sha: text }
+ReviewRequest = { ctx: Ctx, repo: RepoRef, number: uint, state: text, ? body: text, head_sha: text, ? base_sha: text, ? approval_scope: text }
 Comment = {
     id: text,
     number: uint,
@@ -688,6 +716,7 @@ service PullRequests {
 ;; ---------------------------------------------------------------------
 
 CommitStatus = {
+    ? base_sha: text,
     sha: text,
     context: text,
     ;;; "pending" | "success" | "failure" | "error"
@@ -698,6 +727,7 @@ CommitStatus = {
     created_at: Timestamp
 }
 SetStatusRequest = {
+    ? base_sha: text,
     ctx: Ctx,
     repo: RepoRef,
     sha: text,
@@ -1032,6 +1062,7 @@ GithubHealth = {
 ;;; A remote connection of one repository. Access rules stay remote-local.
 SyncConnection = {
     id: text, provider: text, host: text, project: text, paused: bool,
+    inbound_enabled: bool, outbound_enabled: bool,
     automatic_webhook: bool, setup_done: bool, webhook_url: text,
     ? last_success_at: Timestamp, ? last_error: text,
     pending: uint, blocked: uint, skipped: uint
@@ -1039,12 +1070,15 @@ SyncConnection = {
 SyncConnections = { connections: [* SyncConnection] }
 ConnectRemoteRequest = {
     ctx: Ctx, repo: RepoRef, provider: text, host: text, project: text,
-    ? create_remote: bool, ? automatic_webhook: bool
+    ? create_remote: bool, ? automatic_webhook: bool,
+    ;;; New connections default to both directions disabled.
+    ? inbound_enabled: bool, ? outbound_enabled: bool
 }
 SyncConnectionRef = { ctx: Ctx, repo: RepoRef, connection_id: text }
 UpdateConnectionRequest = {
     ctx: Ctx, repo: RepoRef, connection_id: text,
-    ? paused: bool, ? automatic_webhook: bool
+    ? paused: bool, ? automatic_webhook: bool,
+    ? inbound_enabled: bool, ? outbound_enabled: bool
 }
 SyncWebhookSecret = { url: text, secret: text }
 SyncPolicy = {
@@ -1216,7 +1250,11 @@ service Instance {
     @wire-id(1)
     set-role: SetInstanceRoleRequest -> InstanceRoleGrant / ServiceError,
     @wire-id(2)
-    remove-role: RemoveInstanceRoleRequest -> Ok / ServiceError
+    remove-role: RemoveInstanceRoleRequest -> Ok / ServiceError,
+    @wire-id(3)
+    create-local-account: CreateLocalAccountRequest -> LocalAccount / ServiceError,
+    @wire-id(4)
+    reset-local-password: ResetLocalPasswordRequest -> Ok / ServiceError
 }
 
 @wire-id(11)
@@ -1321,6 +1359,7 @@ RefPayload = { ref: text, ? before: text, ? after: text }
 ;;; `comment_id` on `pr_comment`, `review_id` on `pr_review`: the row the
 ;;; event is about, so a consumer (and the GitHub sync) can fetch exactly it.
 PrPayload = {
+    ? base_sha: text,
     number: uint,
     ? head_sha: text,
     ? base_ref: text,

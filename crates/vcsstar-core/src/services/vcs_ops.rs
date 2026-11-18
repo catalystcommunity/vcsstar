@@ -276,10 +276,10 @@ pub fn update_ref(app: &App, ctx: &ReqCtx, req: UpdateRefRequest) -> Result<RefI
     };
     // Protections apply as for a push.
     let protections = repo_svc::protections_for(&mut conn, repo.id)?;
-    for pr in protections
-        .iter()
-        .filter(|pr| vcsstar_vcs::ref_pattern_matches(&pr.ref_pattern, &req.name))
-    {
+    for pr in protections.iter().filter(|pr| {
+        crate::protection::matches(pr, &req.name, &repo.default_branch)
+            && !crate::protection::override_allowed(pr, Some(p))
+    }) {
         if new.is_none() && !pr.allow_delete {
             return Err(Error::forbidden("ref is protected against deletion"));
         }
@@ -308,7 +308,64 @@ pub fn update_ref(app: &App, ctx: &ReqCtx, req: UpdateRefRequest) -> Result<RefI
         new: new.clone(),
     };
     conn.transaction::<(), Error, _>(|conn| {
-        push::apply_ref_change(conn, &org, &repo, Some(p), &update, forced, commits)
+        crate::protection::check_change(
+            conn,
+            &repo,
+            Some(p),
+            &update,
+            forced,
+            crate::protection::Source::Direct,
+        )?;
+        let rules = repo_svc::protections_for(conn, repo.id)?;
+        let rules: Vec<_> = rules
+            .iter()
+            .filter(|r| {
+                crate::protection::matches(r, &update.name, &repo.default_branch)
+                    && !crate::protection::override_allowed(r, Some(p))
+            })
+            .collect();
+        if let Some(target) = &update.new {
+            if rules.iter().any(|r| r.required_signature_level != "none") {
+                let signers = AllowedSigners::build(conn)?;
+                for rev in
+                    backend.rev_list(&dir, update.old.as_ref(), target, usize::MAX, &Env::new())?
+                {
+                    let full = backend.revision(&dir, &rev.id, &Env::new())?;
+                    let sig = signers.classify(conn, backend, &dir, &full, &Env::new())?;
+                    if rules
+                        .iter()
+                        .any(|r| match r.required_signature_level.as_str() {
+                            "none" => false,
+                            "attested" => sig.status != "verified",
+                            _ => !["verified", "valid_unattested"].contains(&sig.status.as_str()),
+                        })
+                    {
+                        return Err(Error::forbidden(
+                            "branch signature policy rejected the update",
+                        ));
+                    }
+                }
+            }
+        }
+        push::apply_ref_change(
+            conn,
+            &org,
+            &repo,
+            Some(p),
+            &update,
+            forced,
+            commits,
+            crate::protection::Source::Direct,
+        )?;
+        crate::services::prs::on_push(
+            app,
+            conn,
+            &org,
+            &repo,
+            Some(p),
+            std::slice::from_ref(&update),
+        )?;
+        Ok(())
     })?;
     Ok(RefInfo {
         name: req.name,

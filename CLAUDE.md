@@ -73,7 +73,7 @@ helm/                    chart for the catalyst cluster
   `/auth`; the session cookie is `vcsstar_session`.
 - LinkKeys `Rp` ops go over TCP 4987 only, through
   `vcsstar_core::linkkeys::TcpRpCaller`. When `VCSSTAR__LINKKEYS_RP_ADDR`
-  is unset, login is disabled and tokens still work.
+  is unset, LinkKeys login is disabled. Local password login and tokens still work.
 - `Rp/sign-request` asks for the claims `handle` (required), `display_name`
   and `email` (optional), and names the application `vcsstar`
   (`instance_keys::APPLICATION_ID`, the same id the instance keys and
@@ -109,6 +109,40 @@ helm/                    chart for the catalyst cluster
   sync handler on one of its four async workers; a few slow requests
   (an `import-repo` fetch) then stalled `/healthz` and the liveness probe
   restarted the pod.
+
+## Local accounts and branch authority
+
+- Instance admins create local accounts with `Instance/create-local-account`
+  or the **Account** page. There is no public registration. Use the existing
+  `bootstrap-token` command and `INSTANCE_ADMINS` to create the first admin
+  credential on a server without LinkKeys. Create the local account, then
+  assign its instance role with `Instance/set-role`.
+- `Auth/local-login` issues the same session type as LinkKeys login. The
+  browser form and CLI device approval use that operation. Local identity
+  keys use a random UUID at `local.invalid`; they are not LinkKeys claims.
+- Passwords use Argon2id v19, 64 MiB, six passes, four lanes, a random
+  128-bit salt, and a 256-bit result. The PHC string stores the parameters.
+  Passwords require 15 characters and accept at most 1024 bytes. Each
+  process permits two concurrent hashes and applies login rate limits.
+- `Auth/change-local-password` checks the current password.
+  `Instance/reset-local-password` requires an instance admin. Both revoke
+  sessions and API tokens. Neither can restore a LinkKeys-bound account.
+- A local session can request `Auth/begin-login` with `link_local: true`.
+  Only a verified LinkKeys callback changes the identity binding. It
+  preserves the internal identity ID and rejects a LinkKeys identity that
+  already belongs to another account. It does not match accounts by email
+  or handle. Binding clears the password and revokes sessions, API tokens,
+  and SSH keys. The new LinkKeys login creates a fresh session.
+- The `identities.linkkeys_bound` database trigger prevents reversal.
+  Changing local identity coordinates also activates this lock. Stored
+  password data or changed UI settings cannot override it. Reissue access
+  credentials after binding. Update policy lists that name the old local
+  identity key.
+- Branch authority and approval settings are described in `docs/gitlab.md`.
+  Apply them to Git pushes, ref-update RPCs, PR merges, and connection sync.
+  The repository lock serializes protected writes and policy changes.
+  Recheck PR state and gates in the merge transaction. Content reviews
+  carry an explicit scope and both SHAs; they do not grant head-CI access.
 
 ## Git serving (phase 1)
 
@@ -199,6 +233,14 @@ helm/                    chart for the catalyst cluster
 - Changes can start on any connection. Each destination has separate
   local and remote baselines. Do not use provider-wide echo suppression
   for connection sync. A remote change must reach the other connections.
+- Migration 23 adds `inbound_enabled` and `outbound_enabled`. New
+  connections default to both off. Existing connections and adopted legacy
+  mirrors retain both enabled, with the pause setting unchanged. Admins
+  can change either switch through `update-connection` or the Sync tab.
+  Recheck directions after conflict selection and before each item. Keep
+  baselines for deferred work. Setup writes require outbound enabled.
+  An item already in progress can finish. No deployment bootstrap file
+  is required for branch authority or override accounts.
 - A conflict stops one object. Use the preferred source or the assigned
   identity/team. Resolutions are queued and checked again by the worker.
 - Keep native records and raw provider data. Use an attributed summary

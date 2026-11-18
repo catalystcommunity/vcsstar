@@ -22,6 +22,10 @@ pub struct Connection {
     #[diesel(sql_type=Bool)]
     pub paused: bool,
     #[diesel(sql_type=Bool)]
+    pub inbound_enabled: bool,
+    #[diesel(sql_type=Bool)]
+    pub outbound_enabled: bool,
+    #[diesel(sql_type=Bool)]
     pub create_remote: bool,
     #[diesel(sql_type=Bool)]
     pub automatic_webhook: bool,

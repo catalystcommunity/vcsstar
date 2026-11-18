@@ -134,7 +134,7 @@ export class PullPage extends Page {
     const text = textArea("Comment", { rows: 4, autogrow: true, placeholder: "Say what you see" });
     const comment = button("Comment", { variant: "default", onClick: () => void act(async () => { await api.pullRequests.comment({ ctx: ctx(), repo: this.ref, number: this.number, body: text.value }); clear(text); }, { done: "Comment posted.", after: () => void this.load() }) });
     const reviewState = comboBox("Review", [{ value: "approved", label: "Approve" }, { value: "changes_requested", label: "Request changes" }, { value: "comment", label: "Comment only" }], { value: "approved" });
-    const review = button(["Submit review on ", mono(short(p.headSha))], { variant: "default", onClick: () => void act(async () => { await api.pullRequests.review({ ctx: ctx(), repo: this.ref, number: this.number, state: reviewState.value, headSha: p.headSha, body: text.value || undefined }); clear(text); }, { done: "Review submitted.", after: () => void this.load() }) });
+    const review = button(["Submit review on ", mono(short(p.headSha))], { variant: "default", onClick: () => void act(async () => { await api.pullRequests.review({ ctx: ctx(), repo: this.ref, number: this.number, state: reviewState.value, headSha: p.headSha, baseSha: p.baseSha, body: text.value || undefined }); clear(text); }, { done: "Review submitted.", after: () => void this.load() }) });
     const parts: unknown[] = [panel(text, h("div", { class: "row" }, comment, p.state === "open" && [reviewState, review]))];
     // Merging needs write access; closing and reopening also suit the author.
     const writer = ["write", "maintain", "admin"].includes(this.repoRole ?? "");

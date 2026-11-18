@@ -805,6 +805,13 @@ type Routes = std::sync::Arc<std::sync::Mutex<Vec<(String, Json)>>>;
 /// ignored) with its JSON and rate limit headers, 404 otherwise, and
 /// records every path asked. One request per connection.
 fn fake_api(routes: Routes, asked: std::sync::Arc<std::sync::Mutex<Vec<String>>>) -> String {
+    fake_api_with_methods(routes, asked, Default::default())
+}
+fn fake_api_with_methods(
+    routes: Routes,
+    asked: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    methods: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+) -> String {
     use std::io::{Read, Write};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
@@ -823,6 +830,10 @@ fn fake_api(routes: Routes, asked: std::sync::Arc<std::sync::Mutex<Vec<String>>>
                 }
             }
             let head = String::from_utf8_lossy(&buf);
+            methods
+                .lock()
+                .unwrap()
+                .push(head.split_whitespace().next().unwrap_or("").into());
             let target = head
                 .lines()
                 .next()
@@ -1930,8 +1941,9 @@ fn star_sync_imports_history_resolves_one_item_and_keeps_permissions_local() {
     }
     let tmp = tempfile::tempdir().unwrap();
     let routes: Routes = Default::default();
-    let asked = Default::default();
-    let base = fake_api(routes.clone(), asked);
+    let asked: std::sync::Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+    let methods: std::sync::Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+    let base = fake_api_with_methods(routes.clone(), asked.clone(), methods.clone());
     let app = app_with_api(tmp.path(), &base)
         .expect("test database must be available and migrations must pass");
     let principal = principal(&app);
@@ -1971,6 +1983,28 @@ fn star_sync_imports_history_resolves_one_item_and_keeps_permissions_local() {
         },
     )
     .unwrap();
+    // This fixture tests unrestricted sync before it adds a protection below.
+    let defaults = repo_svc::list_protections(
+        &app,
+        &ctx,
+        t::GetRepoRequest {
+            ctx: wire_ctx(),
+            repo: repo.clone(),
+        },
+    )
+    .unwrap();
+    for rule in defaults.protections {
+        repo_svc::remove_protection(
+            &app,
+            &ctx,
+            t::RemoveProtectionRequest {
+                ctx: wire_ctx(),
+                repo: repo.clone(),
+                ref_pattern: rule.ref_pattern,
+            },
+        )
+        .unwrap();
+    }
     let full = format!("{org}/thing");
     let (_, main, feat) = fake_github(tmp.path(), &org, "thing");
     let prefix = format!("/repos/{full}");
@@ -2000,16 +2034,87 @@ fn star_sync_imports_history_resolves_one_item_and_keeps_permissions_local() {
             project: full,
             create_remote: None,
             automatic_webhook: None,
+            inbound_enabled: None,
+            outbound_enabled: None,
         },
     )
     .unwrap();
     assert!(!connected.automatic_webhook);
+    assert!(!connected.inbound_enabled);
+    assert!(!connected.outbound_enabled);
+    let set_directions = |inbound, outbound| {
+        service::update(
+            &app,
+            &ctx,
+            t::UpdateConnectionRequest {
+                ctx: wire_ctx(),
+                repo: repo.clone(),
+                connection_id: connected.id.clone(),
+                paused: None,
+                automatic_webhook: None,
+                inbound_enabled: inbound,
+                outbound_enabled: outbound,
+            },
+        )
+        .unwrap()
+    };
     let id = uuid::Uuid::parse_str(&connected.id).unwrap();
     let task = engine::Task {
         connection_id: id,
         webhook: Some(b"{}".to_vec()),
     };
+    // Even an explicit sync request or a queued webhook cannot enable sync.
+    service::sync_now(
+        &app,
+        &ctx,
+        t::SyncConnectionRef {
+            ctx: wire_ctx(),
+            repo: repo.clone(),
+            connection_id: connected.id.clone(),
+        },
+    )
+    .unwrap();
     assert!(engine::run(&app, &task).unwrap());
+    assert!(asked.lock().unwrap().is_empty());
+    let mut conn = app.conn().unwrap();
+    let connection = store::connection(&mut conn, id).unwrap();
+    assert!(store::replicas(&mut conn, id).unwrap().is_empty());
+    assert!(refs::get(&mut conn, connection.repo_id, "refs/heads/main")
+        .unwrap()
+        .is_none());
+    drop(conn);
+    // Outbound alone can read the destination, but cannot import its records.
+    let flags = set_directions(None, Some(true));
+    assert!(!flags.inbound_enabled && flags.outbound_enabled);
+    engine::run(&app, &task).unwrap();
+    let mut conn = app.conn().unwrap();
+    let (_, native) = local::load_repo(&mut conn, connection.repo_id).unwrap();
+    assert!(!local::snapshot(&mut conn, &native)
+        .unwrap()
+        .values()
+        .any(|i| i.kind == "pr"));
+    assert!(refs::get(&mut conn, native.id, "refs/heads/main")
+        .unwrap()
+        .is_none());
+    drop(conn);
+    // Reuse the same queued task with the opposite direction enabled.
+    // Automatic setup also waits for outbound permission.
+    service::update(
+        &app,
+        &ctx,
+        t::UpdateConnectionRequest {
+            ctx: wire_ctx(),
+            repo: repo.clone(),
+            connection_id: connected.id.clone(),
+            paused: None,
+            automatic_webhook: Some(true),
+            inbound_enabled: Some(true),
+            outbound_enabled: Some(false),
+        },
+    )
+    .unwrap();
+    engine::run(&app, &task).unwrap();
+    assert!(methods.lock().unwrap().iter().all(|method| method == "GET"));
     let mut conn = app.conn().unwrap();
     let connection = store::connection(&mut conn, id).unwrap();
     assert!(
@@ -2052,6 +2157,31 @@ fn star_sync_imports_history_resolves_one_item_and_keeps_permissions_local() {
         },
     )
     .unwrap();
+    // Return to manual setup before allowing outbound writes.
+    let manual = service::update(
+        &app,
+        &ctx,
+        t::UpdateConnectionRequest {
+            ctx: wire_ctx(),
+            repo: repo.clone(),
+            connection_id: connected.id.clone(),
+            paused: None,
+            automatic_webhook: Some(false),
+            inbound_enabled: None,
+            outbound_enabled: None,
+        },
+    )
+    .unwrap();
+    assert!(!manual.setup_done);
+    // Resolver approval does not override a disabled direction.
+    set_directions(Some(false), Some(true));
+    engine::run(&app, &task).unwrap();
+    let mut conn = app.conn().unwrap();
+    let (_, unchanged) = local::load_repo(&mut conn, native.id).unwrap();
+    assert_eq!(unchanged.description.as_deref(), Some("local description"));
+    assert_eq!(store::conflicts(&mut conn, native.id).unwrap().len(), 1);
+    drop(conn);
+    set_directions(Some(true), Some(false));
     engine::run(&app, &task).unwrap();
     let mut conn = app.conn().unwrap();
     let (_, native) = local::load_repo(&mut conn, native.id).unwrap();
@@ -2065,7 +2195,48 @@ fn star_sync_imports_history_resolves_one_item_and_keeps_permissions_local() {
     let before = local::snapshot(&mut conn, &native).unwrap();
     let (comment_key, comment) = before.iter().find(|(_, i)| i.kind == "comment").unwrap();
     assert_eq!(comment.created_at, 1704153600000);
-    // Remote deletion removes the native comment and retains its full record.
+    // A local edit stays pending while outbound is off, then exports once.
+    diesel::update(vcsstar_db::schema::repos::table.find(native.id))
+        .set(vcsstar_db::schema::repos::description.eq("updated locally"))
+        .execute(&mut conn)
+        .unwrap();
+    drop(conn);
+    methods.lock().unwrap().clear();
+    engine::run(&app, &task).unwrap();
+    assert!(methods.lock().unwrap().iter().all(|method| method == "GET"));
+    let mut conn = app.conn().unwrap();
+    let saved = store::replicas(&mut conn, id)
+        .unwrap()
+        .into_iter()
+        .find(|p| p.object_key == "settings")
+        .unwrap();
+    assert_eq!(
+        saved.local_base.unwrap()["data"]["description"],
+        "remote description"
+    );
+    drop(conn);
+    let flags = set_directions(None, Some(true));
+    assert!(flags.inbound_enabled && flags.outbound_enabled);
+    engine::run(&app, &task).unwrap();
+    assert_eq!(
+        methods
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|method| *method == "PATCH")
+            .count(),
+        1
+    );
+    // The fixture returns static JSON. Make its next read reflect the write.
+    routes
+        .lock()
+        .unwrap()
+        .iter_mut()
+        .find(|(p, _)| p == &prefix)
+        .unwrap()
+        .1["description"] = json!("updated locally");
+    set_directions(None, Some(false));
+    // Remote deletion stays pending while inbound is off.
     routes
         .lock()
         .unwrap()
@@ -2073,7 +2244,15 @@ fn star_sync_imports_history_resolves_one_item_and_keeps_permissions_local() {
         .find(|(p, _)| p == &format!("{prefix}/issues/1/comments"))
         .unwrap()
         .1 = json!([]);
+    set_directions(Some(false), Some(true));
+    engine::run(&app, &task).unwrap();
+    let mut conn = app.conn().unwrap();
+    assert!(local::snapshot(&mut conn, &native)
+        .unwrap()
+        .contains_key(comment_key));
     drop(conn);
+    // Enabling inbound applies the deletion and retains the full record.
+    set_directions(Some(true), Some(false));
     engine::run(&app, &task).unwrap();
     let mut conn = app.conn().unwrap();
     assert!(!local::snapshot(&mut conn, &native)
@@ -2113,7 +2292,7 @@ fn star_sync_imports_history_resolves_one_item_and_keeps_permissions_local() {
         .unwrap()
         .last_error
         .unwrap()
-        .contains("requires a reviewed merge"));
+        .contains("configured merge authority"));
     // A second provider is a separate connection and has a separate policy target.
     drop(conn);
     let second = service::connect(
@@ -2127,6 +2306,8 @@ fn star_sync_imports_history_resolves_one_item_and_keeps_permissions_local() {
             project: format!("{org}/nested/thing"),
             create_remote: Some(true),
             automatic_webhook: None,
+            inbound_enabled: None,
+            outbound_enabled: None,
         },
     )
     .unwrap();
@@ -2153,6 +2334,24 @@ fn star_sync_imports_history_resolves_one_item_and_keeps_permissions_local() {
     };
     limited.principal.as_mut().unwrap().scopes = vec!["repo:read".into()];
     assert_eq!(
+        service::update(
+            &app,
+            &limited,
+            t::UpdateConnectionRequest {
+                ctx: wire_ctx(),
+                repo: repo.clone(),
+                connection_id: connected.id.clone(),
+                paused: None,
+                automatic_webhook: None,
+                inbound_enabled: Some(true),
+                outbound_enabled: Some(true),
+            }
+        )
+        .unwrap_err()
+        .code,
+        vcsstar_core::Code::Forbidden
+    );
+    assert_eq!(
         service::connect(
             &app,
             &limited,
@@ -2163,7 +2362,9 @@ fn star_sync_imports_history_resolves_one_item_and_keeps_permissions_local() {
                 host: "gitlab.com".into(),
                 project: "group/other".into(),
                 create_remote: None,
-                automatic_webhook: None
+                automatic_webhook: None,
+                inbound_enabled: None,
+                outbound_enabled: None,
             }
         )
         .unwrap_err()
@@ -2233,6 +2434,8 @@ fn star_gitlab_reads_closed_history_and_updates_summaries_without_duplicates() {
             project: format!("{org}/nested/thing"),
             create_remote: None,
             automatic_webhook: None,
+            inbound_enabled: None,
+            outbound_enabled: None,
         },
     )
     .unwrap();

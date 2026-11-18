@@ -201,6 +201,7 @@ pub fn apply(
     let kind = key.split(':').next().unwrap_or(key);
     outbox::with_origin(source, || {
         conn.transaction::<(),Error,_>(|conn| {
+        crate::protection::lock(conn,repo.id)?;
         if kind=="history" {
             store::save_object(conn,repo.id,key,item,source)?;
             emit(conn,org,repo,"sync_applied",key,item.and_then(|i|i.actor))?;
@@ -212,7 +213,7 @@ pub fn apply(
             if !name.starts_with("refs/heads/") && !name.starts_with("refs/tags/") { return Err(Error::invalid("only branches and tags can sync")); }
             let update=RefUpdate{name:name.into(),old:refs::get(conn,repo.id,name)?,new:item.map(|i|RevId(text(&i.data,"sha").into()))};
             let forced = push::check_sync_ref(app,conn,repo,&update)?;
-            push::apply_ref_change(conn,org,repo,None,&update,forced,vec![])?;
+            push::apply_ref_change(conn,org,repo,None,&update,forced,vec![],crate::protection::Source::Connection(source))?;
             crate::services::prs::on_push(app,conn,org,repo,None,std::slice::from_ref(&update))?;
         } else if let Some(item)=item {
             if item.kind != kind { return Err(Error::invalid("a destination summary cannot replace the full record")); }
@@ -239,9 +240,9 @@ pub fn apply(
                     if !valid {return Err(Error::invalid("parent request is not in this repository"));}
                     data["parent_id"]=json!(parent);
                     if kind=="comment" {"INSERT INTO pr_comments(id,pr_id,author,body,path,line,commit_sha,created_at) VALUES(($2->>'id')::uuid,($2->>'parent_id')::uuid,($2->>'actor')::uuid,$2->>'body',$2->>'path',($2->>'line')::integer,$2->>'commit_sha',($2->>'created_at')::timestamptz) ON CONFLICT(id) DO UPDATE SET body=EXCLUDED.body,path=EXCLUDED.path,line=EXCLUDED.line,commit_sha=EXCLUDED.commit_sha,edited_at=now() WHERE pr_comments.pr_id IN (SELECT id FROM pull_requests WHERE repo_id=$1)"}
-                    else {"INSERT INTO pr_reviews(id,pr_id,reviewer,state,head_sha_at_review,body,created_at) VALUES(($2->>'id')::uuid,($2->>'parent_id')::uuid,($2->>'actor')::uuid,$2->>'state',$2->>'head_sha',$2->>'body',($2->>'created_at')::timestamptz) ON CONFLICT(id) DO UPDATE SET state=EXCLUDED.state,body=EXCLUDED.body,head_sha_at_review=EXCLUDED.head_sha_at_review WHERE pr_reviews.pr_id IN (SELECT id FROM pull_requests WHERE repo_id=$1)"}
+                    else {"INSERT INTO pr_reviews(id,pr_id,reviewer,state,head_sha_at_review,body,created_at) VALUES(($2->>'id')::uuid,($2->>'parent_id')::uuid,($2->>'actor')::uuid,$2->>'state',$2->>'head_sha',$2->>'body',($2->>'created_at')::timestamptz) ON CONFLICT(id) DO UPDATE SET state=EXCLUDED.state,body=EXCLUDED.body,head_sha_at_review=EXCLUDED.head_sha_at_review,base_sha_at_review=NULL,approval_scope=NULL WHERE pr_reviews.pr_id IN (SELECT id FROM pull_requests WHERE repo_id=$1)"}
                 },
-                "status"=>"INSERT INTO statuses(id,repo_id,sha,context,state,target_url,description,reporter,created_at) VALUES(($2->>'id')::uuid,$1,$2->>'sha',$2->>'context',$2->>'state',$2->>'target_url',$2->>'description',($2->>'actor')::uuid,($2->>'created_at')::timestamptz) ON CONFLICT(repo_id,sha,context) DO UPDATE SET state=EXCLUDED.state,target_url=EXCLUDED.target_url,description=EXCLUDED.description,reporter=EXCLUDED.reporter,created_at=EXCLUDED.created_at",
+                "status"=>"INSERT INTO statuses(id,repo_id,sha,context,state,target_url,description,reporter,created_at) VALUES(($2->>'id')::uuid,$1,$2->>'sha',$2->>'context',$2->>'state',$2->>'target_url',$2->>'description',($2->>'actor')::uuid,($2->>'created_at')::timestamptz) ON CONFLICT(repo_id,sha,context) DO UPDATE SET state=EXCLUDED.state,target_url=EXCLUDED.target_url,description=EXCLUDED.description,reporter=EXCLUDED.reporter,created_at=EXCLUDED.created_at,base_sha=NULL",
                 _=>return Err(Error::invalid("unsupported sync kind"))
             };
             diesel::sql_query(sql).bind::<SqlUuid,_>(repo.id).bind::<Jsonb,_>(data).execute(conn)?;

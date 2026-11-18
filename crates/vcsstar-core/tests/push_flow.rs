@@ -152,6 +152,13 @@ fn hook_transaction_moves_refs_and_writes_events() {
     let mut conn = app.db.get().unwrap();
     let (org, repo, _role) =
         vcsstar_core::authz::load_repo_visible(&app, &mut conn, &ctx, &org_name, "r").unwrap();
+    // This fixture sets its own policies. Default policy is tested in trust_policy.
+    diesel::delete(
+        vcsstar_db::schema::branch_protections::table
+            .filter(vcsstar_db::schema::branch_protections::repo_id.eq(repo.id)),
+    )
+    .execute(&mut conn)
+    .unwrap();
     let dir = vcsstar_core::vcs::hydrate(&app, &mut conn, &repo).unwrap();
 
     // A work repo with two commits; move its objects into the cache dir the
@@ -234,6 +241,15 @@ fn hook_transaction_moves_refs_and_writes_events() {
                 name: "r".into(),
             },
             protection: vcsstar_types::BranchProtection {
+                require_pull_request: Some(false),
+                merge_authority: None,
+                override_accounts: None,
+                allow_self_approval: None,
+                require_base_approval: None,
+                allowed_approvers: None,
+                required_check_reporters: None,
+                allow_delegated_approval: None,
+                block_changes_requested: None,
                 ref_pattern: "main".into(),
                 required_approvals: 0,
                 dismiss_stale: false,

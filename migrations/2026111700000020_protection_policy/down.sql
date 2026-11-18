@@ -1,0 +1,12 @@
+DROP TRIGGER repos_default_protections ON repos;
+DROP FUNCTION seed_branch_protections();
+ALTER TABLE branch_protections DROP COLUMN require_pull_request;
+ALTER TABLE branch_protections DROP COLUMN merge_authority;
+ALTER TABLE branch_protections DROP COLUMN override_accounts;
+ALTER TABLE branch_protections DROP COLUMN allow_self_approval;
+ALTER TABLE branch_protections DROP COLUMN require_base_approval;
+ALTER TABLE branch_protections DROP COLUMN allowed_approvers;
+ALTER TABLE branch_protections DROP COLUMN required_check_reporters;
+ALTER TABLE branch_protections DROP COLUMN allow_delegated_approval;
+ALTER TABLE pr_reviews DROP COLUMN base_sha_at_review, DROP COLUMN base_ref_at_review, DROP COLUMN acting_via, DROP COLUMN approval_scope;
+ALTER TABLE statuses DROP COLUMN base_sha;

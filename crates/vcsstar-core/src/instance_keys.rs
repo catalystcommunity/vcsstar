@@ -308,7 +308,11 @@ pub fn renew(app: &App, conn: &mut DbConn) -> Result<usize, Error> {
 /// OpenSSH private key file. `None` when the instance has no keys yet, so
 /// merges stay unsigned rather than failing.
 pub fn signer(app: &App, conn: &mut DbConn) -> Result<Option<SshSigner>, Error> {
-    let rows = load(conn)?;
+    let current_instance = instance_id(app);
+    let rows: Vec<_> = load(conn)?
+        .into_iter()
+        .filter(|row| row.instance_id == current_instance)
+        .collect();
     let Some(row) = rows
         .iter()
         .find(|r| r.attestation_expires_at.is_some_and(|x| x > Utc::now()))

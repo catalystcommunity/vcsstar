@@ -24,7 +24,7 @@ use crate::{to_ms, App, Error};
 /// Outbox lane of instance-wide changes.
 pub const LANE: &str = "@instance";
 
-fn require_admin<'a>(app: &App, ctx: &'a ReqCtx) -> Result<&'a Principal, Error> {
+pub(crate) fn require_admin<'a>(app: &App, ctx: &'a ReqCtx) -> Result<&'a Principal, Error> {
     let p = ctx.require()?;
     p.require_scope("admin")?;
     if !authz::is_instance_admin(app, p) {

@@ -12,6 +12,8 @@ export function syncTab(c: { org: string; name: string; can(role: "read" | "writ
   const project = textField("Project path", { required: true, placeholder: "group/project" });
   const create = checkBox("Create the remote repository", { checked: false });
   const automatic = checkBox("Configure the webhook automatically", { checked: false });
+  const inbound = checkBox("Enable inbound: remote to VCSStar", { checked: false });
+  const outbound = checkBox("Enable outbound: VCSStar to remote", { checked: false });
   const run = (work: () => Promise<unknown>) => void act(work, { feedback, after: () => void load() });
   async function load() {
     try {
@@ -19,12 +21,14 @@ export function syncTab(c: { org: string; name: string; can(role: "read" | "writ
         api.mirror.listConnections({ ctx: ctx(), repo }), api.mirror.getPolicy({ ctx: ctx(), repo }), api.mirror.listConflicts({ ctx: ctx(), repo }),
       ]);
       fill(connections, ...list.connections.map(s => panel(
-        h("div", { class: "row" }, h("strong", null, `${s.host}/${s.project}`), badge(s.paused ? "paused" : "active"), badge(`${s.pending} pending`), badge(`${s.blocked} blocked`), badge(`${s.skipped} omitted`)),
+        h("div", { class: "row" }, h("strong", null, `${s.host}/${s.project}`), badge(s.paused ? "paused" : (!s.inboundEnabled && !s.outboundEnabled ? "disabled" : "active")), badge(`Inbound ${s.inboundEnabled ? "on" : "off"}`), badge(`Outbound ${s.outboundEnabled ? "on" : "off"}`), badge(`${s.pending} pending`), badge(`${s.blocked} blocked`), badge(`${s.skipped} omitted`)),
         h("p", null, `Last complete pass: ${when(s.lastSuccessAt) || "never"}. Webhook: ${s.automaticWebhook ? "automatic" : "manual"}.`),
         s.lastError && h("p", { class: "problem", role: "alert" }, s.lastError),
         h("div", { class: "row" },
-          c.can("maintain") && button("Sync now", { onClick: () => run(() => api.mirror.syncNow({ ctx: ctx(), repo, connectionId: s.id })) }),
-          c.can("admin") && button(s.paused ? "Resume" : "Pause", { onClick: () => run(() => api.mirror.updateConnection({ ctx: ctx(), repo, connectionId: s.id, paused: !s.paused })) }),
+          c.can("maintain") && button("Sync now", { disabled: s.paused || (!s.inboundEnabled && !s.outboundEnabled), onClick: () => run(() => api.mirror.syncNow({ ctx: ctx(), repo, connectionId: s.id })) }),
+          c.can("admin") && button(s.inboundEnabled ? "Disable inbound" : "Enable inbound", { onClick: () => run(() => api.mirror.updateConnection({ ctx: ctx(), repo, connectionId: s.id, inboundEnabled: !s.inboundEnabled })) }),
+          c.can("admin") && button(s.outboundEnabled ? "Disable outbound" : "Enable outbound", { onClick: () => run(() => api.mirror.updateConnection({ ctx: ctx(), repo, connectionId: s.id, outboundEnabled: !s.outboundEnabled })) }),
+          c.can("admin") && button(s.paused ? "Resume enabled directions" : "Pause all", { onClick: () => run(() => api.mirror.updateConnection({ ctx: ctx(), repo, connectionId: s.id, paused: !s.paused })) }),
           c.can("admin") && button("Webhook setup", { onClick: () => run(async () => {
             const secret = await api.mirror.webhookSecret({ ctx: ctx(), repo, connectionId: s.id });
             await showSecretOnce("Webhook secret", secret.secret, h("div", null, h("p", null, "Create a webhook at the destination. Use this URL and secret. Select push, request, comment, review, and status events that the provider supports."), mono(secret.url)));
@@ -45,18 +49,18 @@ export function syncTab(c: { org: string; name: string; can(role: "read" | "writ
         fill(policyBox, section("Conflict policy", "Only the affected item stops. Other items continue. Select a preferred source, or set a resolver identity or team.",
           form({ onSubmit: () => run(() => api.mirror.setPolicy({ ctx: ctx(), repo, policy: source.value === "resolver" ? { resolverIdentity: identity.value || undefined, resolverTeam: team.value || undefined } : { preferredSource: source.value } })) }, source, identity, team, button("Save policy", { type: "submit" }))));
       }
-      fill(conflicts, section("Conflicts", "The assigned resolver can select a version. The selected version will be sent to the other connections.",
+      fill(conflicts, section("Conflicts", "The assigned resolver can select a version. The selected version will be sent through enabled directions.",
         ...blocked.conflicts.map(f => panel(mono(f.objectKey), h("details", null, h("summary", null, "Compare versions"), h("h4", null, "VCSStar"), h("pre", null, f.localJson), h("h4", null, "Remote"), h("pre", null, f.remoteJson)),
           button("Keep VCSStar version", { onClick: () => run(() => api.mirror.resolveConflict({ ctx: ctx(), repo, conflictId: f.id, choice: "local" })) }),
           button("Use remote version", { onClick: () => run(() => api.mirror.resolveConflict({ ctx: ctx(), repo, conflictId: f.id, choice: "remote" })) }))),
         blocked.conflicts.length === 0 && empty("No conflicts.")));
     } catch (error) { feedback.error(error); }
   }
-  const add = c.can("admin") && section("Add a connection", "Connect an existing repository, or request a new one. Set credentials on the organization page. Manual webhook setup is the default. VCSStar reports missing permissions; a repository administrator must grant them or complete setup.",
+  const add = c.can("admin") && section("Add a connection", "Connect an existing repository, or request a new one. Both directions start off. Set branch authority and override accounts, then enable each direction when ready. Set credentials on the organization page. Remote creation and automatic webhook setup need outbound enabled.",
     form({ onSubmit: () => run(async () => {
-      await api.mirror.connect({ ctx: ctx(), repo, provider: provider.value, host: host.value, project: project.value, createRemote: create.checked, automaticWebhook: automatic.checked });
+      await api.mirror.connect({ ctx: ctx(), repo, provider: provider.value, host: host.value, project: project.value, createRemote: create.checked, automaticWebhook: automatic.checked, inboundEnabled: inbound.checked, outboundEnabled: outbound.checked });
       fill(policyBox);
-    }) }, provider, host, project, create, automatic, button("Connect", { type: "submit" })));
+    }) }, provider, host, project, create, automatic, inbound, outbound, button("Connect", { type: "submit" })));
   async function loadRecords(cursor?: string) {
     try {
       const page = await api.mirror.listSyncRecords({ ctx: ctx(), repo, page: { cursor, limit: 50 } });
@@ -65,7 +69,7 @@ export function syncTab(c: { org: string; name: string; can(role: "read" | "writ
     } catch (error) { feedback.error(error); }
   }
   void load();
-  return { element: h("div", null, feedback.element, section("Remote connections", "Changes can start in VCSStar or any connected repository. Visibility, permissions, and protection rules stay local to each system.", connections), add, policyBox, conflicts,
+  return { element: h("div", null, feedback.element, section("Remote connections", "Inbound applies remote changes to VCSStar. Outbound sends VCSStar changes to the remote. You can change either switch at any time. An item already in progress can finish. Branch protection rules still apply.", connections), add, policyBox, conflicts,
     section("Stored records", "VCSStar keeps the full record when a destination can store only a summary or link.", button("Load records", { onClick: () => void loadRecords() }), records)), update() {}, refresh() { void load(); } };
 }
 

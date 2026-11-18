@@ -122,6 +122,24 @@ pub trait Auth {
         ctx: &Self::Context,
         input: SetPreferencesRequest,
     ) -> Result<Preferences, ServiceError>;
+    /// local-login (request/response).
+    fn local_login(
+        &self,
+        ctx: &Self::Context,
+        input: LocalLoginRequest,
+    ) -> Result<Session, ServiceError>;
+    /// local-account (request/response).
+    fn local_account(
+        &self,
+        ctx: &Self::Context,
+        input: Empty,
+    ) -> Result<LocalAccount, ServiceError>;
+    /// change-local-password (request/response).
+    fn change_local_password(
+        &self,
+        ctx: &Self::Context,
+        input: ChangeLocalPasswordRequest,
+    ) -> Result<Ok, ServiceError>;
 }
 
 /// Wire-id ordinals for the Auth service (transport compact profiles).
@@ -147,6 +165,9 @@ pub mod auth_wire_ids {
     pub const OP_UNLINK_GITHUB: u64 = 17;
     pub const OP_GET_PREFERENCES: u64 = 18;
     pub const OP_SET_PREFERENCES: u64 = 19;
+    pub const OP_LOCAL_LOGIN: u64 = 20;
+    pub const OP_LOCAL_ACCOUNT: u64 = 21;
+    pub const OP_CHANGE_LOCAL_PASSWORD: u64 = 22;
 }
 
 /// Orgs service trait
@@ -704,6 +725,18 @@ pub trait Instance {
         ctx: &Self::Context,
         input: RemoveInstanceRoleRequest,
     ) -> Result<Ok, ServiceError>;
+    /// create-local-account (request/response).
+    fn create_local_account(
+        &self,
+        ctx: &Self::Context,
+        input: CreateLocalAccountRequest,
+    ) -> Result<LocalAccount, ServiceError>;
+    /// reset-local-password (request/response).
+    fn reset_local_password(
+        &self,
+        ctx: &Self::Context,
+        input: ResetLocalPasswordRequest,
+    ) -> Result<Ok, ServiceError>;
 }
 
 /// Wire-id ordinals for the Instance service (transport compact profiles).
@@ -712,6 +745,8 @@ pub mod instance_wire_ids {
     pub const OP_LIST_ROLES: u64 = 0;
     pub const OP_SET_ROLE: u64 = 1;
     pub const OP_REMOVE_ROLE: u64 = 2;
+    pub const OP_CREATE_LOCAL_ACCOUNT: u64 = 3;
+    pub const OP_RESET_LOCAL_PASSWORD: u64 = 4;
 }
 
 /// ServiceAccounts service trait

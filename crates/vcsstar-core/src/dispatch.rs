@@ -8,8 +8,8 @@ use vcsstar_types as t;
 
 use crate::principal::{self, ReqCtx};
 use crate::services::{
-    actas, auth, hooks, instance, keys, login, meta, mirror, orgs, prs, repos, service_accounts,
-    statuses, vcs_ops,
+    actas, auth, hooks, instance, keys, local_login, login, meta, mirror, orgs, prs, repos,
+    service_accounts, statuses, vcs_ops,
 };
 use crate::{App, Error};
 
@@ -89,6 +89,11 @@ pub const NOT_IMPLEMENTED: &[(&str, &str)] = &[
 /// Operations with a handler. Kept as data so the completeness test can
 /// compare against the descriptor without a database.
 pub const IMPLEMENTED: &[(&str, &str)] = &[
+    ("Instance", "reset-local-password"),
+    ("Instance", "create-local-account"),
+    ("Auth", "change-local-password"),
+    ("Auth", "local-account"),
+    ("Auth", "local-login"),
     ("Meta", "server-info"),
     ("Auth", "begin-login"),
     ("Auth", "complete-login"),
@@ -1026,6 +1031,51 @@ impl Dispatcher for AppDispatcher {
                 encode_import_all_result,
                 "ImportAllResult",
                 mirror::import_all
+            ),
+            ("Auth", "local-login") => op!(
+                app,
+                peer,
+                payload,
+                decode_local_login_request,
+                encode_session,
+                "Session",
+                local_login::sign_in
+            ),
+            ("Auth", "local-account") => op!(
+                app,
+                peer,
+                payload,
+                decode_empty,
+                encode_local_account,
+                "LocalAccount",
+                local_login::account
+            ),
+            ("Auth", "change-local-password") => op!(
+                app,
+                peer,
+                payload,
+                decode_change_local_password_request,
+                encode_ok,
+                "Ok",
+                local_login::change
+            ),
+            ("Instance", "create-local-account") => op!(
+                app,
+                peer,
+                payload,
+                decode_create_local_account_request,
+                encode_local_account,
+                "LocalAccount",
+                local_login::create
+            ),
+            ("Instance", "reset-local-password") => op!(
+                app,
+                peer,
+                payload,
+                decode_reset_local_password_request,
+                encode_ok,
+                "Ok",
+                local_login::reset
             ),
             ("Instance", "list-roles") => op!(
                 app,

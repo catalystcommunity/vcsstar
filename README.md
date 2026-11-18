@@ -4,7 +4,8 @@ VCSStar is a self-hosted collaboration platform for Git. One repository
 can connect to multiple GitHub and GitLab repositories. People can change
 code and collaboration records in any connected system. VCSStar sends
 those changes to the other destinations under the repository conflict
-policy. Each destination keeps control of its own access rules.
+policy. Protected branches accept updates from one configured authority.
+Each destination keeps control of its own access rules.
 
 - Rust services, one binary with roles (`api`, `git-ssh`, `dispatcher`,
   `sweeper`, `hook-worker`, `mirror-worker`, `ingest-worker`,
@@ -12,8 +13,12 @@ policy. Each destination keeps control of its own access rules.
 - Refs in Postgres with compare-and-swap, history as immutable packfile
   segments in an S3-compatible object store, node caches that rebuild
   themselves.
-- Identity through LinkKeys (`user_id@domain`), API tokens, service accounts,
-  and provider account links for attributed changes.
+- Login through LinkKeys or an administrator-created local account. A
+  LinkKeys binding permanently disables local password login for that account.
+  API tokens, service accounts, and provider account links remain available.
+- Default branch protections cover `main`, `master`, `dev`, `stage`,
+  `default`, and the current default branch. Git signatures are not required.
+  Overrides name specific accounts; an admin role alone does not bypass a rule.
 - GitHub and GitLab imports include closed and merged requests, comments,
   reviews, and statuses. Each connection has separate mappings and sync
   progress. API limits can use attributed summaries.

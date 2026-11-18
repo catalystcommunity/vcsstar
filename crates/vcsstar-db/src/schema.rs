@@ -67,6 +67,15 @@ diesel::table! {
         allowed_merge_kinds -> Array<Nullable<Text>>,
         allow_force_push -> Bool,
         allow_delete -> Bool,
+        require_pull_request -> Bool,
+        merge_authority -> Text,
+        override_accounts -> Array<Nullable<Text>>,
+        allow_self_approval -> Bool,
+        require_base_approval -> Bool,
+        allowed_approvers -> Array<Nullable<Text>>,
+        required_check_reporters -> Array<Nullable<Text>>,
+        allow_delegated_approval -> Bool,
+        block_changes_requested -> Bool,
     }
 }
 
@@ -229,6 +238,7 @@ diesel::table! {
         first_seen -> Timestamptz,
         last_login -> Nullable<Timestamptz>,
         disabled_at -> Nullable<Timestamptz>,
+        linkkeys_bound -> Bool,
     }
 }
 
@@ -416,6 +426,12 @@ diesel::table! {
         body -> Nullable<Text>,
         created_at -> Timestamptz,
         github_id -> Nullable<Int8>,
+        base_sha_at_review -> Nullable<Text>,
+        base_ref_at_review -> Nullable<Text>,
+        head_invalidated -> Bool,
+        base_invalidated -> Bool,
+        acting_via -> Nullable<Text>,
+        approval_scope -> Nullable<Text>,
     }
 }
 
@@ -552,6 +568,7 @@ diesel::table! {
         description -> Nullable<Text>,
         reporter -> Nullable<Uuid>,
         created_at -> Timestamptz,
+        base_sha -> Nullable<Text>,
     }
 }
 

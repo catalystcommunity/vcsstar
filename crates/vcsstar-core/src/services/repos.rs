@@ -513,7 +513,7 @@ pub fn list_grants(
     Ok(ListGrantsResponse { grants })
 }
 
-#[derive(Queryable, Selectable)]
+#[derive(Debug, Clone, Queryable, Selectable)]
 #[diesel(table_name = branch_protections)]
 pub struct ProtectionRow {
     pub ref_pattern: String,
@@ -524,10 +524,19 @@ pub struct ProtectionRow {
     pub allowed_merge_kinds: Vec<Option<String>>,
     pub allow_force_push: bool,
     pub allow_delete: bool,
+    pub require_pull_request: bool,
+    pub merge_authority: String,
+    pub override_accounts: Vec<Option<String>>,
+    pub allow_self_approval: bool,
+    pub require_base_approval: bool,
+    pub allowed_approvers: Vec<Option<String>>,
+    pub required_check_reporters: Vec<Option<String>>,
+    pub allow_delegated_approval: bool,
+    pub block_changes_requested: bool,
 }
 
 pub fn protections_for(
-    conn: &mut DbConn,
+    conn: &mut PgConnection,
     repo_id: uuid::Uuid,
 ) -> Result<Vec<ProtectionRow>, Error> {
     Ok(branch_protections::table
@@ -538,6 +547,15 @@ pub fn protections_for(
 
 fn protection_to_wire(r: ProtectionRow) -> BranchProtection {
     BranchProtection {
+        require_pull_request: Some(r.require_pull_request),
+        merge_authority: Some(r.merge_authority),
+        override_accounts: Some(r.override_accounts.into_iter().flatten().collect()),
+        allow_self_approval: Some(r.allow_self_approval),
+        require_base_approval: Some(r.require_base_approval),
+        allowed_approvers: Some(r.allowed_approvers.into_iter().flatten().collect()),
+        required_check_reporters: Some(r.required_check_reporters.into_iter().flatten().collect()),
+        allow_delegated_approval: Some(r.allow_delegated_approval),
+        block_changes_requested: Some(r.block_changes_requested),
         ref_pattern: r.ref_pattern,
         required_approvals: r.required_approvals.max(0) as u64,
         dismiss_stale: r.dismiss_stale,
@@ -576,9 +594,38 @@ pub fn set_protection(
     let (org, repo, role) =
         authz::load_repo_visible(app, &mut conn, ctx, &req.repo.org, &req.repo.name)?;
     authz::require_repo_role(role, RepoRole::Admin)?;
+    let authority = pr.merge_authority.as_deref().unwrap_or("local");
+    if authority != "local" {
+        let id = uuid::Uuid::parse_str(authority)
+            .map_err(|_| Error::invalid("merge_authority must be local or a connection UUID"))?;
+        let c = crate::star::store::connection(&mut conn, id)?;
+        if c.repo_id != repo.id {
+            return Err(Error::invalid("authority belongs to another repository"));
+        }
+    }
+    for account in pr
+        .override_accounts
+        .iter()
+        .flatten()
+        .chain(pr.allowed_approvers.iter().flatten())
+        .chain(pr.required_check_reporters.iter().flatten())
+    {
+        parse_identity_key(account)?;
+    }
+    if !pr.required_checks.is_empty()
+        && pr
+            .required_check_reporters
+            .as_ref()
+            .is_none_or(Vec::is_empty)
+    {
+        return Err(Error::invalid(
+            "required checks need at least one trusted reporter account",
+        ));
+    }
     let checks: Vec<Option<String>> = pr.required_checks.iter().cloned().map(Some).collect();
     let kinds: Vec<Option<String>> = pr.allowed_merge_kinds.iter().cloned().map(Some).collect();
     conn.transaction::<(), Error, _>(|conn| {
+        crate::protection::lock(conn, repo.id)?;
         diesel::insert_into(branch_protections::table)
             .values((
                 branch_protections::id.eq(vcsstar_db::new_id()),
@@ -606,6 +653,44 @@ pub fn set_protection(
                 branch_protections::allow_delete.eq(pr.allow_delete),
             ))
             .execute(conn)?;
+        diesel::update(
+            branch_protections::table
+                .filter(branch_protections::repo_id.eq(repo.id))
+                .filter(branch_protections::ref_pattern.eq(&pr.ref_pattern)),
+        )
+        .set((
+            branch_protections::require_pull_request.eq(pr.require_pull_request.unwrap_or(true)),
+            branch_protections::merge_authority
+                .eq(pr.merge_authority.as_deref().unwrap_or("local")),
+            branch_protections::override_accounts.eq(pr
+                .override_accounts
+                .clone()
+                .unwrap_or_default()
+                .into_iter()
+                .map(Some)
+                .collect::<Vec<_>>()),
+            branch_protections::allow_self_approval.eq(pr.allow_self_approval.unwrap_or(false)),
+            branch_protections::require_base_approval.eq(pr.require_base_approval.unwrap_or(true)),
+            branch_protections::allowed_approvers.eq(pr
+                .allowed_approvers
+                .clone()
+                .unwrap_or_default()
+                .into_iter()
+                .map(Some)
+                .collect::<Vec<_>>()),
+            branch_protections::required_check_reporters.eq(pr
+                .required_check_reporters
+                .clone()
+                .unwrap_or_default()
+                .into_iter()
+                .map(Some)
+                .collect::<Vec<_>>()),
+            branch_protections::block_changes_requested
+                .eq(pr.block_changes_requested.unwrap_or(true)),
+            branch_protections::allow_delegated_approval
+                .eq(pr.allow_delegated_approval.unwrap_or(false)),
+        ))
+        .execute(conn)?;
         outbox::emit(
             conn,
             settings_event(
@@ -633,6 +718,7 @@ pub fn remove_protection(
         authz::load_repo_visible(app, &mut conn, ctx, &req.repo.org, &req.repo.name)?;
     authz::require_repo_role(role, RepoRole::Admin)?;
     let n = conn.transaction::<usize, Error, _>(|conn| {
+        crate::protection::lock(conn, repo.id)?;
         let n = diesel::delete(
             branch_protections::table
                 .filter(branch_protections::repo_id.eq(repo.id))

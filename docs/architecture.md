@@ -121,8 +121,12 @@ flowchart LR
     Q --> W
 ```
 
-Each connection stores its provider, host, project, setup options, and
-progress. Each object has a local record and a mapping at each destination.
+Each connection stores its provider, host, project, setup options, inbound
+and outbound switches, and progress. New connections start with both
+directions disabled. Admins can configure branch authority and override
+accounts after deployment, then enable each direction. Disabling a
+direction retains its accepted copies. The worker checks the current
+switches before each item. An item already in progress can finish. Each object has a local record and a mapping at each destination.
 The worker compares both sides with their own accepted copies. This permits
 a full native record and a remote summary to differ without an echo loop.
 
@@ -197,6 +201,15 @@ instance admin manages everything, an instance viewer reads every
 repository. Admins set instance roles; a policy from LinkKeys claims is
 planned.
 
+## Branch authority
+
+Each protected branch has one update authority: this instance or one
+configured provider connection. The conflict resolver cannot bypass that
+choice. The common ref gate checks authority, account overrides, and
+branch policy before the database ref changes. PR merge checks run again
+inside the final transaction. Git signatures are optional and are not
+required by the default protections. See `gitlab.md` for the policy fields.
+
 ## Identity
 
 ```mermaid
@@ -229,6 +242,18 @@ instance keys and act-as grants use. A linked GitHub
 account makes vcsstar act on GitHub as that person; an unlinked actor's
 work goes through one of the instance's GitHub Apps, then the
 organization's credential. GitHub accounts without a link appear as shadow identities.
+
+Local accounts are created by instance admins. They use salted Argon2id
+password hashes and the same session and device-token flow as LinkKeys.
+A local account can bind to a verified LinkKeys identity. That operation
+preserves its internal identity ID, removes password access, and revokes
+old credentials. A database trigger prevents local-login restoration.
+Local identity coordinates are not proof of a LinkKeys identity.
+
+VCSStar-to-VCSStar transport remains unimplemented. Its trust contract
+must authenticate metadata about objects and events through LinkKeys.
+It must not infer identity from Git author fields or require attested Git
+commit signatures. GitHub and GitLab use their own provider credentials.
 
 ## Where to read more
 

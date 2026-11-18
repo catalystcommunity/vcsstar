@@ -238,6 +238,35 @@ impl<T: Transport> AuthClient<T> {
         )?;
         decode_preferences(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
     }
+
+    /// local-login (request/response).
+    pub fn local_login(&self, req: LocalLoginRequest) -> Result<Session, ClientError> {
+        let csil_resp =
+            self.transport
+                .call("Auth", "local-login", &encode_local_login_request(&req))?;
+        decode_session(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// local-account (request/response).
+    pub fn local_account(&self, req: Empty) -> Result<LocalAccount, ClientError> {
+        let csil_resp = self
+            .transport
+            .call("Auth", "local-account", &encode_empty(&req))?;
+        decode_local_account(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// change-local-password (request/response).
+    pub fn change_local_password(
+        &self,
+        req: ChangeLocalPasswordRequest,
+    ) -> Result<Ok, ClientError> {
+        let csil_resp = self.transport.call(
+            "Auth",
+            "change-local-password",
+            &encode_change_local_password_request(&req),
+        )?;
+        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
 }
 
 /// Typed client for the Orgs service.
@@ -1097,6 +1126,29 @@ impl<T: Transport> InstanceClient<T> {
             "Instance",
             "remove-role",
             &encode_remove_instance_role_request(&req),
+        )?;
+        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// create-local-account (request/response).
+    pub fn create_local_account(
+        &self,
+        req: CreateLocalAccountRequest,
+    ) -> Result<LocalAccount, ClientError> {
+        let csil_resp = self.transport.call(
+            "Instance",
+            "create-local-account",
+            &encode_create_local_account_request(&req),
+        )?;
+        decode_local_account(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+    }
+
+    /// reset-local-password (request/response).
+    pub fn reset_local_password(&self, req: ResetLocalPasswordRequest) -> Result<Ok, ClientError> {
+        let csil_resp = self.transport.call(
+            "Instance",
+            "reset-local-password",
+            &encode_reset_local_password_request(&req),
         )?;
         decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
     }

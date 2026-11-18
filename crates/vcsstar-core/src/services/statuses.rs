@@ -27,6 +27,7 @@ pub struct StatusRow {
     pub description: Option<String>,
     pub reporter: Option<uuid::Uuid>,
     pub created_at: DateTime<Utc>,
+    pub base_sha: Option<String>,
 }
 
 fn to_wire(conn: &mut PgConnection, s: &StatusRow) -> Result<CommitStatus, Error> {
@@ -40,6 +41,7 @@ fn to_wire(conn: &mut PgConnection, s: &StatusRow) -> Result<CommitStatus, Error
         None => None,
     };
     Ok(CommitStatus {
+        base_sha: s.base_sha.clone(),
         sha: s.sha.clone(),
         context: s.context.clone(),
         state: s.state.clone(),
@@ -66,6 +68,9 @@ pub fn set(app: &App, ctx: &ReqCtx, req: SetStatusRequest) -> Result<CommitStatu
     let p = ctx.require()?;
     p.require_scope("statuses:write")?;
     check_sha(&req.sha)?;
+    if let Some(base) = &req.base_sha {
+        check_sha(base)?;
+    }
     if !["pending", "success", "failure", "error"].contains(&req.state.as_str()) {
         return Err(Error::invalid(
             "state must be pending, success, failure, or error",
@@ -79,6 +84,7 @@ pub fn set(app: &App, ctx: &ReqCtx, req: SetStatusRequest) -> Result<CommitStatu
         authz::load_repo_visible(app, &mut conn, ctx, &req.repo.org, &req.repo.name)?;
     authz::require_repo_role(role, RepoRole::Write)?;
     let row = conn.transaction::<StatusRow, Error, _>(|conn| {
+        crate::protection::lock(conn, repo.id)?;
         let row: StatusRow = diesel::insert_into(statuses::table)
             .values((
                 statuses::id.eq(vcsstar_db::new_id()),
@@ -86,6 +92,7 @@ pub fn set(app: &App, ctx: &ReqCtx, req: SetStatusRequest) -> Result<CommitStatu
                 statuses::sha.eq(&req.sha),
                 statuses::context.eq(&req.context),
                 statuses::state.eq(&req.state),
+                statuses::base_sha.eq(req.base_sha.as_deref()),
                 statuses::target_url.eq(req.target_url.as_deref()),
                 statuses::description.eq(req.description.as_deref()),
                 statuses::reporter.eq(p.identity.id),
@@ -94,6 +101,7 @@ pub fn set(app: &App, ctx: &ReqCtx, req: SetStatusRequest) -> Result<CommitStatu
             .do_update()
             .set((
                 statuses::state.eq(&req.state),
+                statuses::base_sha.eq(req.base_sha.as_deref()),
                 statuses::target_url.eq(req.target_url.as_deref()),
                 statuses::description.eq(req.description.as_deref()),
                 statuses::reporter.eq(p.identity.id),
