@@ -16,6 +16,7 @@ use crate::{from_ms, to_ms, App, Error};
 
 pub const KNOWN_SCOPES: &[&str] = &[
     "admin",
+    "auth:write",
     "org:read",
     "org:admin",
     "repo:read",

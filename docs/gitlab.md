@@ -1,8 +1,9 @@
 # GitLab and repository sync
 
 VCSStar connects one repository to multiple GitHub and GitLab repositories.
-Changes can start in VCSStar or any connected repository. The worker sends
-them to the other connections. GitLab.com and self-hosted GitLab use the
+Changes to unprotected branches can start in any connected repository.
+A protected branch accepts updates only from its configured authority.
+The worker sends accepted changes to the other connections. GitLab.com and self-hosted GitLab use the
 same adapter. Connections to other VCSStar instances are future work.
 
 ## Scope
@@ -29,6 +30,60 @@ on the repository **Sync** tab and `Mirror/list-sync-records`.
 A permission refusal blocks the affected operation. VCSStar does not change
 access rules to make sync succeed. Local ref imports also obey VCSStar
 branch protections. A resolver assignment does not grant remote access.
+A preferred conflict source does not change the merge authority.
+
+## Protected branches
+
+Migration 20 adds missing rules for `main`, `master`, `dev`, `stage`,
+`default`, and `@default`. The `@default` rule follows the current default
+branch. Existing rules with the same pattern keep their values. New
+repositories receive the same defaults.
+
+The default rules require one approval and a pull request. A change to the
+head or base invalidates the approval. The author and a delegated agent
+cannot approve by default. Force updates and deletion are denied. Git
+commit signatures are not required. An empty repository permits one
+initial update to its default branch so that a pull request can be opened.
+
+Use **Repository settings → Branch protections** or `Repos/set-protection`.
+Set `merge_authority` to `local` or to a GitHub/GitLab connection ID. All
+matching rules apply. Set the same authority in each matching rule,
+including `@default` when applicable. An update from another connection
+is refused even if the conflict policy selects it.
+
+The configured GitHub or GitLab authority supplies ref state through its
+authenticated provider connection. Configure its branch rules there.
+VCSStar does not translate a copied review into local content approval.
+Imported statuses do not retain a local base-SHA binding.
+
+Options include the approval count, allowed approver accounts, author
+approval, delegated approval, dismissal after head or base changes,
+required checks, blocking change requests, merge methods, force updates,
+and deletion. An empty
+approver list permits accounts with write access. Required checks must
+name trusted reporter accounts. With base approval enabled, both reviews
+and check results must name the current base SHA. The latest review
+decision replaces the previous decision by that reviewer. A comment alone
+does not withdraw approval. Invalidated reviews stay invalidated even if
+a branch returns to an earlier SHA.
+
+`override_accounts` permits specified account identities to bypass the
+matching protection rule. It does not grant repository access or change
+the authority. An admin role alone is not an override. Configure release
+accounts through this list if they need direct updates.
+
+Configure authority and override accounts after deployment. New connections
+start with inbound and outbound disabled. Set the branch rules, then enable
+each direction on the repository Sync tab. No deployment bootstrap file is
+required. A connection switch does not change branch authority or bypass
+protection rules.
+
+VCSStar-to-VCSStar connections are not implemented. Future connections
+must use LinkKeys to authenticate instance metadata about Git objects and
+events. The destination must verify the source, repository, branch, old
+and new object IDs, and approval result before it updates a protected ref.
+This trust requirement does not require Git commit signatures. GitHub and
+GitLab connections do not require LinkKeys.
 
 ## Conflicts
 
@@ -102,6 +157,30 @@ summary can therefore differ from the native record without a sync loop.
 8. Use **Webhook setup** to get the URL and secret. Create the webhook at
    the destination. Manual setup is the default. Select automatic setup
    only when VCSStar should create or update its own webhook.
+9. Set branch authority and override accounts. Enable **Inbound** to apply
+   remote changes to VCSStar. Enable **Outbound** to send VCSStar changes
+   to the remote. You can enable either direction, both, or neither.
+
+Repository admins can change either switch at any time. New connections
+start with both directions disabled unless the request enables them.
+Existing connections keep both directions enabled when migration 23 runs.
+Their pause setting stays unchanged. Adopted legacy mirrors also keep
+both directions enabled. A rollback to the old schema pauses any connection
+that has a disabled direction.
+
+Disabled directions retain their sync baselines. When enabled again, they
+compare current changes with those baselines. Conflicts still need the
+configured resolver or preferred source. A conflict decision cannot bypass
+a disabled direction. An item already in progress can finish. The next
+item uses the current settings. **Pause all** stops both enabled directions
+without changing their switches. **Sync now** does not enable a direction.
+
+Outbound sync still reads remote state to detect conflicts. When both
+directions are off, the worker does not contact the provider. Authenticated
+webhook data can still be received and stored. Remote repository creation
+and automatic webhook setup require outbound to be enabled. For inbound
+alone, create the remote repository and its webhook manually, or use
+polling.
 
 A token might permit content changes but refuse repository or webhook
 creation. The connection error identifies the failed operation and tells

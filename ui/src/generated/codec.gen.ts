@@ -2,7 +2,7 @@
 // Source: <csil spec>
 // Target: typescript-codec
 
-import type { ActAsExchangeRequest, ApiToken, BeginDeviceRequest, BeginLoginRequest, BeginLoginResponse, BlobRequest, BlobResponse, BlockedAction, BranchProtection, CaptureReport, Comment, CommentRequest, Commit, CommitPage, CommitStatus, CommitSummary, CompleteLoginRequest, ConfigureMirrorRequest, ConnectRemoteRequest, CreateEndpointRequest, CreateOrgRequest, CreateRepoRequest, CreateServiceAccountRequest, CreateServiceAccountTokenRequest, CreateTeamRequest, CreateTokenRequest, Credential, CredentialRef, Ctx, DeleteCommentRequest, DeleteRepoRequest, Delivery, DeliveryPage, DeliveryQuery, DeliveryRef, DeviceApproveRequest, DeviceCode, DevicePollRequest, DevicePollResponse, DiffRequest, DiffResponse, EditCommentRequest, Empty, Endpoint, EndpointRef, Event, EventPayload, FedCapabilities, FedHello, FedHelloAck, FileDiff, ForkRequest, GetCommitRequest, GetOrgRequest, GetRepoRequest, GithubHealth, GithubInstallation, GithubInstallationList, GithubLink, GithubRepoInfo, GithubRepoPage, Grant, HeadInfo, HeadQuery, Identity, ImportAllRequest, ImportAllResult, ImportRequest, InstanceRoleGrant, InstanceRoleList, KeyRef, LaneHealth, LinkProviderRequest, ListBlockedResponse, ListCommentsResponse, ListCredentialsRequest, ListCredentialsResponse, ListEndpointsRequest, ListEndpointsResponse, ListGithubReposRequest, ListGrantsResponse, ListKeysResponse, ListOrgMembersRequest, ListOrgsRequest, ListPrRequest, ListProtectionsResponse, ListRefsRequest, ListRefsResponse, ListReposRequest, ListReviewsResponse, ListServiceAccountsResponse, ListStatusRequest, ListStatusResponse, ListTeamsResponse, ListTokensResponse, LogRequest, MembershipPayload, MergeRequest, MergeResult, MirrorPayload, MirrorStatus, Ok, OpenPrRequest, Org, OrgMember, OrgMemberPage, OrgPage, OrgRef, OrgRepoRef, Page, PrHead, PrPage, PrPayload, PrRef, Preferences, ProviderLink, ProviderLinks, PullRequest, PushPayload, RateLimitInfo, ReconcileReport, RefInfo, RefPayload, RegisterKeyRequest, ReleasePayload, RemoveGrantRequest, RemoveInstanceRoleRequest, RemoveOrgMemberRequest, RemoveProtectionRequest, ReplayRequest, ReplayResult, Repo, RepoPage, RepoRef, ResolveSyncConflictRequest, RetargetRequest, Review, ReviewRequest, RevokeServiceAccountTokenRequest, RevokeTokenRequest, ScopeSetRequest, ScopedBearer, ServerInfo, ServiceAccount, ServiceAccountRef, ServiceError, Session, SetCredentialRequest, SetGithubTokenRequest, SetGrantRequest, SetInstanceRoleRequest, SetMirrorScheduleRequest, SetOrgMemberRequest, SetPreferencesRequest, SetProtectionRequest, SetStatusRequest, SetSyncPolicyRequest, SetTeamMemberRequest, SettingsPayload, Signature, SignedActAsScopeSet, SshKeyInfo, StatusPayload, StreamAck, StreamControl, StreamMessage, SubscribeRequest, SyncConflict, SyncConflicts, SyncConnection, SyncConnectionRef, SyncConnections, SyncPolicy, SyncRecord, SyncRecords, SyncRecordsRequest, SyncWebhookSecret, Team, TeamRef, Timestamp, TreeEntry, TreeRequest, TreeResponse, UnlinkProviderRequest, UnsribeMarker, UnsubscribeRequest, UpdateConnectionRequest, UpdateEndpointRequest, UpdateOrgRequest, UpdatePrRequest, UpdateRefRequest, UpdateRepoRequest, VerifyHeadRequest, WhoAmI } from "./types.gen.ts";
+import type { ActAsExchangeRequest, ApiToken, BeginDeviceRequest, BeginLoginRequest, BeginLoginResponse, BlobRequest, BlobResponse, BlockedAction, BranchProtection, CaptureReport, ChangeLocalPasswordRequest, Comment, CommentRequest, Commit, CommitPage, CommitStatus, CommitSummary, CompleteLoginRequest, ConfigureMirrorRequest, ConnectRemoteRequest, CreateEndpointRequest, CreateLocalAccountRequest, CreateOrgRequest, CreateRepoRequest, CreateServiceAccountRequest, CreateServiceAccountTokenRequest, CreateTeamRequest, CreateTokenRequest, Credential, CredentialRef, Ctx, DeleteCommentRequest, DeleteRepoRequest, Delivery, DeliveryPage, DeliveryQuery, DeliveryRef, DeviceApproveRequest, DeviceCode, DevicePollRequest, DevicePollResponse, DiffRequest, DiffResponse, EditCommentRequest, Empty, Endpoint, EndpointRef, Event, EventPayload, FedCapabilities, FedHello, FedHelloAck, FileDiff, ForkRequest, GetCommitRequest, GetOrgRequest, GetRepoRequest, GithubHealth, GithubInstallation, GithubInstallationList, GithubLink, GithubRepoInfo, GithubRepoPage, Grant, HeadInfo, HeadQuery, Identity, ImportAllRequest, ImportAllResult, ImportRequest, InstanceRoleGrant, InstanceRoleList, KeyRef, LaneHealth, LinkProviderRequest, ListBlockedResponse, ListCommentsResponse, ListCredentialsRequest, ListCredentialsResponse, ListEndpointsRequest, ListEndpointsResponse, ListGithubReposRequest, ListGrantsResponse, ListKeysResponse, ListOrgMembersRequest, ListOrgsRequest, ListPrRequest, ListProtectionsResponse, ListRefsRequest, ListRefsResponse, ListReposRequest, ListReviewsResponse, ListServiceAccountsResponse, ListStatusRequest, ListStatusResponse, ListTeamsResponse, ListTokensResponse, LocalAccount, LocalLoginRequest, LogRequest, MembershipPayload, MergeRequest, MergeResult, MirrorPayload, MirrorStatus, Ok, OpenPrRequest, Org, OrgMember, OrgMemberPage, OrgPage, OrgRef, OrgRepoRef, Page, PrHead, PrPage, PrPayload, PrRef, Preferences, ProviderLink, ProviderLinks, PullRequest, PushPayload, RateLimitInfo, ReconcileReport, RefInfo, RefPayload, RegisterKeyRequest, ReleasePayload, RemoveGrantRequest, RemoveInstanceRoleRequest, RemoveOrgMemberRequest, RemoveProtectionRequest, ReplayRequest, ReplayResult, Repo, RepoPage, RepoRef, ResetLocalPasswordRequest, ResolveSyncConflictRequest, RetargetRequest, Review, ReviewRequest, RevokeServiceAccountTokenRequest, RevokeTokenRequest, ScopeSetRequest, ScopedBearer, ServerInfo, ServiceAccount, ServiceAccountRef, ServiceError, Session, SetCredentialRequest, SetGithubTokenRequest, SetGrantRequest, SetInstanceRoleRequest, SetMirrorScheduleRequest, SetOrgMemberRequest, SetPreferencesRequest, SetProtectionRequest, SetStatusRequest, SetSyncPolicyRequest, SetTeamMemberRequest, SettingsPayload, Signature, SignedActAsScopeSet, SshKeyInfo, StatusPayload, StreamAck, StreamControl, StreamMessage, SubscribeRequest, SyncConflict, SyncConflicts, SyncConnection, SyncConnectionRef, SyncConnections, SyncPolicy, SyncRecord, SyncRecords, SyncRecordsRequest, SyncWebhookSecret, Team, TeamRef, Timestamp, TreeEntry, TreeRequest, TreeResponse, UnlinkProviderRequest, UnsribeMarker, UnsubscribeRequest, UpdateConnectionRequest, UpdateEndpointRequest, UpdateOrgRequest, UpdatePrRequest, UpdateRefRequest, UpdateRepoRequest, VerifyHeadRequest, WhoAmI } from "./types.gen.ts";
 
 /** A CBOR semantic tag wrapping an inner value (e.g. tag 0 timestamp, tag 4 decimal). */
 export type CborTag = { readonly tag: number; readonly value: CborValue };
@@ -578,6 +578,7 @@ export function toBeginLoginRequestCborValue(v: BeginLoginRequest): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
   csilMap.set("ctx", toCtxCborValue(v.ctx));
   if (v.returnTo !== undefined) csilMap.set("return_to", v.returnTo);
+  if (v.linkLocal !== undefined) csilMap.set("link_local", v.linkLocal);
   csilMap.set("identity_input", v.identityInput);
   if (v.deviceUserCode !== undefined) csilMap.set("device_user_code", v.deviceUserCode);
   return csilMap;
@@ -589,6 +590,7 @@ export function fromBeginLoginRequestCborValue(value: CborValue): BeginLoginRequ
     identityInput: asString(requireKey(value, "identity_input")),
     returnTo: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "return_to")),
     deviceUserCode: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "device_user_code")),
+    linkLocal: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "link_local")),
   };
 }
 
@@ -1230,6 +1232,132 @@ export function toSetGithubTokenRequestCbor(v: SetGithubTokenRequest): Uint8Arra
 
 export function fromSetGithubTokenRequestCbor(bytes: Uint8Array): SetGithubTokenRequest {
   return fromSetGithubTokenRequestCborValue(decode(bytes));
+}
+
+export function toLocalLoginRequestCborValue(v: LocalLoginRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("ctx", toCtxCborValue(v.ctx));
+  csilMap.set("password", v.password);
+  csilMap.set("username", v.username);
+  if (v.returnTo !== undefined) csilMap.set("return_to", v.returnTo);
+  if (v.deviceUserCode !== undefined) csilMap.set("device_user_code", v.deviceUserCode);
+  return csilMap;
+}
+
+export function fromLocalLoginRequestCborValue(value: CborValue): LocalLoginRequest {
+  return {
+    ctx: fromCtxCborValue(requireKey(value, "ctx")),
+    username: asString(requireKey(value, "username")),
+    password: asString(requireKey(value, "password")),
+    returnTo: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "return_to")),
+    deviceUserCode: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "device_user_code")),
+  };
+}
+
+export function toLocalLoginRequestCbor(v: LocalLoginRequest): Uint8Array {
+  return encodeValue(toLocalLoginRequestCborValue(v));
+}
+
+export function fromLocalLoginRequestCbor(bytes: Uint8Array): LocalLoginRequest {
+  return fromLocalLoginRequestCborValue(decode(bytes));
+}
+
+export function toCreateLocalAccountRequestCborValue(v: CreateLocalAccountRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("ctx", toCtxCborValue(v.ctx));
+  csilMap.set("password", v.password);
+  csilMap.set("username", v.username);
+  if (v.displayName !== undefined) csilMap.set("display_name", v.displayName);
+  return csilMap;
+}
+
+export function fromCreateLocalAccountRequestCborValue(value: CborValue): CreateLocalAccountRequest {
+  return {
+    ctx: fromCtxCborValue(requireKey(value, "ctx")),
+    username: asString(requireKey(value, "username")),
+    password: asString(requireKey(value, "password")),
+    displayName: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "display_name")),
+  };
+}
+
+export function toCreateLocalAccountRequestCbor(v: CreateLocalAccountRequest): Uint8Array {
+  return encodeValue(toCreateLocalAccountRequestCborValue(v));
+}
+
+export function fromCreateLocalAccountRequestCbor(bytes: Uint8Array): CreateLocalAccountRequest {
+  return fromCreateLocalAccountRequestCborValue(decode(bytes));
+}
+
+export function toResetLocalPasswordRequestCborValue(v: ResetLocalPasswordRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("ctx", toCtxCborValue(v.ctx));
+  csilMap.set("identity", v.identity);
+  csilMap.set("password", v.password);
+  return csilMap;
+}
+
+export function fromResetLocalPasswordRequestCborValue(value: CborValue): ResetLocalPasswordRequest {
+  return {
+    ctx: fromCtxCborValue(requireKey(value, "ctx")),
+    identity: asString(requireKey(value, "identity")),
+    password: asString(requireKey(value, "password")),
+  };
+}
+
+export function toResetLocalPasswordRequestCbor(v: ResetLocalPasswordRequest): Uint8Array {
+  return encodeValue(toResetLocalPasswordRequestCborValue(v));
+}
+
+export function fromResetLocalPasswordRequestCbor(bytes: Uint8Array): ResetLocalPasswordRequest {
+  return fromResetLocalPasswordRequestCborValue(decode(bytes));
+}
+
+export function toChangeLocalPasswordRequestCborValue(v: ChangeLocalPasswordRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("ctx", toCtxCborValue(v.ctx));
+  csilMap.set("new_password", v.newPassword);
+  csilMap.set("current_password", v.currentPassword);
+  return csilMap;
+}
+
+export function fromChangeLocalPasswordRequestCborValue(value: CborValue): ChangeLocalPasswordRequest {
+  return {
+    ctx: fromCtxCborValue(requireKey(value, "ctx")),
+    currentPassword: asString(requireKey(value, "current_password")),
+    newPassword: asString(requireKey(value, "new_password")),
+  };
+}
+
+export function toChangeLocalPasswordRequestCbor(v: ChangeLocalPasswordRequest): Uint8Array {
+  return encodeValue(toChangeLocalPasswordRequestCborValue(v));
+}
+
+export function fromChangeLocalPasswordRequestCbor(bytes: Uint8Array): ChangeLocalPasswordRequest {
+  return fromChangeLocalPasswordRequestCborValue(decode(bytes));
+}
+
+export function toLocalAccountCborValue(v: LocalAccount): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("identity", toIdentityCborValue(v.identity));
+  if (v.username !== undefined) csilMap.set("username", v.username);
+  csilMap.set("password_login", v.passwordLogin);
+  return csilMap;
+}
+
+export function fromLocalAccountCborValue(value: CborValue): LocalAccount {
+  return {
+    identity: fromIdentityCborValue(requireKey(value, "identity")),
+    username: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "username")),
+    passwordLogin: asBool(requireKey(value, "password_login")),
+  };
+}
+
+export function toLocalAccountCbor(v: LocalAccount): Uint8Array {
+  return encodeValue(toLocalAccountCborValue(v));
+}
+
+export function fromLocalAccountCbor(bytes: Uint8Array): LocalAccount {
+  return fromLocalAccountCborValue(decode(bytes));
 }
 
 export function toOrgCborValue(v: Org): CborValue {
@@ -2425,10 +2553,19 @@ export function toBranchProtectionCborValue(v: BranchProtection): CborValue {
   csilMap.set("ref_pattern", v.refPattern);
   csilMap.set("allow_delete", v.allowDelete);
   csilMap.set("dismiss_stale", v.dismissStale);
+  if (v.mergeAuthority !== undefined) csilMap.set("merge_authority", v.mergeAuthority);
   csilMap.set("required_checks", v.requiredChecks);
   csilMap.set("allow_force_push", v.allowForcePush);
+  if (v.allowedApprovers !== undefined) csilMap.set("allowed_approvers", v.allowedApprovers);
+  if (v.overrideAccounts !== undefined) csilMap.set("override_accounts", v.overrideAccounts);
   csilMap.set("required_approvals", v.requiredApprovals);
+  if (v.allowSelfApproval !== undefined) csilMap.set("allow_self_approval", v.allowSelfApproval);
   csilMap.set("allowed_merge_kinds", v.allowedMergeKinds);
+  if (v.requirePullRequest !== undefined) csilMap.set("require_pull_request", v.requirePullRequest);
+  if (v.requireBaseApproval !== undefined) csilMap.set("require_base_approval", v.requireBaseApproval);
+  if (v.blockChangesRequested !== undefined) csilMap.set("block_changes_requested", v.blockChangesRequested);
+  if (v.allowDelegatedApproval !== undefined) csilMap.set("allow_delegated_approval", v.allowDelegatedApproval);
+  if (v.requiredCheckReporters !== undefined) csilMap.set("required_check_reporters", v.requiredCheckReporters);
   csilMap.set("required_signature_level", v.requiredSignatureLevel);
   return csilMap;
 }
@@ -2443,6 +2580,15 @@ export function fromBranchProtectionCborValue(value: CborValue): BranchProtectio
     allowedMergeKinds: asArray(requireKey(value, "allowed_merge_kinds")).map((csilE) => asString(csilE)),
     allowForcePush: asBool(requireKey(value, "allow_force_push")),
     allowDelete: asBool(requireKey(value, "allow_delete")),
+    requirePullRequest: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "require_pull_request")),
+    mergeAuthority: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "merge_authority")),
+    overrideAccounts: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "override_accounts")),
+    allowSelfApproval: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "allow_self_approval")),
+    requireBaseApproval: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "require_base_approval")),
+    allowedApprovers: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "allowed_approvers")),
+    requiredCheckReporters: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "required_check_reporters")),
+    allowDelegatedApproval: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "allow_delegated_approval")),
+    blockChangesRequested: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "block_changes_requested")),
   };
 }
 
@@ -2706,17 +2852,25 @@ export function fromPrPageCbor(bytes: Uint8Array): PrPage {
 
 export function toReviewCborValue(v: Review): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
+  if (v.id !== undefined) csilMap.set("id", v.id);
   if (v.body !== undefined) csilMap.set("body", v.body);
   csilMap.set("state", v.state);
   csilMap.set("number", v.number);
+  if (v.baseSha !== undefined) csilMap.set("base_sha", v.baseSha);
   csilMap.set("head_sha", v.headSha);
   csilMap.set("reviewer", toIdentityCborValue(v.reviewer));
   csilMap.set("created_at", v.createdAt);
+  if (v.invalidated !== undefined) csilMap.set("invalidated", v.invalidated);
+  if (v.approvalScope !== undefined) csilMap.set("approval_scope", v.approvalScope);
   return csilMap;
 }
 
 export function fromReviewCborValue(value: CborValue): Review {
   return {
+    id: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "id")),
+    invalidated: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "invalidated")),
+    baseSha: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "base_sha")),
+    approvalScope: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "approval_scope")),
     number: asNumber(requireKey(value, "number")),
     reviewer: fromIdentityCborValue(requireKey(value, "reviewer")),
     state: asString(requireKey(value, "state")),
@@ -2741,7 +2895,9 @@ export function toReviewRequestCborValue(v: ReviewRequest): CborValue {
   csilMap.set("repo", toRepoRefCborValue(v.repo));
   csilMap.set("state", v.state);
   csilMap.set("number", v.number);
+  if (v.baseSha !== undefined) csilMap.set("base_sha", v.baseSha);
   csilMap.set("head_sha", v.headSha);
+  if (v.approvalScope !== undefined) csilMap.set("approval_scope", v.approvalScope);
   return csilMap;
 }
 
@@ -2753,6 +2909,8 @@ export function fromReviewRequestCborValue(value: CborValue): ReviewRequest {
     state: asString(requireKey(value, "state")),
     body: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "body")),
     headSha: asString(requireKey(value, "head_sha")),
+    baseSha: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "base_sha")),
+    approvalScope: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "approval_scope")),
   };
 }
 
@@ -2983,6 +3141,7 @@ export function toCommitStatusCborValue(v: CommitStatus): CborValue {
   csilMap.set("sha", v.sha);
   csilMap.set("state", v.state);
   csilMap.set("context", v.context);
+  if (v.baseSha !== undefined) csilMap.set("base_sha", v.baseSha);
   csilMap.set("reporter", toIdentityCborValue(v.reporter));
   csilMap.set("created_at", v.createdAt);
   if (v.targetUrl !== undefined) csilMap.set("target_url", v.targetUrl);
@@ -2992,6 +3151,7 @@ export function toCommitStatusCborValue(v: CommitStatus): CborValue {
 
 export function fromCommitStatusCborValue(value: CborValue): CommitStatus {
   return {
+    baseSha: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "base_sha")),
     sha: asString(requireKey(value, "sha")),
     context: asString(requireKey(value, "context")),
     state: asString(requireKey(value, "state")),
@@ -3017,6 +3177,7 @@ export function toSetStatusRequestCborValue(v: SetStatusRequest): CborValue {
   csilMap.set("repo", toRepoRefCborValue(v.repo));
   csilMap.set("state", v.state);
   csilMap.set("context", v.context);
+  if (v.baseSha !== undefined) csilMap.set("base_sha", v.baseSha);
   if (v.targetUrl !== undefined) csilMap.set("target_url", v.targetUrl);
   if (v.description !== undefined) csilMap.set("description", v.description);
   return csilMap;
@@ -3024,6 +3185,7 @@ export function toSetStatusRequestCborValue(v: SetStatusRequest): CborValue {
 
 export function fromSetStatusRequestCborValue(value: CborValue): SetStatusRequest {
   return {
+    baseSha: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "base_sha")),
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
     sha: asString(requireKey(value, "sha")),
@@ -4085,7 +4247,9 @@ export function toSyncConnectionCborValue(v: SyncConnection): CborValue {
   if (v.lastError !== undefined) csilMap.set("last_error", v.lastError);
   csilMap.set("setup_done", v.setupDone);
   csilMap.set("webhook_url", v.webhookUrl);
+  csilMap.set("inbound_enabled", v.inboundEnabled);
   if (v.lastSuccessAt !== undefined) csilMap.set("last_success_at", v.lastSuccessAt);
+  csilMap.set("outbound_enabled", v.outboundEnabled);
   csilMap.set("automatic_webhook", v.automaticWebhook);
   return csilMap;
 }
@@ -4097,6 +4261,8 @@ export function fromSyncConnectionCborValue(value: CborValue): SyncConnection {
     host: asString(requireKey(value, "host")),
     project: asString(requireKey(value, "project")),
     paused: asBool(requireKey(value, "paused")),
+    inboundEnabled: asBool(requireKey(value, "inbound_enabled")),
+    outboundEnabled: asBool(requireKey(value, "outbound_enabled")),
     automaticWebhook: asBool(requireKey(value, "automatic_webhook")),
     setupDone: asBool(requireKey(value, "setup_done")),
     webhookUrl: asString(requireKey(value, "webhook_url")),
@@ -4144,6 +4310,8 @@ export function toConnectRemoteRequestCborValue(v: ConnectRemoteRequest): CborVa
   csilMap.set("project", v.project);
   csilMap.set("provider", v.provider);
   if (v.createRemote !== undefined) csilMap.set("create_remote", v.createRemote);
+  if (v.inboundEnabled !== undefined) csilMap.set("inbound_enabled", v.inboundEnabled);
+  if (v.outboundEnabled !== undefined) csilMap.set("outbound_enabled", v.outboundEnabled);
   if (v.automaticWebhook !== undefined) csilMap.set("automatic_webhook", v.automaticWebhook);
   return csilMap;
 }
@@ -4157,6 +4325,8 @@ export function fromConnectRemoteRequestCborValue(value: CborValue): ConnectRemo
     project: asString(requireKey(value, "project")),
     createRemote: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "create_remote")),
     automaticWebhook: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "automatic_webhook")),
+    inboundEnabled: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "inbound_enabled")),
+    outboundEnabled: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "outbound_enabled")),
   };
 }
 
@@ -4198,6 +4368,8 @@ export function toUpdateConnectionRequestCborValue(v: UpdateConnectionRequest): 
   csilMap.set("repo", toRepoRefCborValue(v.repo));
   if (v.paused !== undefined) csilMap.set("paused", v.paused);
   csilMap.set("connection_id", v.connectionId);
+  if (v.inboundEnabled !== undefined) csilMap.set("inbound_enabled", v.inboundEnabled);
+  if (v.outboundEnabled !== undefined) csilMap.set("outbound_enabled", v.outboundEnabled);
   if (v.automaticWebhook !== undefined) csilMap.set("automatic_webhook", v.automaticWebhook);
   return csilMap;
 }
@@ -4209,6 +4381,8 @@ export function fromUpdateConnectionRequestCborValue(value: CborValue): UpdateCo
     connectionId: asString(requireKey(value, "connection_id")),
     paused: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "paused")),
     automaticWebhook: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "automatic_webhook")),
+    inboundEnabled: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "inbound_enabled")),
+    outboundEnabled: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "outbound_enabled")),
   };
 }
 
@@ -5111,6 +5285,7 @@ export function toPrPayloadCborValue(v: PrPayload): CborValue {
   if (v.state !== undefined) csilMap.set("state", v.state);
   csilMap.set("number", v.number);
   if (v.baseRef !== undefined) csilMap.set("base_ref", v.baseRef);
+  if (v.baseSha !== undefined) csilMap.set("base_sha", v.baseSha);
   if (v.headSha !== undefined) csilMap.set("head_sha", v.headSha);
   if (v.reviewId !== undefined) csilMap.set("review_id", v.reviewId);
   if (v.commentId !== undefined) csilMap.set("comment_id", v.commentId);
@@ -5120,6 +5295,7 @@ export function toPrPayloadCborValue(v: PrPayload): CborValue {
 
 export function fromPrPayloadCborValue(value: CborValue): PrPayload {
   return {
+    baseSha: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "base_sha")),
     number: asNumber(requireKey(value, "number")),
     headSha: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "head_sha")),
     baseRef: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "base_ref")),

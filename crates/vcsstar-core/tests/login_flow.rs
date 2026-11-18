@@ -214,6 +214,7 @@ fn browser_login_round_trip() {
             identity_input: "alice@todandlorna.com".into(),
             return_to: Some("/repos".into()),
             device_user_code: None,
+            link_local: None,
         },
     )
     .expect("begin");
@@ -281,6 +282,7 @@ fn unverified_assertion_is_refused() {
             identity_input: "alice@todandlorna.com".into(),
             return_to: None,
             device_user_code: None,
+            link_local: None,
         },
     )
     .unwrap();
@@ -311,6 +313,7 @@ fn login_begin_is_rate_limited_per_peer_and_identity() {
                 identity_input: identity.into(),
                 return_to: None,
                 device_user_code: None,
+                link_local: None,
             },
         )
     };

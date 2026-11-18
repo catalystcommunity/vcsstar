@@ -18,7 +18,7 @@ use vcsstar_db::schema::branch_protections;
 use vcsstar_store::hook::{self, HookRefUpdate, HookRequest, HookResponse, ZERO_ID};
 use vcsstar_store::refs::{self, RefUpdate};
 use vcsstar_types::{CommitSummary, EventPayload, PushPayload, RefPayload};
-use vcsstar_vcs::{ref_pattern_matches, Env, RevId, RevisionInfo, SigStatus};
+use vcsstar_vcs::{Env, RevId, RevisionInfo, SigStatus};
 
 use crate::authz::RepoRole;
 use crate::outbox::{self, Emit};
@@ -154,16 +154,7 @@ pub fn handle(app: &App, req: HookRequest) -> HookResponse {
     }
 }
 
-#[derive(Debug, Clone, Queryable, Selectable)]
-#[diesel(table_name = branch_protections)]
-struct Protection {
-    ref_pattern: String,
-    required_approvals: i32,
-    required_signature_level: String,
-    required_checks: Vec<Option<String>>,
-    allow_force_push: bool,
-    allow_delete: bool,
-}
+type Protection = crate::services::repos::ProtectionRow;
 
 struct Planned {
     update: RefUpdate,
@@ -204,10 +195,12 @@ fn pre_receive(app: &App, ctx: &PushCtx, req: &HookRequest) -> Result<Vec<String
         let new = (new != ZERO_ID).then(|| RevId(new.clone()));
         let matching: Vec<&Protection> = protections
             .iter()
-            .filter(|p| ref_pattern_matches(&p.ref_pattern, name))
+            .filter(|p| {
+                crate::protection::matches(p, name, &ctx.repo.default_branch)
+                    && !crate::protection::override_allowed(p, Some(&ctx.principal))
+            })
             .collect();
         let is_tag = name.starts_with("refs/tags/");
-        let is_head = name.starts_with("refs/heads/");
         let mut forced = false;
         let mut commits = Vec::new();
         let kind;
@@ -234,7 +227,7 @@ fn pre_receive(app: &App, ctx: &PushCtx, req: &HookRequest) -> Result<Vec<String
                         "{name}: object {n} was not received"
                     )));
                 }
-                commits = backend.rev_list(&ctx.dir, None, n, 200, &env)?;
+                commits = backend.rev_list(&ctx.dir, None, n, usize::MAX, &env)?;
                 kind = if is_tag { "tag_create" } else { "push" };
             }
             (Some(o), Some(n)) => {
@@ -255,28 +248,11 @@ fn pre_receive(app: &App, ctx: &PushCtx, req: &HookRequest) -> Result<Vec<String
                     )));
                 }
                 commits = if ff {
-                    backend.rev_list(&ctx.dir, Some(o), n, 200, &env)?
+                    backend.rev_list(&ctx.dir, Some(o), n, usize::MAX, &env)?
                 } else {
-                    backend.rev_list(&ctx.dir, None, n, 50, &env)?
+                    backend.rev_list(&ctx.dir, None, n, usize::MAX, &env)?
                 };
                 kind = if is_tag { "tag_create" } else { "push" };
-            }
-        }
-        if is_head && new.is_some() {
-            // Review and status gates apply to PR merges. A ref that carries
-            // them refuses direct pushes, as GitHub does.
-            if let Some(p) = matching.iter().find(|p| {
-                p.required_approvals > 0 || p.required_checks.iter().flatten().count() > 0
-            }) {
-                if ctx.role < RepoRole::Admin {
-                    return Err(Error::forbidden(format!(
-                        "{name} requires a pull request (protection {})",
-                        p.ref_pattern
-                    )));
-                }
-                messages.push(format!(
-                    "vcsstar: admin override: direct push to protected {name}"
-                ));
             }
         }
         if matching
@@ -310,7 +286,10 @@ fn pre_receive(app: &App, ctx: &PushCtx, req: &HookRequest) -> Result<Vec<String
             let Some(new) = &p.update.new else { continue };
             let level = protections
                 .iter()
-                .filter(|pr| ref_pattern_matches(&pr.ref_pattern, &p.update.name))
+                .filter(|pr| {
+                    crate::protection::matches(pr, &p.update.name, &ctx.repo.default_branch)
+                        && !crate::protection::override_allowed(pr, Some(&ctx.principal))
+                })
                 .map(|pr| pr.required_signature_level.as_str())
                 .fold("none", |acc, l| match (acc, l) {
                     ("attested", _) | (_, "attested") => "attested",
@@ -320,9 +299,16 @@ fn pre_receive(app: &App, ctx: &PushCtx, req: &HookRequest) -> Result<Vec<String
             if level == "none" {
                 continue;
             }
-            let commits = backend.rev_list(&ctx.dir, p.update.old.as_ref(), new, 1000, &env)?;
+            let commits =
+                backend.rev_list(&ctx.dir, p.update.old.as_ref(), new, usize::MAX, &env)?;
             for c in &commits {
-                let status = allowed.classify(&mut conn, backend, &ctx.dir, c, &env)?;
+                let status = allowed.classify(
+                    &mut conn,
+                    backend,
+                    &ctx.dir,
+                    &backend.revision(&ctx.dir, &c.id, &env)?,
+                    &env,
+                )?;
                 let ok = match level {
                     "attested" => status.status == "verified",
                     _ => status.status == "verified" || status.status == "valid_unattested",
@@ -343,7 +329,16 @@ fn pre_receive(app: &App, ctx: &PushCtx, req: &HookRequest) -> Result<Vec<String
         let mut list = Vec::new();
         for c in p.commits.iter().take(20) {
             let sig = match &allowed {
-                Some(a) => a.classify(&mut conn, backend, &ctx.dir, c, &env)?.status,
+                Some(a) => {
+                    a.classify(
+                        &mut conn,
+                        backend,
+                        &ctx.dir,
+                        &backend.revision(&ctx.dir, &c.id, &env)?,
+                        &env,
+                    )?
+                    .status
+                }
                 None => "missing".to_string(),
             };
             list.push(CommitSummary {
@@ -381,6 +376,16 @@ fn pre_receive(app: &App, ctx: &PushCtx, req: &HookRequest) -> Result<Vec<String
     conn.transaction::<(), Error, _>(|conn| {
         if let Some((key, size, hash)) = &segment {
             vcsstar_store::segments::append(conn, ctx.repo.id, key, *size, hash, "pack")?;
+        }
+        for plan in &planned {
+            crate::protection::check_change(
+                conn,
+                &ctx.repo,
+                Some(&ctx.principal),
+                &plan.update,
+                plan.forced,
+                crate::protection::Source::Direct,
+            )?;
         }
         refs::apply(conn, ctx.repo.id, &updates, Some(ctx.principal.identity.id)).map_err(|e| {
             match e {
@@ -457,6 +462,7 @@ fn pre_receive(app: &App, ctx: &PushCtx, req: &HookRequest) -> Result<Vec<String
 /// Apply a ref change that did not come through git (API `update-ref`,
 /// merges). Same transaction shape as the hook; the caller has checked
 /// authorization and object existence.
+#[allow(clippy::too_many_arguments)]
 pub fn apply_ref_change(
     conn: &mut PgConnection,
     org: &Org,
@@ -465,7 +471,9 @@ pub fn apply_ref_change(
     update: &RefUpdate,
     forced: bool,
     commits: Vec<CommitSummary>,
+    source: crate::protection::Source<'_>,
 ) -> Result<(), Error> {
+    crate::protection::check_change(conn, repo, actor, update, forced, source)?;
     let is_tag = update.name.starts_with("refs/tags/");
     let kind = match (&update.old, &update.new) {
         (_, None) if is_tag => "tag_delete",
@@ -546,7 +554,7 @@ pub(crate) fn check_sync_ref(
         .load(conn)?;
     let matching: Vec<_> = protections
         .iter()
-        .filter(|p| ref_pattern_matches(&p.ref_pattern, &update.name))
+        .filter(|p| crate::protection::matches(p, &update.name, &repo.default_branch))
         .collect();
     if update.new.is_none() {
         if update.name == format!("refs/heads/{}", repo.default_branch)
@@ -576,20 +584,18 @@ pub(crate) fn check_sync_ref(
     }
     if matching
         .iter()
-        .any(|p| p.required_approvals > 0 || !p.required_checks.is_empty())
-    {
-        return Err(Error::forbidden(
-            "local protection requires a reviewed merge; sync cannot override it",
-        ));
-    }
-    if matching
-        .iter()
         .any(|p| p.required_signature_level != "none")
     {
         let allowed = keys::AllowedSigners::build(conn)?;
         let commits = backend.rev_list(&dir, update.old.as_ref(), new, usize::MAX, &env)?;
         for commit in commits {
-            let sig = allowed.classify(conn, backend, &dir, &commit, &env)?;
+            let sig = allowed.classify(
+                conn,
+                backend,
+                &dir,
+                &backend.revision(&dir, &commit.id, &env)?,
+                &env,
+            )?;
             if matching
                 .iter()
                 .any(|p| match p.required_signature_level.as_str() {

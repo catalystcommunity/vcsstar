@@ -412,13 +412,15 @@ function settingsTab(c: Common): Tab {
   const general = section("General", null, form({ class: "form-row", onSubmit: () => void act(() => api.repos.update({ ctx: ctx(), repo, description: description.value, visibility: visibility.value }), { done: "Saved.", after: () => c.onRepoChange() }) }, description, visibility, button("Save", { type: "submit", variant: "default" }), archive));
 
   // Protections
-  const prots = table(["Pattern", "Approvals", "Checks", "Signatures", "Merge kinds", "Force / delete", ""]);
+  const prots = table(["Pattern", "Authority", "Overrides", "Approvals", "Checks", "Signatures", "Merge kinds", "Force / delete", ""]);
   const protStatus = h("div");
   async function loadProts() {
     try {
       const page = await api.repos.listProtections({ ctx: ctx(), repo });
       fill(prots.body, ...page.protections.map((x) => tr(
         td("", mono(x.refPattern)),
+        x.mergeAuthority || "local",
+        (x.overrideAccounts || []).join(", ") || "none",
         `${x.requiredApprovals}${x.dismissStale ? ", stale dismissed" : ""}`,
         td("small", x.requiredChecks.join(", ") || "none"),
         x.requiredSignatureLevel,
@@ -435,6 +437,16 @@ function settingsTab(c: Common): Tab {
     }
   }
   const pattern = textField("Ref pattern", { value: c.repo.defaultBranch, required: true, placeholder: "main, release/*", class: "w-md" });
+  const authority = comboBox("Merge authority", [{ value: "local", label: "This VCSStar instance" }], { value: "local" });
+  void api.mirror.listConnections({ ctx: ctx(), repo }).then(list => { authority.options = [{ value: "local", label: "This VCSStar instance" }, ...list.connections.map(c => ({ value: c.id, label: `${c.host}/${c.project}` }))]; }).catch(e => feedback.error(e));
+  const overrides = textField("Override accounts", { placeholder: "user_id@domain, …" });
+  const eligible = textField("Allowed approvers", { helper: "Leave empty to allow repository writers. Otherwise, list account identities." });
+  const reporters = textField("Trusted check reporters", { placeholder: "user_id@domain, …" });
+  const requirePr = checkBox("Require a pull request", { checked: true });
+  const requireBase = checkBox("Dismiss approval when the base changes", { checked: true });
+  const self = checkBox("Allow author approval");
+  const delegated = checkBox("Allow delegated approvals");
+  const blockChanges = checkBox("Block merge while changes are requested", { checked: true });
   const approvals = spinBox("Approvals", { value: 1, min: 0, max: 20 });
   const dismiss = checkBox("Dismiss stale approvals", { checked: true });
   const signatures = comboBox("Signatures", [{ value: "none", label: "Not required" }, { value: "any", label: "Any valid signature" }, { value: "attested", label: "Attested key" }], { value: "none" });
@@ -443,14 +455,16 @@ function settingsTab(c: Common): Tab {
   const force = checkBox("Allow force push");
   const del = checkBox("Allow delete");
   const protForm = panel(h("h3", null, "Set a protection"), form({ class: "form-stack", onSubmit: () => {
-    const protection: BranchProtection = { refPattern: pattern.value, requiredApprovals: approvals.value ?? 0, dismissStale: dismiss.checked, requiredSignatureLevel: signatures.value, requiredChecks: csv(checks.value), allowedMergeKinds: kinds.filter((k) => k.box.checked).map((k) => k.value), allowForcePush: force.checked, allowDelete: del.checked };
+    const protection: BranchProtection = { requirePullRequest: requirePr.checked, mergeAuthority: authority.value, overrideAccounts: csv(overrides.value), allowedApprovers: csv(eligible.value), requiredCheckReporters: csv(reporters.value), requireBaseApproval: requireBase.checked, allowSelfApproval: self.checked, allowDelegatedApproval: delegated.checked, blockChangesRequested: blockChanges.checked, refPattern: pattern.value, requiredApprovals: approvals.value ?? 0, dismissStale: dismiss.checked, requiredSignatureLevel: signatures.value, requiredChecks: csv(checks.value), allowedMergeKinds: kinds.filter((k) => k.box.checked).map((k) => k.value), allowForcePush: force.checked, allowDelete: del.checked };
     void act(() => api.repos.setProtection({ ctx: ctx(), repo, protection }), { done: "Protection saved.", after: () => void loadProts() });
   } },
     h("div", { class: "form-row" }, pattern, approvals, signatures, checks),
+    h("div", { class: "form-row" }, authority, overrides, eligible, reporters),
+    h("div", { class: "form-row checks" }, requirePr, requireBase, self, delegated, blockChanges),
     h("div", { class: "form-row checks" }, dismiss, ...kinds.map((k) => k.box), force, del),
     button("Save protection", { type: "submit", variant: "default" }),
   ));
-  const protections = section("Branch protections", "A protection applies to every ref that matches its pattern.", prots.wrap, protStatus, protForm);
+  const protections = section("Branch protections", "Matching rules all apply. @default follows the current default branch. Only the selected authority can update a protected branch; account overrides do not change that authority.", prots.wrap, protStatus, protForm);
 
   // Access
   const accessBox = h("div");

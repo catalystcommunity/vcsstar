@@ -105,6 +105,10 @@ export interface BeginLoginRequest {
    * Present when a CLI device login is being approved.
    */
   deviceUserCode?: string;
+  /**
+   * Bind the authenticated local account to the verified LinkKeys identity.
+   */
+  linkLocal?: boolean;
 }
 
 export interface BeginLoginResponse {
@@ -357,6 +361,39 @@ export interface GithubLink {
 export interface SetGithubTokenRequest {
   ctx: Ctx;
   token: string;
+}
+
+export interface LocalLoginRequest {
+  ctx: Ctx;
+  username: string;
+  password: string;
+  returnTo?: string;
+  deviceUserCode?: string;
+}
+
+export interface CreateLocalAccountRequest {
+  ctx: Ctx;
+  username: string;
+  password: string;
+  displayName?: string;
+}
+
+export interface ResetLocalPasswordRequest {
+  ctx: Ctx;
+  identity: string;
+  password: string;
+}
+
+export interface ChangeLocalPasswordRequest {
+  ctx: Ctx;
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface LocalAccount {
+  identity: Identity;
+  username?: string;
+  passwordLogin: boolean;
 }
 
 export interface Org {
@@ -761,6 +798,18 @@ export interface BranchProtection {
   allowedMergeKinds: string[];
   allowForcePush: boolean;
   allowDelete: boolean;
+  /**
+   * @default selects the current default branch. Authority is local or a connection UUID.
+   */
+  requirePullRequest?: boolean;
+  mergeAuthority?: string;
+  overrideAccounts?: string[];
+  allowSelfApproval?: boolean;
+  requireBaseApproval?: boolean;
+  allowedApprovers?: string[];
+  requiredCheckReporters?: string[];
+  allowDelegatedApproval?: boolean;
+  blockChangesRequested?: boolean;
 }
 
 export interface SetProtectionRequest {
@@ -846,6 +895,10 @@ export interface PrPage {
 }
 
 export interface Review {
+  id?: string;
+  invalidated?: boolean;
+  baseSha?: string;
+  approvalScope?: string;
   number: number;
   reviewer: Identity;
   /**
@@ -864,6 +917,8 @@ export interface ReviewRequest {
   state: string;
   body?: string;
   headSha: string;
+  baseSha?: string;
+  approvalScope?: string;
 }
 
 export interface Comment {
@@ -932,6 +987,7 @@ export interface UpdatePrRequest {
 }
 
 export interface CommitStatus {
+  baseSha?: string;
   sha: string;
   context: string;
   /**
@@ -945,6 +1001,7 @@ export interface CommitStatus {
 }
 
 export interface SetStatusRequest {
+  baseSha?: string;
   ctx: Ctx;
   repo: RepoRef;
   sha: string;
@@ -1422,6 +1479,8 @@ export interface SyncConnection {
   host: string;
   project: string;
   paused: boolean;
+  inboundEnabled: boolean;
+  outboundEnabled: boolean;
   automaticWebhook: boolean;
   setupDone: boolean;
   webhookUrl: string;
@@ -1444,6 +1503,11 @@ export interface ConnectRemoteRequest {
   project: string;
   createRemote?: boolean;
   automaticWebhook?: boolean;
+  /**
+   * New connections default to both directions disabled.
+   */
+  inboundEnabled?: boolean;
+  outboundEnabled?: boolean;
 }
 
 export interface SyncConnectionRef {
@@ -1458,6 +1522,8 @@ export interface UpdateConnectionRequest {
   connectionId: string;
   paused?: boolean;
   automaticWebhook?: boolean;
+  inboundEnabled?: boolean;
+  outboundEnabled?: boolean;
 }
 
 export interface SyncWebhookSecret {
@@ -1751,6 +1817,7 @@ export interface RefPayload {
  * event is about, so a consumer (and the GitHub sync) can fetch exactly it.
  */
 export interface PrPayload {
+  baseSha?: string;
   number: number;
   headSha?: string;
   baseRef?: string;

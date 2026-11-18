@@ -398,7 +398,12 @@ impl VcsBackend for GitBackend {
             }
             None => new.0.clone(),
         };
-        let raw = run_str(dir, env, &["log", &n, &fmt, "--end-of-options", &range])?;
+        let mut args = vec!["log"];
+        if limit != usize::MAX {
+            args.push(&n);
+        }
+        args.extend([&fmt, "--end-of-options", &range]);
+        let raw = run_str(dir, env, &args)?;
         Ok(parse_revisions(&raw))
     }
 

@@ -36,6 +36,18 @@ pub const SESSION_SLIDING_HOURS: i64 = 12;
 pub const ATTEMPT_PREFIX: &str = "vsa_";
 pub const DEVICE_PREFIX: &str = "vsd_";
 
+pub fn check_return_to(path: Option<&str>) -> Result<(), Error> {
+    if path.is_some_and(|p| {
+        !p.starts_with('/')
+            || p.starts_with("//")
+            || p.contains('\\')
+            || p.chars().any(char::is_control)
+    }) {
+        return Err(Error::invalid("return_to must be a local path"));
+    }
+    Ok(())
+}
+
 pub fn callback_url(app: &App) -> String {
     format!(
         "{}/auth/callback",
@@ -71,11 +83,18 @@ pub fn begin(app: &App, ctx: &ReqCtx, req: BeginLoginRequest) -> Result<BeginLog
         Some(code) => Some(find_device_by_user_code(&mut app.conn()?, code)?.id),
         None => None,
     };
-    if let Some(rt) = req.return_to.as_deref() {
-        if !rt.starts_with('/') || rt.starts_with("//") {
-            return Err(Error::invalid("return_to must be a local path"));
+    check_return_to(req.return_to.as_deref())?;
+    let local_id = if req.link_local.unwrap_or(false) {
+        let p = ctx.require()?;
+        if p.kind != crate::principal::CredentialKind::Session || p.identity.linkkeys_bound {
+            return Err(Error::forbidden(
+                "sign in with the local account before linking LinkKeys",
+            ));
         }
-    }
+        Some(p.identity.id)
+    } else {
+        None
+    };
     let row = NewPendingLogin {
         id: vcsstar_db::new_id(),
         attempt_hash: tokens::hash(&attempt_token),
@@ -87,9 +106,16 @@ pub fn begin(app: &App, ctx: &ReqCtx, req: BeginLoginRequest) -> Result<BeginLog
         expires_at,
     };
     let mut conn = app.conn()?;
-    diesel::insert_into(pending_logins::table)
-        .values(&row)
-        .execute(&mut conn)?;
+    conn.transaction::<_, Error, _>(|conn| {
+        diesel::insert_into(pending_logins::table).values(&row).execute(conn)?;
+        if let Some(id) = local_id {
+            diesel::sql_query("INSERT INTO local_link_attempts(attempt_hash,identity_id,expires_at) VALUES($1,$2,$3)")
+                .bind::<diesel::sql_types::Binary,_>(&row.attempt_hash)
+                .bind::<diesel::sql_types::Uuid,_>(id)
+                .bind::<diesel::sql_types::Timestamptz,_>(expires_at).execute(conn)?;
+        }
+        Ok(())
+    })?;
     Ok(BeginLoginResponse {
         redirect_url,
         attempt_token,
@@ -151,7 +177,19 @@ pub fn complete(app: &App, ctx: &ReqCtx, req: CompleteLoginRequest) -> Result<Se
     let user_id = uuid::Uuid::parse_str(&verified.assertion.user_id)
         .map_err(|_| Error::new(Code::Unauthenticated, "assertion user_id is not a UUID"))?;
     let domain = verified.assertion.domain.to_ascii_lowercase();
-    let identity = upsert_identity(&mut conn, user_id, &domain, &handle, &claims)?;
+    let identity = conn.transaction::<_, Error, _>(|conn| {
+        #[derive(QueryableByName)]
+        struct Binding { #[diesel(sql_type=diesel::sql_types::Uuid)] identity_id: uuid::Uuid }
+        let binding: Option<Binding> = diesel::sql_query("DELETE FROM local_link_attempts WHERE attempt_hash=$1 AND expires_at>now() RETURNING identity_id")
+            .bind::<diesel::sql_types::Binary,_>(tokens::hash(&req.attempt_token)).get_result(conn).optional()?;
+        if let Some(binding) = binding {
+            let account: Identity = identities::table.find(binding.identity_id).for_update().select(Identity::as_select()).first(conn)?;
+            if account.linkkeys_bound || account.disabled_at.is_some() { return Err(Error::forbidden("local account cannot be linked")); }
+            // The unique identity key prevents taking over an existing LinkKeys account.
+            diesel::update(identities::table.find(account.id)).set((identities::lk_user_id.eq(user_id),identities::lk_domain.eq(&domain),identities::linkkeys_bound.eq(true))).execute(conn)?;
+        }
+        upsert_identity(conn, user_id, &domain, &handle, &claims)
+    })?;
     if identity.disabled_at.is_some() {
         return Err(Error::forbidden("identity disabled"));
     }
@@ -418,7 +456,10 @@ fn normalize_user_code(s: &str) -> String {
         .collect()
 }
 
-fn find_device_by_user_code(conn: &mut DbConn, code: &str) -> Result<DeviceLogin, Error> {
+pub(crate) fn find_device_by_user_code(
+    conn: &mut DbConn,
+    code: &str,
+) -> Result<DeviceLogin, Error> {
     let digest = tokens::hash(&normalize_user_code(code));
     device_logins::table
         .filter(device_logins::user_code_hash.eq(&digest))
@@ -563,7 +604,7 @@ pub fn poll_device(
     }
 }
 
-fn approve_device_by_id(
+pub(crate) fn approve_device_by_id(
     conn: &mut DbConn,
     id: uuid::Uuid,
     identity: &Identity,

@@ -51,6 +51,8 @@ fn wire(
         host: c.host.clone(),
         project: c.project.clone(),
         paused: c.paused,
+        inbound_enabled: c.inbound_enabled,
+        outbound_enabled: c.outbound_enabled,
         automatic_webhook: c.automatic_webhook,
         setup_done: c.setup_done,
         webhook_url: c.webhook_url(app),
@@ -87,9 +89,9 @@ pub fn connect(
         format!("{}{}", Uuid::new_v4(), Uuid::new_v4()).as_bytes(),
     )?;
     let c=conn.transaction::<store::Connection,Error,_>(|conn|{
-        let c=diesel::sql_query("INSERT INTO sync_connections(id,repo_id,provider,host,project,create_remote,automatic_webhook,webhook_secret) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *")
+        let c=diesel::sql_query("INSERT INTO sync_connections(id,repo_id,provider,host,project,create_remote,automatic_webhook,webhook_secret,inbound_enabled,outbound_enabled) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *")
             .bind::<SqlUuid,_>(id).bind::<SqlUuid,_>(repo.id).bind::<Text,_>(&provider).bind::<Text,_>(&host).bind::<Text,_>(&req.project)
-            .bind::<Bool,_>(req.create_remote.unwrap_or(false)).bind::<Bool,_>(req.automatic_webhook.unwrap_or(false)).bind::<Binary,_>(secret).get_result(conn)?;
+            .bind::<Bool,_>(req.create_remote.unwrap_or(false)).bind::<Bool,_>(req.automatic_webhook.unwrap_or(false)).bind::<Binary,_>(secret).bind::<Bool,_>(req.inbound_enabled.unwrap_or(false)).bind::<Bool,_>(req.outbound_enabled.unwrap_or(false)).get_result(conn)?;
         diesel::sql_query("INSERT INTO sync_policy(repo_id,resolver_identity) VALUES($1,$2) ON CONFLICT DO NOTHING").bind::<SqlUuid,_>(repo.id).bind::<SqlUuid,_>(ctx.require()?.identity.id).execute(conn)?;
         diesel::update(vcsstar_db::schema::repos::table.find(repo.id)).set(vcsstar_db::schema::repos::mirror_enabled.eq(true)).execute(conn)?;
         local::emit(conn,&org,&repo,"sync_connected",&id.to_string(),ctx.actor_id())?;
@@ -105,8 +107,8 @@ pub fn update(
     let (mut conn, org, repo) = open(app, ctx, &req.repo, RepoRole::Admin)?;
     let c = owned(&mut conn, repo.id, &req.connection_id)?;
     let c=conn.transaction::<store::Connection,Error,_>(|conn|{
-        let c=diesel::sql_query("UPDATE sync_connections SET paused=COALESCE($2,paused),automatic_webhook=COALESCE($3,automatic_webhook),setup_done=CASE WHEN $3 IS NOT NULL AND $3<>automatic_webhook THEN false ELSE setup_done END,requested=requested+1,poll_after=now() WHERE id=$1 RETURNING *")
-            .bind::<SqlUuid,_>(c.id).bind::<Nullable<Bool>,_>(req.paused).bind::<Nullable<Bool>,_>(req.automatic_webhook).get_result(conn)?;
+        let c=diesel::sql_query("UPDATE sync_connections SET paused=COALESCE($2,paused),inbound_enabled=COALESCE($4,inbound_enabled),outbound_enabled=COALESCE($5,outbound_enabled),automatic_webhook=COALESCE($3,automatic_webhook),setup_done=CASE WHEN $3 IS NOT NULL AND $3<>automatic_webhook THEN false ELSE setup_done END,requested=requested+1,poll_after=now() WHERE id=$1 RETURNING *")
+            .bind::<SqlUuid,_>(c.id).bind::<Nullable<Bool>,_>(req.paused).bind::<Nullable<Bool>,_>(req.automatic_webhook).bind::<Nullable<Bool>,_>(req.inbound_enabled).bind::<Nullable<Bool>,_>(req.outbound_enabled).get_result(conn)?;
         local::emit(conn,&org,&repo,"sync_configured",&req.connection_id,ctx.actor_id())?;Ok(c)
     })?;
     wire(app, &mut conn, &c)
@@ -334,6 +336,8 @@ pub fn link(
         host: host.clone(),
         project: String::new(),
         paused: false,
+        inbound_enabled: false,
+        outbound_enabled: false,
         create_remote: false,
         automatic_webhook: false,
         setup_done: false,

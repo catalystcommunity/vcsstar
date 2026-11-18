@@ -19,6 +19,7 @@ use vcsstar_transport::{Carrier, CredentialSource, Peer};
 use crate::http::HttpPeer;
 
 pub const SESSION_COOKIE: &str = "vcsstar_session";
+const CSRF_COOKIE: &str = "vcsstar_login_csrf";
 const ATTEMPT_COOKIE: &str = "vcsstar_login_attempt";
 
 fn page(title: &str, body: &str) -> RawHtml<String> {
@@ -67,17 +68,40 @@ fn session_ctx(app: &App, cookies: &CookieJar<'_>, remote: &str) -> ReqCtx {
 
 #[derive(FromForm)]
 struct LoginForm {
+    csrf: String,
+    link_local: Option<bool>,
     identity: String,
     return_to: Option<String>,
     device_code: Option<String>,
 }
 
-#[get("/auth/login?<return_to>&<device_code>&<error>")]
+#[get("/auth/login?<return_to>&<device_code>&<error>&<link_local>")]
 fn login_form(
+    app: &State<App>,
+    cookies: &CookieJar<'_>,
+    link_local: Option<bool>,
     return_to: Option<String>,
     device_code: Option<String>,
     error: Option<String>,
 ) -> RawHtml<String> {
+    let csrf = vcsstar_core::tokens::new_secret("csrf_");
+    cookies.add(
+        Cookie::build((CSRF_COOKIE, csrf.clone()))
+            .http_only(true)
+            .secure(app.config.public_url.starts_with("https://"))
+            .same_site(SameSite::Strict)
+            .path("/auth")
+            .build(),
+    );
+    let csrf_field = format!(
+        "<input type=\"hidden\" name=\"csrf\" value=\"{}\">",
+        esc(&csrf)
+    );
+    let link_field = if link_local.unwrap_or(false) {
+        "<input type=\"hidden\" name=\"link_local\" value=\"true\">"
+    } else {
+        ""
+    };
     let err = error
         .map(|e| format!("<p class=\"err\">{}</p>", esc(&e)))
         .unwrap_or_default();
@@ -97,11 +121,15 @@ fn login_form(
     page(
         "Sign in",
         &format!(
-            "{err}<form method=\"post\" action=\"/auth/login\">{device}{rt}\
+            "{err}<form method=\"post\" action=\"/auth/login\">{csrf_field}{link_field}{device}{rt}\
 <label for=\"identity\">Your LinkKeys identity</label>\
 <input type=\"text\" id=\"identity\" name=\"identity\" placeholder=\"you@example.com\" autocomplete=\"username\" autofocus required>\
 <button type=\"submit\">Continue</button></form>\
-<p class=\"muted\">vcsstar has no accounts of its own. Sign in with the LinkKeys identity of any domain.</p>"
+<p class=\"muted\">LinkKeys accounts use their identity provider. Local accounts are created by an administrator.</p>\
+<h2>Local account</h2><form method=\"post\" action=\"/auth/local\">{csrf_field}{device}{rt}\
+<label for=\"local-user\">Username</label><input type=\"text\" id=\"local-user\" name=\"username\" autocomplete=\"username\" required>\
+<label for=\"local-password\">Password</label><input type=\"password\" id=\"local-password\" name=\"password\" autocomplete=\"current-password\" required maxlength=\"1024\">\
+<button type=\"submit\">Sign in</button></form>"
         ),
     )
 }
@@ -114,6 +142,7 @@ fn login_submit(
     form: Form<LoginForm>,
 ) -> Result<Redirect, Redirect> {
     crate::http::blocking(|| {
+        check_login_csrf(cookies, &form.csrf)?;
         let req = vcsstar_types::BeginLoginRequest {
             ctx: vcsstar_types::Ctx {
                 request_id: uuid::Uuid::now_v7().to_string(),
@@ -124,8 +153,9 @@ fn login_submit(
             identity_input: form.identity.clone(),
             return_to: form.return_to.clone().filter(|s| !s.is_empty()),
             device_user_code: form.device_code.clone().filter(|s| !s.is_empty()),
+            link_local: form.link_local,
         };
-        match login::begin(app, &anon_ctx(&peer.0.remote), req) {
+        match login::begin(app, &session_ctx(app, cookies, &peer.0.remote), req) {
             Ok(resp) => {
                 let secure = app.config.public_url.starts_with("https://");
                 cookies.add(
@@ -144,6 +174,65 @@ fn login_submit(
                 vcsstar_core::linkkeys::urlencode(&e.message)
             ))),
         }
+    })
+}
+
+fn check_login_csrf(cookies: &CookieJar<'_>, supplied: &str) -> Result<(), Redirect> {
+    if !cookies
+        .get(CSRF_COOKIE)
+        .is_some_and(|c| !supplied.is_empty() && c.value() == supplied)
+    {
+        return Err(Redirect::to(
+            "/auth/login?error=Reload%20the%20sign-in%20page",
+        ));
+    }
+    Ok(())
+}
+#[derive(FromForm)]
+struct LocalLoginForm {
+    username: String,
+    password: String,
+    csrf: String,
+    return_to: Option<String>,
+    device_code: Option<String>,
+}
+#[post("/auth/local", data = "<form>")]
+fn local_submit(
+    app: &State<App>,
+    cookies: &CookieJar<'_>,
+    peer: HttpPeer,
+    form: Form<LocalLoginForm>,
+) -> Result<Redirect, Redirect> {
+    crate::http::blocking(|| {
+        check_login_csrf(cookies, &form.csrf)?;
+        let req = vcsstar_types::LocalLoginRequest {
+            ctx: empty_ctx(),
+            username: form.username.clone(),
+            password: form.password.clone(),
+            return_to: form.return_to.clone().filter(|s| !s.is_empty()),
+            device_user_code: form.device_code.clone().filter(|s| !s.is_empty()),
+        };
+        let session =
+            vcsstar_core::services::local_login::sign_in(app, &anon_ctx(&peer.0.remote), req)
+                .map_err(|e| {
+                    Redirect::to(format!(
+                        "/auth/login?error={}",
+                        vcsstar_core::linkkeys::urlencode(&e.message)
+                    ))
+                })?;
+        cookies.add(
+            Cookie::build((SESSION_COOKIE, session.session_token))
+                .http_only(true)
+                .secure(app.config.public_url.starts_with("https://"))
+                .same_site(SameSite::Lax)
+                .path("/")
+                .max_age(rocket::time::Duration::hours(login::SESSION_SLIDING_HOURS))
+                .build(),
+        );
+        cookies.remove(Cookie::build(CSRF_COOKIE).path("/auth"));
+        Ok(Redirect::to(
+            session.return_to.unwrap_or_else(|| "/".into()),
+        ))
     })
 }
 
@@ -434,6 +523,7 @@ pub fn routes() -> Vec<Route> {
         index,
         login_form,
         login_submit,
+        local_submit,
         callback,
         me,
         logout,
@@ -447,4 +537,43 @@ pub fn routes() -> Vec<Route> {
 #[allow(dead_code)]
 fn _status_unused() -> Status {
     Status::Ok
+}
+
+#[cfg(test)]
+mod local_form_tests {
+    use super::*;
+    use rocket::http::ContentType;
+    use rocket::local::blocking::Client;
+
+    #[test]
+    fn login_form_supplies_csrf_and_rejects_a_cross_site_post() {
+        let Ok(url) = std::env::var("DATABASE_URL") else {
+            return;
+        };
+        std::env::set_var("VCSSTAR__DATABASE_URL", &url);
+        let mut config = vcsstar_core::Config::from_env().unwrap();
+        config.public_url = "http://localhost".into();
+        let db = vcsstar_db::pool(&url, 2).unwrap();
+        let app = App::new(config, db);
+        let client = Client::tracked(rocket::build().manage(app).mount("/", routes())).unwrap();
+        let response = client.get("/auth/login?return_to=/me").dispatch();
+        assert_eq!(response.status(), Status::Ok);
+        let body = response.into_string().unwrap();
+        assert!(body.contains("action=\"/auth/local\""));
+        assert!(body.contains("autocomplete=\"current-password\""));
+        assert!(body.contains("name=\"csrf\""));
+        assert!(client.cookies().get(CSRF_COOKIE).is_some());
+        let response = client
+            .post("/auth/local")
+            .header(ContentType::Form)
+            .body("username=someone&password=anything&csrf=wrong")
+            .dispatch();
+        assert_eq!(response.status(), Status::SeeOther);
+        assert!(response
+            .headers()
+            .get_one("Location")
+            .unwrap()
+            .contains("Reload"));
+        assert!(client.cookies().get(SESSION_COOKIE).is_none());
+    }
 }

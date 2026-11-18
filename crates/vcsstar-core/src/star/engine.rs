@@ -20,7 +20,7 @@ pub struct Task {
 pub fn schedule(app: &App) -> Result<(), Error> {
     let mut conn = app.conn()?;
     adopt_legacy(app, &mut conn, None)?;
-    let rows:Vec<store::Connection>=diesel::sql_query("SELECT * FROM sync_connections WHERE NOT paused AND poll_after<=now() ORDER BY poll_after LIMIT 100").load(&mut conn)?;
+    let rows:Vec<store::Connection>=diesel::sql_query("SELECT * FROM sync_connections WHERE NOT paused AND (inbound_enabled OR outbound_enabled) AND poll_after<=now() ORDER BY poll_after LIMIT 100").load(&mut conn)?;
     for c in rows {
         let epoch = chrono::Utc::now().timestamp() / 60;
         let mut payload = vec![];
@@ -67,7 +67,7 @@ pub fn adopt_legacy(app: &App, conn: &mut PgConnection, only: Option<Uuid>) -> R
         }
         let secret = mirror::cred::seal(app, Uuid::new_v4().to_string().as_bytes())?;
         conn.transaction::<(),Error,_>(|conn|{
-            diesel::sql_query("INSERT INTO sync_connections(id,repo_id,provider,host,project,paused,webhook_secret) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING")
+            diesel::sql_query("INSERT INTO sync_connections(id,repo_id,provider,host,project,paused,webhook_secret,inbound_enabled,outbound_enabled) VALUES($1,$2,$3,$4,$5,$6,$7,true,true) ON CONFLICT DO NOTHING")
                 .bind::<SqlUuid,_>(Uuid::now_v7()).bind::<SqlUuid,_>(old.repo_id).bind::<Text,_>(&old.provider).bind::<Text,_>(&old.host).bind::<Text,_>(&old.github_repo).bind::<Bool,_>(old.paused).bind::<diesel::sql_types::Binary,_>(&secret).execute(conn)?;
             let (org,repo)=local::load_repo(conn,old.repo_id)?;
             local::emit(conn,&org,&repo,"sync_connected","legacy",None)?;
@@ -222,7 +222,10 @@ pub fn run(app: &App, task: &Task) -> Result<bool, Error> {
             serde_json::from_slice(body).map_err(|_| Error::invalid("webhook JSON"))?;
         store::archive(&mut conn, c.id, "webhook", &value)?;
     }
-    if c.paused || (task.webhook.is_none() && c.poll_after > chrono::Utc::now()) {
+    if c.paused
+        || (!c.inbound_enabled && !c.outbound_enabled)
+        || (task.webhook.is_none() && c.poll_after > chrono::Utc::now())
+    {
         return Ok(true);
     }
     // One connection pass per repository. A crashed connection releases
@@ -368,8 +371,16 @@ fn run_locked(
             serde_json::from_slice(body).map_err(|_| Error::invalid("webhook JSON"))?;
         store::archive(conn, c.id, "webhook", &value)?;
     }
+    // Reload after acquiring the repository lock. Queued work must use the
+    // current switches, not the settings from when it was scheduled.
+    let current = store::connection(conn, c.id)?;
+    let c = &current;
+    if c.paused || (!c.inbound_enabled && !c.outbound_enabled) {
+        return Ok(());
+    }
     let client = remote::client(app, conn, c, None)?;
-    if !c.setup_done {
+    // Setup can create a repository or change its webhooks.
+    if !c.setup_done && c.outbound_enabled {
         remote::setup(app, conn, c, &client)?;
     }
     let (_, repo) = local::load_repo(conn, c.repo_id)?;
@@ -407,6 +418,10 @@ fn run_locked(
     });
     let mut problems = Vec::new();
     for key in keys {
+        let current = store::connection(conn, c.id)?;
+        if current.paused || (!current.inbound_enabled && !current.outbound_enabled) {
+            break;
+        }
         // Reload local rows: another API request may have changed them while
         // the remote was read, or the preceding ref import changed a PR.
         let (org, repo) = local::load_repo(conn, c.repo_id)?;
@@ -525,6 +540,18 @@ fn run_locked(
                 }
                 Ok(())
             })?;
+            continue;
+        }
+        // Recheck after conflict policy selects a direction. Keep the old
+        // baselines for deferred work so that enabling it catches up. An item
+        // already in progress can finish; the next item uses current settings.
+        let current = store::connection(conn, c.id)?;
+        if current.paused || (!current.inbound_enabled && !current.outbound_enabled) {
+            break;
+        }
+        if (decision == Decision::Import && !current.inbound_enabled)
+            || (decision == Decision::Export && !current.outbound_enabled)
+        {
             continue;
         }
         let result = (|| -> Result<(), Error> {
@@ -740,7 +767,7 @@ fn run_locked(
         }
     }
     let error = (!problems.is_empty()).then(|| problems.join("; "));
-    diesel::sql_query("UPDATE sync_connections SET completed=GREATEST(completed,$2),poll_after=now()+interval '60 seconds',last_success_at=CASE WHEN $3::text IS NULL THEN now() ELSE last_success_at END,last_error=$3 WHERE id=$1")
+    diesel::sql_query("UPDATE sync_connections SET completed=GREATEST(completed,$2),poll_after=CASE WHEN requested>$2 THEN now() ELSE now()+interval '60 seconds' END,last_success_at=CASE WHEN $3::text IS NULL THEN now() ELSE last_success_at END,last_error=$3 WHERE id=$1")
         .bind::<SqlUuid,_>(c.id).bind::<BigInt,_>(c.requested).bind::<diesel::sql_types::Nullable<Text>,_>(error).execute(conn)?;
     Ok(())
 }

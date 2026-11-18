@@ -875,10 +875,13 @@ pub fn decode_server_info(csil_data: &[u8]) -> Result<ServerInfo, CsilCborError>
 
 /// Build the canonical CBOR value tree for a BeginLoginRequest.
 fn csil_enc_begin_login_request(csil_v: &BeginLoginRequest) -> CsilCborValue {
-    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(4);
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(5);
     csil_entries.push((cbor_text("ctx"), csil_enc_ctx(&csil_v.ctx)));
     if let Some(csil_inner) = &csil_v.return_to {
         csil_entries.push((cbor_text("return_to"), cbor_text(csil_inner)));
+    }
+    if let Some(csil_inner) = &csil_v.link_local {
+        csil_entries.push((cbor_text("link_local"), cbor_bool(*csil_inner)));
     }
     csil_entries.push((
         cbor_text("identity_input"),
@@ -918,11 +921,19 @@ fn csil_dec_begin_login_request(
         }
         None => None,
     };
+    let link_local = match cbor_map_get(csil_root, "link_local") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_bool;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
     Ok(BeginLoginRequest {
         ctx,
         identity_input,
         return_to,
         device_user_code,
+        link_local,
     })
 }
 
@@ -2313,6 +2324,283 @@ pub fn decode_set_github_token_request(
 ) -> Result<SetGithubTokenRequest, CsilCborError> {
     let csil_root = cbor_decode(csil_data)?;
     csil_dec_set_github_token_request(&csil_root)
+}
+
+/// Build the canonical CBOR value tree for a LocalLoginRequest.
+fn csil_enc_local_login_request(csil_v: &LocalLoginRequest) -> CsilCborValue {
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(5);
+    csil_entries.push((cbor_text("ctx"), csil_enc_ctx(&csil_v.ctx)));
+    csil_entries.push((cbor_text("password"), cbor_text(&csil_v.password)));
+    csil_entries.push((cbor_text("username"), cbor_text(&csil_v.username)));
+    if let Some(csil_inner) = &csil_v.return_to {
+        csil_entries.push((cbor_text("return_to"), cbor_text(csil_inner)));
+    }
+    if let Some(csil_inner) = &csil_v.device_user_code {
+        csil_entries.push((cbor_text("device_user_code"), cbor_text(csil_inner)));
+    }
+    CsilCborValue::Map(csil_entries)
+}
+
+/// Reconstruct a LocalLoginRequest from a decoded CBOR value tree.
+fn csil_dec_local_login_request(
+    csil_root: &CsilCborValue,
+) -> Result<LocalLoginRequest, CsilCborError> {
+    let ctx = {
+        let csil_field = cbor_require(csil_root, "ctx")?;
+        let csil_decode = csil_dec_ctx;
+        csil_decode(csil_field)?
+    };
+    let username = {
+        let csil_field = cbor_require(csil_root, "username")?;
+        let csil_decode = cbor_as_text;
+        csil_decode(csil_field)?
+    };
+    let password = {
+        let csil_field = cbor_require(csil_root, "password")?;
+        let csil_decode = cbor_as_text;
+        csil_decode(csil_field)?
+    };
+    let return_to = match cbor_map_get(csil_root, "return_to") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let device_user_code = match cbor_map_get(csil_root, "device_user_code") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    Ok(LocalLoginRequest {
+        ctx,
+        username,
+        password,
+        return_to,
+        device_user_code,
+    })
+}
+
+/// Encode a LocalLoginRequest to canonical CSIL CBOR bytes.
+pub fn encode_local_login_request(csil_v: &LocalLoginRequest) -> Vec<u8> {
+    cbor_encode(&csil_enc_local_login_request(csil_v))
+}
+
+/// Decode canonical CSIL CBOR bytes into a LocalLoginRequest.
+pub fn decode_local_login_request(csil_data: &[u8]) -> Result<LocalLoginRequest, CsilCborError> {
+    let csil_root = cbor_decode(csil_data)?;
+    csil_dec_local_login_request(&csil_root)
+}
+
+/// Build the canonical CBOR value tree for a CreateLocalAccountRequest.
+fn csil_enc_create_local_account_request(csil_v: &CreateLocalAccountRequest) -> CsilCborValue {
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(4);
+    csil_entries.push((cbor_text("ctx"), csil_enc_ctx(&csil_v.ctx)));
+    csil_entries.push((cbor_text("password"), cbor_text(&csil_v.password)));
+    csil_entries.push((cbor_text("username"), cbor_text(&csil_v.username)));
+    if let Some(csil_inner) = &csil_v.display_name {
+        csil_entries.push((cbor_text("display_name"), cbor_text(csil_inner)));
+    }
+    CsilCborValue::Map(csil_entries)
+}
+
+/// Reconstruct a CreateLocalAccountRequest from a decoded CBOR value tree.
+fn csil_dec_create_local_account_request(
+    csil_root: &CsilCborValue,
+) -> Result<CreateLocalAccountRequest, CsilCborError> {
+    let ctx = {
+        let csil_field = cbor_require(csil_root, "ctx")?;
+        let csil_decode = csil_dec_ctx;
+        csil_decode(csil_field)?
+    };
+    let username = {
+        let csil_field = cbor_require(csil_root, "username")?;
+        let csil_decode = cbor_as_text;
+        csil_decode(csil_field)?
+    };
+    let password = {
+        let csil_field = cbor_require(csil_root, "password")?;
+        let csil_decode = cbor_as_text;
+        csil_decode(csil_field)?
+    };
+    let display_name = match cbor_map_get(csil_root, "display_name") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    Ok(CreateLocalAccountRequest {
+        ctx,
+        username,
+        password,
+        display_name,
+    })
+}
+
+/// Encode a CreateLocalAccountRequest to canonical CSIL CBOR bytes.
+pub fn encode_create_local_account_request(csil_v: &CreateLocalAccountRequest) -> Vec<u8> {
+    cbor_encode(&csil_enc_create_local_account_request(csil_v))
+}
+
+/// Decode canonical CSIL CBOR bytes into a CreateLocalAccountRequest.
+pub fn decode_create_local_account_request(
+    csil_data: &[u8],
+) -> Result<CreateLocalAccountRequest, CsilCborError> {
+    let csil_root = cbor_decode(csil_data)?;
+    csil_dec_create_local_account_request(&csil_root)
+}
+
+/// Build the canonical CBOR value tree for a ResetLocalPasswordRequest.
+fn csil_enc_reset_local_password_request(csil_v: &ResetLocalPasswordRequest) -> CsilCborValue {
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(3);
+    csil_entries.push((cbor_text("ctx"), csil_enc_ctx(&csil_v.ctx)));
+    csil_entries.push((cbor_text("identity"), cbor_text(&csil_v.identity)));
+    csil_entries.push((cbor_text("password"), cbor_text(&csil_v.password)));
+    CsilCborValue::Map(csil_entries)
+}
+
+/// Reconstruct a ResetLocalPasswordRequest from a decoded CBOR value tree.
+fn csil_dec_reset_local_password_request(
+    csil_root: &CsilCborValue,
+) -> Result<ResetLocalPasswordRequest, CsilCborError> {
+    let ctx = {
+        let csil_field = cbor_require(csil_root, "ctx")?;
+        let csil_decode = csil_dec_ctx;
+        csil_decode(csil_field)?
+    };
+    let identity = {
+        let csil_field = cbor_require(csil_root, "identity")?;
+        let csil_decode = cbor_as_text;
+        csil_decode(csil_field)?
+    };
+    let password = {
+        let csil_field = cbor_require(csil_root, "password")?;
+        let csil_decode = cbor_as_text;
+        csil_decode(csil_field)?
+    };
+    Ok(ResetLocalPasswordRequest {
+        ctx,
+        identity,
+        password,
+    })
+}
+
+/// Encode a ResetLocalPasswordRequest to canonical CSIL CBOR bytes.
+pub fn encode_reset_local_password_request(csil_v: &ResetLocalPasswordRequest) -> Vec<u8> {
+    cbor_encode(&csil_enc_reset_local_password_request(csil_v))
+}
+
+/// Decode canonical CSIL CBOR bytes into a ResetLocalPasswordRequest.
+pub fn decode_reset_local_password_request(
+    csil_data: &[u8],
+) -> Result<ResetLocalPasswordRequest, CsilCborError> {
+    let csil_root = cbor_decode(csil_data)?;
+    csil_dec_reset_local_password_request(&csil_root)
+}
+
+/// Build the canonical CBOR value tree for a ChangeLocalPasswordRequest.
+fn csil_enc_change_local_password_request(csil_v: &ChangeLocalPasswordRequest) -> CsilCborValue {
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(3);
+    csil_entries.push((cbor_text("ctx"), csil_enc_ctx(&csil_v.ctx)));
+    csil_entries.push((cbor_text("new_password"), cbor_text(&csil_v.new_password)));
+    csil_entries.push((
+        cbor_text("current_password"),
+        cbor_text(&csil_v.current_password),
+    ));
+    CsilCborValue::Map(csil_entries)
+}
+
+/// Reconstruct a ChangeLocalPasswordRequest from a decoded CBOR value tree.
+fn csil_dec_change_local_password_request(
+    csil_root: &CsilCborValue,
+) -> Result<ChangeLocalPasswordRequest, CsilCborError> {
+    let ctx = {
+        let csil_field = cbor_require(csil_root, "ctx")?;
+        let csil_decode = csil_dec_ctx;
+        csil_decode(csil_field)?
+    };
+    let current_password = {
+        let csil_field = cbor_require(csil_root, "current_password")?;
+        let csil_decode = cbor_as_text;
+        csil_decode(csil_field)?
+    };
+    let new_password = {
+        let csil_field = cbor_require(csil_root, "new_password")?;
+        let csil_decode = cbor_as_text;
+        csil_decode(csil_field)?
+    };
+    Ok(ChangeLocalPasswordRequest {
+        ctx,
+        current_password,
+        new_password,
+    })
+}
+
+/// Encode a ChangeLocalPasswordRequest to canonical CSIL CBOR bytes.
+pub fn encode_change_local_password_request(csil_v: &ChangeLocalPasswordRequest) -> Vec<u8> {
+    cbor_encode(&csil_enc_change_local_password_request(csil_v))
+}
+
+/// Decode canonical CSIL CBOR bytes into a ChangeLocalPasswordRequest.
+pub fn decode_change_local_password_request(
+    csil_data: &[u8],
+) -> Result<ChangeLocalPasswordRequest, CsilCborError> {
+    let csil_root = cbor_decode(csil_data)?;
+    csil_dec_change_local_password_request(&csil_root)
+}
+
+/// Build the canonical CBOR value tree for a LocalAccount.
+fn csil_enc_local_account(csil_v: &LocalAccount) -> CsilCborValue {
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(3);
+    csil_entries.push((cbor_text("identity"), csil_enc_identity(&csil_v.identity)));
+    if let Some(csil_inner) = &csil_v.username {
+        csil_entries.push((cbor_text("username"), cbor_text(csil_inner)));
+    }
+    csil_entries.push((
+        cbor_text("password_login"),
+        cbor_bool(csil_v.password_login),
+    ));
+    CsilCborValue::Map(csil_entries)
+}
+
+/// Reconstruct a LocalAccount from a decoded CBOR value tree.
+fn csil_dec_local_account(csil_root: &CsilCborValue) -> Result<LocalAccount, CsilCborError> {
+    let identity = {
+        let csil_field = cbor_require(csil_root, "identity")?;
+        let csil_decode = csil_dec_identity;
+        csil_decode(csil_field)?
+    };
+    let username = match cbor_map_get(csil_root, "username") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let password_login = {
+        let csil_field = cbor_require(csil_root, "password_login")?;
+        let csil_decode = cbor_as_bool;
+        csil_decode(csil_field)?
+    };
+    Ok(LocalAccount {
+        identity,
+        username,
+        password_login,
+    })
+}
+
+/// Encode a LocalAccount to canonical CSIL CBOR bytes.
+pub fn encode_local_account(csil_v: &LocalAccount) -> Vec<u8> {
+    cbor_encode(&csil_enc_local_account(csil_v))
+}
+
+/// Decode canonical CSIL CBOR bytes into a LocalAccount.
+pub fn decode_local_account(csil_data: &[u8]) -> Result<LocalAccount, CsilCborError> {
+    let csil_root = cbor_decode(csil_data)?;
+    csil_dec_local_account(&csil_root)
 }
 
 /// Build the canonical CBOR value tree for a Org.
@@ -4854,10 +5142,13 @@ pub fn decode_list_grants_response(csil_data: &[u8]) -> Result<ListGrantsRespons
 
 /// Build the canonical CBOR value tree for a BranchProtection.
 fn csil_enc_branch_protection(csil_v: &BranchProtection) -> CsilCborValue {
-    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(8);
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(17);
     csil_entries.push((cbor_text("ref_pattern"), cbor_text(&csil_v.ref_pattern)));
     csil_entries.push((cbor_text("allow_delete"), cbor_bool(csil_v.allow_delete)));
     csil_entries.push((cbor_text("dismiss_stale"), cbor_bool(csil_v.dismiss_stale)));
+    if let Some(csil_inner) = &csil_v.merge_authority {
+        csil_entries.push((cbor_text("merge_authority"), cbor_text(csil_inner)));
+    }
     csil_entries.push((
         cbor_text("required_checks"),
         cbor_enc_array(&csil_v.required_checks, |csil_elem| cbor_text(csil_elem)),
@@ -4866,16 +5157,52 @@ fn csil_enc_branch_protection(csil_v: &BranchProtection) -> CsilCborValue {
         cbor_text("allow_force_push"),
         cbor_bool(csil_v.allow_force_push),
     ));
+    if let Some(csil_inner) = &csil_v.allowed_approvers {
+        csil_entries.push((
+            cbor_text("allowed_approvers"),
+            cbor_enc_array(csil_inner, |csil_elem| cbor_text(csil_elem)),
+        ));
+    }
+    if let Some(csil_inner) = &csil_v.override_accounts {
+        csil_entries.push((
+            cbor_text("override_accounts"),
+            cbor_enc_array(csil_inner, |csil_elem| cbor_text(csil_elem)),
+        ));
+    }
     csil_entries.push((
         cbor_text("required_approvals"),
         cbor_uint(csil_v.required_approvals),
     ));
+    if let Some(csil_inner) = &csil_v.allow_self_approval {
+        csil_entries.push((cbor_text("allow_self_approval"), cbor_bool(*csil_inner)));
+    }
     csil_entries.push((
         cbor_text("allowed_merge_kinds"),
         cbor_enc_array(&csil_v.allowed_merge_kinds, |csil_elem| {
             cbor_text(csil_elem)
         }),
     ));
+    if let Some(csil_inner) = &csil_v.require_pull_request {
+        csil_entries.push((cbor_text("require_pull_request"), cbor_bool(*csil_inner)));
+    }
+    if let Some(csil_inner) = &csil_v.require_base_approval {
+        csil_entries.push((cbor_text("require_base_approval"), cbor_bool(*csil_inner)));
+    }
+    if let Some(csil_inner) = &csil_v.block_changes_requested {
+        csil_entries.push((cbor_text("block_changes_requested"), cbor_bool(*csil_inner)));
+    }
+    if let Some(csil_inner) = &csil_v.allow_delegated_approval {
+        csil_entries.push((
+            cbor_text("allow_delegated_approval"),
+            cbor_bool(*csil_inner),
+        ));
+    }
+    if let Some(csil_inner) = &csil_v.required_check_reporters {
+        csil_entries.push((
+            cbor_text("required_check_reporters"),
+            cbor_enc_array(csil_inner, |csil_elem| cbor_text(csil_elem)),
+        ));
+    }
     csil_entries.push((
         cbor_text("required_signature_level"),
         cbor_text(&csil_v.required_signature_level),
@@ -4927,6 +5254,69 @@ fn csil_dec_branch_protection(
         let csil_decode = cbor_as_bool;
         csil_decode(csil_field)?
     };
+    let require_pull_request = match cbor_map_get(csil_root, "require_pull_request") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_bool;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let merge_authority = match cbor_map_get(csil_root, "merge_authority") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let override_accounts = match cbor_map_get(csil_root, "override_accounts") {
+        Some(csil_field) => {
+            let csil_decode = |csil_v| cbor_dec_array(csil_v, cbor_as_text);
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let allow_self_approval = match cbor_map_get(csil_root, "allow_self_approval") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_bool;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let require_base_approval = match cbor_map_get(csil_root, "require_base_approval") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_bool;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let allowed_approvers = match cbor_map_get(csil_root, "allowed_approvers") {
+        Some(csil_field) => {
+            let csil_decode = |csil_v| cbor_dec_array(csil_v, cbor_as_text);
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let required_check_reporters = match cbor_map_get(csil_root, "required_check_reporters") {
+        Some(csil_field) => {
+            let csil_decode = |csil_v| cbor_dec_array(csil_v, cbor_as_text);
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let allow_delegated_approval = match cbor_map_get(csil_root, "allow_delegated_approval") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_bool;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let block_changes_requested = match cbor_map_get(csil_root, "block_changes_requested") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_bool;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
     Ok(BranchProtection {
         ref_pattern,
         required_approvals,
@@ -4936,6 +5326,15 @@ fn csil_dec_branch_protection(
         allowed_merge_kinds,
         allow_force_push,
         allow_delete,
+        require_pull_request,
+        merge_authority,
+        override_accounts,
+        allow_self_approval,
+        require_base_approval,
+        allowed_approvers,
+        required_check_reporters,
+        allow_delegated_approval,
+        block_changes_requested,
     })
 }
 
@@ -5527,20 +5926,60 @@ pub fn decode_pr_page(csil_data: &[u8]) -> Result<PrPage, CsilCborError> {
 
 /// Build the canonical CBOR value tree for a Review.
 fn csil_enc_review(csil_v: &Review) -> CsilCborValue {
-    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(6);
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(10);
+    if let Some(csil_inner) = &csil_v.id {
+        csil_entries.push((cbor_text("id"), cbor_text(csil_inner)));
+    }
     if let Some(csil_inner) = &csil_v.body {
         csil_entries.push((cbor_text("body"), cbor_text(csil_inner)));
     }
     csil_entries.push((cbor_text("state"), cbor_text(&csil_v.state)));
     csil_entries.push((cbor_text("number"), cbor_uint(csil_v.number)));
+    if let Some(csil_inner) = &csil_v.base_sha {
+        csil_entries.push((cbor_text("base_sha"), cbor_text(csil_inner)));
+    }
     csil_entries.push((cbor_text("head_sha"), cbor_text(&csil_v.head_sha)));
     csil_entries.push((cbor_text("reviewer"), csil_enc_identity(&csil_v.reviewer)));
     csil_entries.push((cbor_text("created_at"), cbor_int(csil_v.created_at)));
+    if let Some(csil_inner) = &csil_v.invalidated {
+        csil_entries.push((cbor_text("invalidated"), cbor_bool(*csil_inner)));
+    }
+    if let Some(csil_inner) = &csil_v.approval_scope {
+        csil_entries.push((cbor_text("approval_scope"), cbor_text(csil_inner)));
+    }
     CsilCborValue::Map(csil_entries)
 }
 
 /// Reconstruct a Review from a decoded CBOR value tree.
 fn csil_dec_review(csil_root: &CsilCborValue) -> Result<Review, CsilCborError> {
+    let id = match cbor_map_get(csil_root, "id") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let invalidated = match cbor_map_get(csil_root, "invalidated") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_bool;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let base_sha = match cbor_map_get(csil_root, "base_sha") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let approval_scope = match cbor_map_get(csil_root, "approval_scope") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
     let number = {
         let csil_field = cbor_require(csil_root, "number")?;
         let csil_decode = cbor_as_u64;
@@ -5574,6 +6013,10 @@ fn csil_dec_review(csil_root: &CsilCborValue) -> Result<Review, CsilCborError> {
         csil_decode(csil_field)?
     };
     Ok(Review {
+        id,
+        invalidated,
+        base_sha,
+        approval_scope,
         number,
         reviewer,
         state,
@@ -5596,7 +6039,7 @@ pub fn decode_review(csil_data: &[u8]) -> Result<Review, CsilCborError> {
 
 /// Build the canonical CBOR value tree for a ReviewRequest.
 fn csil_enc_review_request(csil_v: &ReviewRequest) -> CsilCborValue {
-    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(6);
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(8);
     csil_entries.push((cbor_text("ctx"), csil_enc_ctx(&csil_v.ctx)));
     if let Some(csil_inner) = &csil_v.body {
         csil_entries.push((cbor_text("body"), cbor_text(csil_inner)));
@@ -5604,7 +6047,13 @@ fn csil_enc_review_request(csil_v: &ReviewRequest) -> CsilCborValue {
     csil_entries.push((cbor_text("repo"), csil_enc_repo_ref(&csil_v.repo)));
     csil_entries.push((cbor_text("state"), cbor_text(&csil_v.state)));
     csil_entries.push((cbor_text("number"), cbor_uint(csil_v.number)));
+    if let Some(csil_inner) = &csil_v.base_sha {
+        csil_entries.push((cbor_text("base_sha"), cbor_text(csil_inner)));
+    }
     csil_entries.push((cbor_text("head_sha"), cbor_text(&csil_v.head_sha)));
+    if let Some(csil_inner) = &csil_v.approval_scope {
+        csil_entries.push((cbor_text("approval_scope"), cbor_text(csil_inner)));
+    }
     CsilCborValue::Map(csil_entries)
 }
 
@@ -5642,6 +6091,20 @@ fn csil_dec_review_request(csil_root: &CsilCborValue) -> Result<ReviewRequest, C
         let csil_decode = cbor_as_text;
         csil_decode(csil_field)?
     };
+    let base_sha = match cbor_map_get(csil_root, "base_sha") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let approval_scope = match cbor_map_get(csil_root, "approval_scope") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
     Ok(ReviewRequest {
         ctx,
         repo,
@@ -5649,6 +6112,8 @@ fn csil_dec_review_request(csil_root: &CsilCborValue) -> Result<ReviewRequest, C
         state,
         body,
         head_sha,
+        base_sha,
+        approval_scope,
     })
 }
 
@@ -6150,10 +6615,13 @@ pub fn decode_update_pr_request(csil_data: &[u8]) -> Result<UpdatePrRequest, Csi
 
 /// Build the canonical CBOR value tree for a CommitStatus.
 fn csil_enc_commit_status(csil_v: &CommitStatus) -> CsilCborValue {
-    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(7);
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(8);
     csil_entries.push((cbor_text("sha"), cbor_text(&csil_v.sha)));
     csil_entries.push((cbor_text("state"), cbor_text(&csil_v.state)));
     csil_entries.push((cbor_text("context"), cbor_text(&csil_v.context)));
+    if let Some(csil_inner) = &csil_v.base_sha {
+        csil_entries.push((cbor_text("base_sha"), cbor_text(csil_inner)));
+    }
     csil_entries.push((cbor_text("reporter"), csil_enc_identity(&csil_v.reporter)));
     csil_entries.push((cbor_text("created_at"), cbor_int(csil_v.created_at)));
     if let Some(csil_inner) = &csil_v.target_url {
@@ -6167,6 +6635,13 @@ fn csil_enc_commit_status(csil_v: &CommitStatus) -> CsilCborValue {
 
 /// Reconstruct a CommitStatus from a decoded CBOR value tree.
 fn csil_dec_commit_status(csil_root: &CsilCborValue) -> Result<CommitStatus, CsilCborError> {
+    let base_sha = match cbor_map_get(csil_root, "base_sha") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
     let sha = {
         let csil_field = cbor_require(csil_root, "sha")?;
         let csil_decode = cbor_as_text;
@@ -6207,6 +6682,7 @@ fn csil_dec_commit_status(csil_root: &CsilCborValue) -> Result<CommitStatus, Csi
         csil_decode(csil_field)?
     };
     Ok(CommitStatus {
+        base_sha,
         sha,
         context,
         state,
@@ -6230,12 +6706,15 @@ pub fn decode_commit_status(csil_data: &[u8]) -> Result<CommitStatus, CsilCborEr
 
 /// Build the canonical CBOR value tree for a SetStatusRequest.
 fn csil_enc_set_status_request(csil_v: &SetStatusRequest) -> CsilCborValue {
-    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(7);
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(8);
     csil_entries.push((cbor_text("ctx"), csil_enc_ctx(&csil_v.ctx)));
     csil_entries.push((cbor_text("sha"), cbor_text(&csil_v.sha)));
     csil_entries.push((cbor_text("repo"), csil_enc_repo_ref(&csil_v.repo)));
     csil_entries.push((cbor_text("state"), cbor_text(&csil_v.state)));
     csil_entries.push((cbor_text("context"), cbor_text(&csil_v.context)));
+    if let Some(csil_inner) = &csil_v.base_sha {
+        csil_entries.push((cbor_text("base_sha"), cbor_text(csil_inner)));
+    }
     if let Some(csil_inner) = &csil_v.target_url {
         csil_entries.push((cbor_text("target_url"), cbor_text(csil_inner)));
     }
@@ -6249,6 +6728,13 @@ fn csil_enc_set_status_request(csil_v: &SetStatusRequest) -> CsilCborValue {
 fn csil_dec_set_status_request(
     csil_root: &CsilCborValue,
 ) -> Result<SetStatusRequest, CsilCborError> {
+    let base_sha = match cbor_map_get(csil_root, "base_sha") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
     let ctx = {
         let csil_field = cbor_require(csil_root, "ctx")?;
         let csil_decode = csil_dec_ctx;
@@ -6289,6 +6775,7 @@ fn csil_dec_set_status_request(
         None => None,
     };
     Ok(SetStatusRequest {
+        base_sha,
         ctx,
         repo,
         sha,
@@ -8849,7 +9336,7 @@ pub fn decode_github_health(csil_data: &[u8]) -> Result<GithubHealth, CsilCborEr
 
 /// Build the canonical CBOR value tree for a SyncConnection.
 fn csil_enc_sync_connection(csil_v: &SyncConnection) -> CsilCborValue {
-    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(13);
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(15);
     csil_entries.push((cbor_text("id"), cbor_text(&csil_v.id)));
     csil_entries.push((cbor_text("host"), cbor_text(&csil_v.host)));
     csil_entries.push((cbor_text("paused"), cbor_bool(csil_v.paused)));
@@ -8863,9 +9350,17 @@ fn csil_enc_sync_connection(csil_v: &SyncConnection) -> CsilCborValue {
     }
     csil_entries.push((cbor_text("setup_done"), cbor_bool(csil_v.setup_done)));
     csil_entries.push((cbor_text("webhook_url"), cbor_text(&csil_v.webhook_url)));
+    csil_entries.push((
+        cbor_text("inbound_enabled"),
+        cbor_bool(csil_v.inbound_enabled),
+    ));
     if let Some(csil_inner) = &csil_v.last_success_at {
         csil_entries.push((cbor_text("last_success_at"), cbor_int(*csil_inner)));
     }
+    csil_entries.push((
+        cbor_text("outbound_enabled"),
+        cbor_bool(csil_v.outbound_enabled),
+    ));
     csil_entries.push((
         cbor_text("automatic_webhook"),
         cbor_bool(csil_v.automatic_webhook),
@@ -8897,6 +9392,16 @@ fn csil_dec_sync_connection(csil_root: &CsilCborValue) -> Result<SyncConnection,
     };
     let paused = {
         let csil_field = cbor_require(csil_root, "paused")?;
+        let csil_decode = cbor_as_bool;
+        csil_decode(csil_field)?
+    };
+    let inbound_enabled = {
+        let csil_field = cbor_require(csil_root, "inbound_enabled")?;
+        let csil_decode = cbor_as_bool;
+        csil_decode(csil_field)?
+    };
+    let outbound_enabled = {
+        let csil_field = cbor_require(csil_root, "outbound_enabled")?;
         let csil_decode = cbor_as_bool;
         csil_decode(csil_field)?
     };
@@ -8950,6 +9455,8 @@ fn csil_dec_sync_connection(csil_root: &CsilCborValue) -> Result<SyncConnection,
         host,
         project,
         paused,
+        inbound_enabled,
+        outbound_enabled,
         automatic_webhook,
         setup_done,
         webhook_url,
@@ -9005,7 +9512,7 @@ pub fn decode_sync_connections(csil_data: &[u8]) -> Result<SyncConnections, Csil
 
 /// Build the canonical CBOR value tree for a ConnectRemoteRequest.
 fn csil_enc_connect_remote_request(csil_v: &ConnectRemoteRequest) -> CsilCborValue {
-    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(7);
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(9);
     csil_entries.push((cbor_text("ctx"), csil_enc_ctx(&csil_v.ctx)));
     csil_entries.push((cbor_text("host"), cbor_text(&csil_v.host)));
     csil_entries.push((cbor_text("repo"), csil_enc_repo_ref(&csil_v.repo)));
@@ -9013,6 +9520,12 @@ fn csil_enc_connect_remote_request(csil_v: &ConnectRemoteRequest) -> CsilCborVal
     csil_entries.push((cbor_text("provider"), cbor_text(&csil_v.provider)));
     if let Some(csil_inner) = &csil_v.create_remote {
         csil_entries.push((cbor_text("create_remote"), cbor_bool(*csil_inner)));
+    }
+    if let Some(csil_inner) = &csil_v.inbound_enabled {
+        csil_entries.push((cbor_text("inbound_enabled"), cbor_bool(*csil_inner)));
+    }
+    if let Some(csil_inner) = &csil_v.outbound_enabled {
+        csil_entries.push((cbor_text("outbound_enabled"), cbor_bool(*csil_inner)));
     }
     if let Some(csil_inner) = &csil_v.automatic_webhook {
         csil_entries.push((cbor_text("automatic_webhook"), cbor_bool(*csil_inner)));
@@ -9063,6 +9576,20 @@ fn csil_dec_connect_remote_request(
         }
         None => None,
     };
+    let inbound_enabled = match cbor_map_get(csil_root, "inbound_enabled") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_bool;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let outbound_enabled = match cbor_map_get(csil_root, "outbound_enabled") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_bool;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
     Ok(ConnectRemoteRequest {
         ctx,
         repo,
@@ -9071,6 +9598,8 @@ fn csil_dec_connect_remote_request(
         project,
         create_remote,
         automatic_webhook,
+        inbound_enabled,
+        outbound_enabled,
     })
 }
 
@@ -9135,13 +9664,19 @@ pub fn decode_sync_connection_ref(csil_data: &[u8]) -> Result<SyncConnectionRef,
 
 /// Build the canonical CBOR value tree for a UpdateConnectionRequest.
 fn csil_enc_update_connection_request(csil_v: &UpdateConnectionRequest) -> CsilCborValue {
-    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(5);
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(7);
     csil_entries.push((cbor_text("ctx"), csil_enc_ctx(&csil_v.ctx)));
     csil_entries.push((cbor_text("repo"), csil_enc_repo_ref(&csil_v.repo)));
     if let Some(csil_inner) = &csil_v.paused {
         csil_entries.push((cbor_text("paused"), cbor_bool(*csil_inner)));
     }
     csil_entries.push((cbor_text("connection_id"), cbor_text(&csil_v.connection_id)));
+    if let Some(csil_inner) = &csil_v.inbound_enabled {
+        csil_entries.push((cbor_text("inbound_enabled"), cbor_bool(*csil_inner)));
+    }
+    if let Some(csil_inner) = &csil_v.outbound_enabled {
+        csil_entries.push((cbor_text("outbound_enabled"), cbor_bool(*csil_inner)));
+    }
     if let Some(csil_inner) = &csil_v.automatic_webhook {
         csil_entries.push((cbor_text("automatic_webhook"), cbor_bool(*csil_inner)));
     }
@@ -9181,12 +9716,28 @@ fn csil_dec_update_connection_request(
         }
         None => None,
     };
+    let inbound_enabled = match cbor_map_get(csil_root, "inbound_enabled") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_bool;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
+    let outbound_enabled = match cbor_map_get(csil_root, "outbound_enabled") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_bool;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
     Ok(UpdateConnectionRequest {
         ctx,
         repo,
         connection_id,
         paused,
         automatic_webhook,
+        inbound_enabled,
+        outbound_enabled,
     })
 }
 
@@ -11091,13 +11642,16 @@ pub fn decode_ref_payload(csil_data: &[u8]) -> Result<RefPayload, CsilCborError>
 
 /// Build the canonical CBOR value tree for a PrPayload.
 fn csil_enc_pr_payload(csil_v: &PrPayload) -> CsilCborValue {
-    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(7);
+    let mut csil_entries: Vec<(CsilCborValue, CsilCborValue)> = Vec::with_capacity(8);
     if let Some(csil_inner) = &csil_v.state {
         csil_entries.push((cbor_text("state"), cbor_text(csil_inner)));
     }
     csil_entries.push((cbor_text("number"), cbor_uint(csil_v.number)));
     if let Some(csil_inner) = &csil_v.base_ref {
         csil_entries.push((cbor_text("base_ref"), cbor_text(csil_inner)));
+    }
+    if let Some(csil_inner) = &csil_v.base_sha {
+        csil_entries.push((cbor_text("base_sha"), cbor_text(csil_inner)));
     }
     if let Some(csil_inner) = &csil_v.head_sha {
         csil_entries.push((cbor_text("head_sha"), cbor_text(csil_inner)));
@@ -11116,6 +11670,13 @@ fn csil_enc_pr_payload(csil_v: &PrPayload) -> CsilCborValue {
 
 /// Reconstruct a PrPayload from a decoded CBOR value tree.
 fn csil_dec_pr_payload(csil_root: &CsilCborValue) -> Result<PrPayload, CsilCborError> {
+    let base_sha = match cbor_map_get(csil_root, "base_sha") {
+        Some(csil_field) => {
+            let csil_decode = cbor_as_text;
+            Some(csil_decode(csil_field)?)
+        }
+        None => None,
+    };
     let number = {
         let csil_field = cbor_require(csil_root, "number")?;
         let csil_decode = cbor_as_u64;
@@ -11164,6 +11725,7 @@ fn csil_dec_pr_payload(csil_root: &CsilCborValue) -> Result<PrPayload, CsilCborE
         None => None,
     };
     Ok(PrPayload {
+        base_sha,
         number,
         head_sha,
         base_ref,

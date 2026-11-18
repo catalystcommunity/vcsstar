@@ -14,6 +14,7 @@ export class MePage extends Page {
   private readonly tokens = table(["Name", "Scopes", "Label", "Created", "Expires", ""]);
   private readonly tokensStatus = h("div");
   private readonly rolesBox = h("div");
+  private readonly loginBox = h("div");
 
   protected build() {
     const me = this.context.session;
@@ -25,6 +26,7 @@ export class MePage extends Page {
     return [
       pageHead([], who(me.identity), meta(me.identity.displayName, h("span", null, "identity ", mono(`${me.identity.userId}@${me.identity.domain}`)), `signed in with ${me.credentialKind.replace("_", " ")}`, `scopes ${me.scopes.join(", ")}`)),
       this.feedback.element,
+      this.loginBox,
       section("GitHub", "With a connected GitHub account, what you do here on a mirrored repository is sent to GitHub as you, and what you do on GitHub is attributed to you here.", this.github),
       providerLinks(),
       section("SSH keys", h("span", null, "Attested keys come from ", mono("vcsstar keys enroll"), " (LinkKeys application keys). An uploaded key works for access and is marked unattested."), this.keys.wrap, this.keysStatus, this.addKeyForm()),
@@ -39,7 +41,40 @@ export class MePage extends Page {
     fill(this.github, loading());
     fill(this.keysStatus, loading());
     fill(this.tokensStatus, loading());
-    await Promise.all([this.loadLink(), this.loadKeys(), this.loadTokens(), this.context.session.instanceRole === "admin" ? this.loadRoles() : Promise.resolve()]);
+    await Promise.all([this.loadLocal(), this.loadLink(), this.loadKeys(), this.loadTokens(), this.context.session.instanceRole === "admin" ? this.loadRoles() : Promise.resolve()]);
+  }
+
+  private async loadLocal() {
+    try {
+      const local = await api.auth.localAccount({ ctx: ctx() });
+      if (!this.isActive()) return;
+      const content: Node[] = [];
+      if (local.passwordLogin) {
+        const current = textField("Current password", { type: "password", autocomplete: "current-password", required: true });
+        const next = textField("New password", { type: "password", autocomplete: "new-password", required: true, helper: "Use at least 15 characters." });
+        content.push(panel(h("h3", null, `Local login: ${local.username}`), form({ class: "form-stack", onSubmit: () => void act(async () => {
+          await api.auth.changeLocalPassword({ ctx: ctx(), currentPassword: current.value, newPassword: next.value });
+          location.assign("/auth/login");
+        }, { feedback: this.feedback }) }, current, next, button("Change password and sign out", { type: "submit" })),
+        h("p", null, "LinkKeys permanently disables password login for this account. Existing sessions, API tokens, and SSH keys are revoked when the link completes."),
+        h("a", { class: "button-link", href: "/auth/login?link_local=true&return_to=/me", rel: "external" }, "Connect LinkKeys")));
+      } else content.push(h("p", null, "Password login is unavailable for this account. A LinkKeys binding cannot be removed to enable passwords."));
+      if (this.context.session?.instanceRole === "admin") {
+        const username = textField("Username", { required: true, autocomplete: "off" });
+        const password = textField("Initial password", { type: "password", required: true, autocomplete: "new-password", helper: "Use at least 15 characters. Give the password to the account owner through a secure channel." });
+        content.push(panel(h("h3", null, "Create local account"), form({ class: "form-stack", onSubmit: () => void act(async () => {
+          const created = await api.instance.createLocalAccount({ ctx: ctx(), username: username.value, password: password.value });
+          clear(password); clear(username);
+          await showSecretOnce("Account identity", `${created.identity.userId}@${created.identity.domain}`, h("p", null, "Use this identity to assign repository access or reset the password."));
+        }, { feedback: this.feedback }) }, username, password, button("Create account", { type: "submit" }))));
+        const identity = textField("Account identity", { required: true, placeholder: "user_id@domain" });
+        const reset = textField("Replacement password", { type: "password", required: true, autocomplete: "new-password" });
+        content.push(panel(h("h3", null, "Reset local password"), form({ class: "form-stack", onSubmit: () => void act(async () => {
+          await api.instance.resetLocalPassword({ ctx: ctx(), identity: identity.value, password: reset.value }); clear(reset);
+        }, { feedback: this.feedback, done: "Password reset. Sessions and API tokens were revoked." }) }, identity, reset, button("Reset password", { type: "submit" }))));
+      }
+      fill(this.loginBox, section("Sign-in methods", "Local passwords are available only before an account is bound to LinkKeys.", ...content));
+    } catch (error) { this.feedback.error(error); }
   }
 
   // --- GitHub -------------------------------------------------------------

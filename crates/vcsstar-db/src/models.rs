@@ -19,6 +19,7 @@ pub struct Identity {
     pub first_seen: DateTime<Utc>,
     pub last_login: Option<DateTime<Utc>>,
     pub disabled_at: Option<DateTime<Utc>>,
+    pub linkkeys_bound: bool,
 }
 
 #[derive(Debug, Insertable)]

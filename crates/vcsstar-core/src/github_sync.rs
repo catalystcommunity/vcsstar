@@ -388,7 +388,16 @@ fn import_head_branch(
     };
     let commits = crate::services::vcs_ops::summaries(app, dir, ours.as_ref(), head)?;
     conn.transaction::<(), Error, _>(|conn| {
-        push::apply_ref_change(conn, org, repo, Some(actor), &update, false, commits)
+        push::apply_ref_change(
+            conn,
+            org,
+            repo,
+            Some(actor),
+            &update,
+            false,
+            commits,
+            crate::protection::Source::Direct,
+        )
     })?;
     mirror::set_mirrored(conn, repo.id, head_ref, Some(&head.0))?;
     prs::on_push(
@@ -1207,6 +1216,7 @@ fn upsert_status(
             .do_update()
             .set((
                 statuses::state.eq(state),
+                statuses::base_sha.eq(None::<String>),
                 statuses::target_url.eq(target_url),
                 statuses::description.eq(description),
                 statuses::reporter.eq(reporter.id),
