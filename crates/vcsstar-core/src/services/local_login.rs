@@ -28,12 +28,24 @@ static HASHES: AtomicUsize = AtomicUsize::new(0);
 struct HashPermit;
 impl HashPermit {
     fn acquire() -> Result<Self, Error> {
-        HASHES
-            .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |n| {
-                (n < 2).then_some(n + 1)
-            })
-            .map_err(|_| Error::new(Code::ResourceExhausted, "password checks busy; try again"))?;
-        Ok(Self)
+        let mut active = HASHES.load(Ordering::Relaxed);
+        loop {
+            if active >= 2 {
+                return Err(Error::new(
+                    Code::ResourceExhausted,
+                    "password checks busy; try again",
+                ));
+            }
+            match HASHES.compare_exchange_weak(
+                active,
+                active + 1,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return Ok(Self),
+                Err(current) => active = current,
+            }
+        }
     }
 }
 impl Drop for HashPermit {
@@ -269,7 +281,7 @@ pub fn sign_in(app: &App, ctx: &ReqCtx, req: LocalLoginRequest) -> Result<Sessio
 mod tests {
     use super::*;
     #[test]
-    fn salted_argon2id() {
+    fn salted_argon2id_and_hash_limit() {
         let password = "a sufficiently long test password";
         let first = hash_password(password).unwrap();
         let second = hash_password(password).unwrap();
@@ -278,5 +290,19 @@ mod tests {
         assert!(verify(password, Some(&first)).unwrap());
         assert!(!verify("incorrect", Some(&first)).unwrap());
         assert!(hash_password("short").is_err());
+
+        let first = HashPermit::acquire().unwrap();
+        let second = HashPermit::acquire().unwrap();
+        assert!(matches!(
+            HashPermit::acquire(),
+            Err(Error {
+                code: Code::ResourceExhausted,
+                ..
+            })
+        ));
+        drop(first);
+        let replacement = HashPermit::acquire().unwrap();
+        drop((second, replacement));
+        assert_eq!(HASHES.load(Ordering::Relaxed), 0);
     }
 }
