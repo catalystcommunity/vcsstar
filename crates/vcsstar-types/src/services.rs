@@ -1,10 +1,39 @@
 //! Generated service traits from CSIL specification
 
+use super::codec::*;
 use super::types::*;
+
+#[derive(Debug)]
+pub enum ChannelRouteError {
+    UnknownMethod(String),
+    UnknownOrdinal(u64),
+    Decode(String),
+    Handler(ServiceError),
+}
+
+impl std::fmt::Display for ChannelRouteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownMethod(method) => write!(f, "unknown channel {method}"),
+            Self::UnknownOrdinal(op) => write!(f, "unknown channel ordinal {op}"),
+            Self::Decode(message) => write!(f, "invalid channel payload: {message}"),
+            Self::Handler(error) => write!(f, "channel handler failed: {error:?}"),
+        }
+    }
+}
+
+impl std::error::Error for ChannelRouteError {}
+
+impl From<CsilCborError> for ChannelRouteError {
+    fn from(error: CsilCborError) -> Self {
+        Self::Decode(error.0)
+    }
+}
 
 /// Meta service trait
 pub trait Meta {
     type Context;
+    #[allow(clippy::result_large_err)]
     /// server-info (request/response).
     fn server_info(&self, ctx: &Self::Context, input: Empty) -> Result<ServerInfo, ServiceError>;
 }
@@ -18,122 +47,145 @@ pub mod meta_wire_ids {
 /// Auth service trait
 pub trait Auth {
     type Context;
+    #[allow(clippy::result_large_err)]
     /// begin-login (request/response).
     fn begin_login(
         &self,
         ctx: &Self::Context,
         input: BeginLoginRequest,
     ) -> Result<BeginLoginResponse, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// complete-login (request/response).
     fn complete_login(
         &self,
         ctx: &Self::Context,
         input: CompleteLoginRequest,
     ) -> Result<Session, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// create-token (request/response).
     fn create_token(
         &self,
         ctx: &Self::Context,
         input: CreateTokenRequest,
     ) -> Result<ApiToken, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// revoke-token (request/response).
     fn revoke_token(
         &self,
         ctx: &Self::Context,
         input: RevokeTokenRequest,
     ) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// whoami (request/response).
     fn whoami(&self, ctx: &Self::Context, input: Empty) -> Result<WhoAmI, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// begin-device-login (request/response).
     fn begin_device_login(
         &self,
         ctx: &Self::Context,
         input: BeginDeviceRequest,
     ) -> Result<DeviceCode, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// poll-device-login (request/response).
     fn poll_device_login(
         &self,
         ctx: &Self::Context,
         input: DevicePollRequest,
     ) -> Result<DevicePollResponse, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// exchange-act-as-credential (request/response).
     fn exchange_act_as_credential(
         &self,
         ctx: &Self::Context,
         input: ActAsExchangeRequest,
     ) -> Result<ScopedBearer, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// scope-set (request/response).
     fn scope_set(
         &self,
         ctx: &Self::Context,
         input: ScopeSetRequest,
     ) -> Result<SignedActAsScopeSet, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// Browser side of the device flow. Needs a web session.
     fn approve_device_login(
         &self,
         ctx: &Self::Context,
         input: DeviceApproveRequest,
     ) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// register-key (request/response).
     fn register_key(
         &self,
         ctx: &Self::Context,
         input: RegisterKeyRequest,
     ) -> Result<SshKeyInfo, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list-keys (request/response).
     fn list_keys(
         &self,
         ctx: &Self::Context,
         input: Empty,
     ) -> Result<ListKeysResponse, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// revoke-key (request/response).
     fn revoke_key(&self, ctx: &Self::Context, input: KeyRef) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list-tokens (request/response).
     fn list_tokens(
         &self,
         ctx: &Self::Context,
         input: Empty,
     ) -> Result<ListTokensResponse, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// logout (request/response).
     fn logout(&self, ctx: &Self::Context, input: Empty) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// GitHub account link of the caller (see GithubLink).
     fn github_link_status(
         &self,
         ctx: &Self::Context,
         input: Empty,
     ) -> Result<GithubLink, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// set-github-token (request/response).
     fn set_github_token(
         &self,
         ctx: &Self::Context,
         input: SetGithubTokenRequest,
     ) -> Result<GithubLink, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// unlink-github (request/response).
     fn unlink_github(&self, ctx: &Self::Context, input: Empty) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// The caller's display preferences (defaults when none are saved).
     fn get_preferences(
         &self,
         ctx: &Self::Context,
         input: Empty,
     ) -> Result<Preferences, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// Save the given fields; absent fields keep their value.
     fn set_preferences(
         &self,
         ctx: &Self::Context,
         input: SetPreferencesRequest,
     ) -> Result<Preferences, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// local-login (request/response).
     fn local_login(
         &self,
         ctx: &Self::Context,
         input: LocalLoginRequest,
     ) -> Result<Session, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// local-account (request/response).
     fn local_account(
         &self,
         ctx: &Self::Context,
         input: Empty,
     ) -> Result<LocalAccount, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// change-local-password (request/response).
     fn change_local_password(
         &self,
@@ -173,46 +225,57 @@ pub mod auth_wire_ids {
 /// Orgs service trait
 pub trait Orgs {
     type Context;
+    #[allow(clippy::result_large_err)]
     /// create (request/response).
     fn create(&self, ctx: &Self::Context, input: CreateOrgRequest) -> Result<Org, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// get (request/response).
     fn get(&self, ctx: &Self::Context, input: GetOrgRequest) -> Result<Org, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list (request/response).
     fn list(&self, ctx: &Self::Context, input: ListOrgsRequest) -> Result<OrgPage, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// update (request/response).
     fn update(&self, ctx: &Self::Context, input: UpdateOrgRequest) -> Result<Org, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// set-member (request/response).
     fn set_member(
         &self,
         ctx: &Self::Context,
         input: SetOrgMemberRequest,
     ) -> Result<OrgMember, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// remove-member (request/response).
     fn remove_member(
         &self,
         ctx: &Self::Context,
         input: RemoveOrgMemberRequest,
     ) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list-members (request/response).
     fn list_members(
         &self,
         ctx: &Self::Context,
         input: ListOrgMembersRequest,
     ) -> Result<OrgMemberPage, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// create-team (request/response).
     fn create_team(
         &self,
         ctx: &Self::Context,
         input: CreateTeamRequest,
     ) -> Result<Team, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// delete-team (request/response).
     fn delete_team(&self, ctx: &Self::Context, input: TeamRef) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// set-team-member (request/response).
     fn set_team_member(
         &self,
         ctx: &Self::Context,
         input: SetTeamMemberRequest,
     ) -> Result<Team, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list-teams (request/response).
     fn list_teams(
         &self,
@@ -240,77 +303,97 @@ pub mod orgs_wire_ids {
 /// Repos service trait
 pub trait Repos {
     type Context;
+    #[allow(clippy::result_large_err)]
     /// create (request/response).
     fn create(&self, ctx: &Self::Context, input: CreateRepoRequest) -> Result<Repo, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// get (request/response).
     fn get(&self, ctx: &Self::Context, input: GetRepoRequest) -> Result<Repo, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list (request/response).
     fn list(&self, ctx: &Self::Context, input: ListReposRequest) -> Result<RepoPage, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// update (request/response).
     fn update(&self, ctx: &Self::Context, input: UpdateRepoRequest) -> Result<Repo, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// fork (request/response).
     fn fork(&self, ctx: &Self::Context, input: ForkRequest) -> Result<Repo, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list-refs (request/response).
     fn list_refs(
         &self,
         ctx: &Self::Context,
         input: ListRefsRequest,
     ) -> Result<ListRefsResponse, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// log (request/response).
     fn log(&self, ctx: &Self::Context, input: LogRequest) -> Result<CommitPage, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// tree (request/response).
     fn tree(&self, ctx: &Self::Context, input: TreeRequest) -> Result<TreeResponse, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// blob (request/response).
     fn blob(&self, ctx: &Self::Context, input: BlobRequest) -> Result<BlobResponse, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// diff (request/response).
     fn diff(&self, ctx: &Self::Context, input: DiffRequest) -> Result<DiffResponse, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// delete (request/response).
     fn delete(&self, ctx: &Self::Context, input: DeleteRepoRequest) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// update-ref (request/response).
     fn update_ref(
         &self,
         ctx: &Self::Context,
         input: UpdateRefRequest,
     ) -> Result<RefInfo, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// get-commit (request/response).
     fn get_commit(
         &self,
         ctx: &Self::Context,
         input: GetCommitRequest,
     ) -> Result<Commit, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// set-grant (request/response).
     fn set_grant(&self, ctx: &Self::Context, input: SetGrantRequest)
         -> Result<Grant, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// remove-grant (request/response).
     fn remove_grant(
         &self,
         ctx: &Self::Context,
         input: RemoveGrantRequest,
     ) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list-grants (request/response).
     fn list_grants(
         &self,
         ctx: &Self::Context,
         input: GetRepoRequest,
     ) -> Result<ListGrantsResponse, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// set-protection (request/response).
     fn set_protection(
         &self,
         ctx: &Self::Context,
         input: SetProtectionRequest,
     ) -> Result<BranchProtection, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// remove-protection (request/response).
     fn remove_protection(
         &self,
         ctx: &Self::Context,
         input: RemoveProtectionRequest,
     ) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list-protections (request/response).
     fn list_protections(
         &self,
         ctx: &Self::Context,
         input: GetRepoRequest,
     ) -> Result<ListProtectionsResponse, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// Pack every object reachable from the current refs that no live segment
     /// holds, and upload it as one new segment. Use it for history that was
     /// written before the object store existed. Repeatable; no-op when covered.
@@ -319,6 +402,7 @@ pub trait Repos {
         ctx: &Self::Context,
         input: GetRepoRequest,
     ) -> Result<CaptureReport, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// Direct forks of the repository that the caller can see, on this
     /// instance. A pull request into the repository may come from one.
     fn list_forks(
@@ -357,52 +441,66 @@ pub mod repos_wire_ids {
 /// PullRequests service trait
 pub trait PullRequests {
     type Context;
+    #[allow(clippy::result_large_err)]
     /// open (request/response).
     fn open(&self, ctx: &Self::Context, input: OpenPrRequest) -> Result<PullRequest, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// get (request/response).
     fn get(&self, ctx: &Self::Context, input: PrRef) -> Result<PullRequest, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list (request/response).
     fn list(&self, ctx: &Self::Context, input: ListPrRequest) -> Result<PrPage, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// review (request/response).
     fn review(&self, ctx: &Self::Context, input: ReviewRequest) -> Result<Review, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// comment (request/response).
     fn comment(&self, ctx: &Self::Context, input: CommentRequest) -> Result<Comment, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// merge (request/response).
     fn merge(&self, ctx: &Self::Context, input: MergeRequest) -> Result<MergeResult, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// close (request/response).
     fn close(&self, ctx: &Self::Context, input: PrRef) -> Result<PullRequest, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// reopen (request/response).
     fn reopen(&self, ctx: &Self::Context, input: PrRef) -> Result<PullRequest, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// retarget (request/response).
     fn retarget(
         &self,
         ctx: &Self::Context,
         input: RetargetRequest,
     ) -> Result<PullRequest, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// update (request/response).
     fn update(
         &self,
         ctx: &Self::Context,
         input: UpdatePrRequest,
     ) -> Result<PullRequest, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list-reviews (request/response).
     fn list_reviews(
         &self,
         ctx: &Self::Context,
         input: PrRef,
     ) -> Result<ListReviewsResponse, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list-comments (request/response).
     fn list_comments(
         &self,
         ctx: &Self::Context,
         input: PrRef,
     ) -> Result<ListCommentsResponse, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// edit-comment (request/response).
     fn edit_comment(
         &self,
         ctx: &Self::Context,
         input: EditCommentRequest,
     ) -> Result<Comment, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// delete-comment (request/response).
     fn delete_comment(
         &self,
@@ -433,12 +531,14 @@ pub mod pull_requests_wire_ids {
 /// Statuses service trait
 pub trait Statuses {
     type Context;
+    #[allow(clippy::result_large_err)]
     /// set (request/response).
     fn set(
         &self,
         ctx: &Self::Context,
         input: SetStatusRequest,
     ) -> Result<CommitStatus, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list (request/response).
     fn list(
         &self,
@@ -457,28 +557,34 @@ pub mod statuses_wire_ids {
 /// Hooks service trait
 pub trait Hooks {
     type Context;
+    #[allow(clippy::result_large_err)]
     /// create-endpoint (request/response).
     fn create_endpoint(
         &self,
         ctx: &Self::Context,
         input: CreateEndpointRequest,
     ) -> Result<Endpoint, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list-endpoints (request/response).
     fn list_endpoints(
         &self,
         ctx: &Self::Context,
         input: ListEndpointsRequest,
     ) -> Result<ListEndpointsResponse, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// delete-endpoint (request/response).
     fn delete_endpoint(&self, ctx: &Self::Context, input: EndpointRef) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list-deliveries (request/response).
     fn list_deliveries(
         &self,
         ctx: &Self::Context,
         input: DeliveryQuery,
     ) -> Result<DeliveryPage, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// redeliver (request/response).
     fn redeliver(&self, ctx: &Self::Context, input: DeliveryRef) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// update-endpoint (request/response).
     fn update_endpoint(
         &self,
@@ -501,61 +607,73 @@ pub mod hooks_wire_ids {
 /// Mirror service trait
 pub trait Mirror {
     type Context;
+    #[allow(clippy::result_large_err)]
     /// status (request/response).
     fn status(
         &self,
         ctx: &Self::Context,
         input: GetRepoRequest,
     ) -> Result<MirrorStatus, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list-blocked (request/response).
     fn list_blocked(
         &self,
         ctx: &Self::Context,
         input: GetRepoRequest,
     ) -> Result<ListBlockedResponse, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// replay-blocked (request/response).
     fn replay_blocked(
         &self,
         ctx: &Self::Context,
         input: ReplayRequest,
     ) -> Result<ReplayResult, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// set-credential (request/response).
     fn set_credential(
         &self,
         ctx: &Self::Context,
         input: SetCredentialRequest,
     ) -> Result<Credential, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// reconcile (request/response).
     fn reconcile(
         &self,
         ctx: &Self::Context,
         input: GetRepoRequest,
     ) -> Result<ReconcileReport, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// pause (request/response).
     fn pause(&self, ctx: &Self::Context, input: GetRepoRequest) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// resume (request/response).
     fn resume(&self, ctx: &Self::Context, input: GetRepoRequest) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// Make the repository and queue its import. The answer comes before
     /// the branches are fetched; `status` reports `import_state`.
     fn import_repo(&self, ctx: &Self::Context, input: ImportRequest) -> Result<Repo, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// configure (request/response).
     fn configure(
         &self,
         ctx: &Self::Context,
         input: ConfigureMirrorRequest,
     ) -> Result<MirrorStatus, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list-credentials (request/response).
     fn list_credentials(
         &self,
         ctx: &Self::Context,
         input: ListCredentialsRequest,
     ) -> Result<ListCredentialsResponse, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// remove-credential (request/response).
     fn remove_credential(
         &self,
         ctx: &Self::Context,
         input: CredentialRef,
     ) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// Repositories visible under the organization's `github_owner`, with
     /// the vcsstar repository that mirrors each one when there is one.
     /// Enable one with `import-repo`.
@@ -564,8 +682,10 @@ pub trait Mirror {
         ctx: &Self::Context,
         input: ListGithubReposRequest,
     ) -> Result<GithubRepoPage, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// This node's view of GitHub availability and rate limits.
     fn health(&self, ctx: &Self::Context, input: Empty) -> Result<GithubHealth, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// Start the history import of the repository's GitHub pull requests
     /// again from the first one. A mirrored repository imports its history
     /// by itself; this is for a repository whose import must run again.
@@ -574,6 +694,7 @@ pub trait Mirror {
         ctx: &Self::Context,
         input: GetRepoRequest,
     ) -> Result<MirrorStatus, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// Where the instance's GitHub Apps are installed, with the vcsstar
     /// organizations whose `github_owner` is each owner.
     fn list_github_installations(
@@ -581,86 +702,101 @@ pub trait Mirror {
         ctx: &Self::Context,
         input: Empty,
     ) -> Result<GithubInstallationList, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// import-all (request/response).
     fn import_all(
         &self,
         ctx: &Self::Context,
         input: ImportAllRequest,
     ) -> Result<ImportAllResult, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// set-schedule (request/response).
     fn set_schedule(
         &self,
         ctx: &Self::Context,
         input: SetMirrorScheduleRequest,
     ) -> Result<MirrorStatus, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list-connections (request/response).
     fn list_connections(
         &self,
         ctx: &Self::Context,
         input: GetRepoRequest,
     ) -> Result<SyncConnections, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// connect (request/response).
     fn connect(
         &self,
         ctx: &Self::Context,
         input: ConnectRemoteRequest,
     ) -> Result<SyncConnection, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// update-connection (request/response).
     fn update_connection(
         &self,
         ctx: &Self::Context,
         input: UpdateConnectionRequest,
     ) -> Result<SyncConnection, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// sync-now (request/response).
     fn sync_now(&self, ctx: &Self::Context, input: SyncConnectionRef) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// webhook-secret (request/response).
     fn webhook_secret(
         &self,
         ctx: &Self::Context,
         input: SyncConnectionRef,
     ) -> Result<SyncWebhookSecret, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// get-policy (request/response).
     fn get_policy(
         &self,
         ctx: &Self::Context,
         input: GetRepoRequest,
     ) -> Result<SyncPolicy, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// set-policy (request/response).
     fn set_policy(
         &self,
         ctx: &Self::Context,
         input: SetSyncPolicyRequest,
     ) -> Result<SyncPolicy, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list-conflicts (request/response).
     fn list_conflicts(
         &self,
         ctx: &Self::Context,
         input: GetRepoRequest,
     ) -> Result<SyncConflicts, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// resolve-conflict (request/response).
     fn resolve_conflict(
         &self,
         ctx: &Self::Context,
         input: ResolveSyncConflictRequest,
     ) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// link-provider (request/response).
     fn link_provider(
         &self,
         ctx: &Self::Context,
         input: LinkProviderRequest,
     ) -> Result<ProviderLink, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list-provider-links (request/response).
     fn list_provider_links(
         &self,
         ctx: &Self::Context,
         input: Empty,
     ) -> Result<ProviderLinks, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// unlink-provider (request/response).
     fn unlink_provider(
         &self,
         ctx: &Self::Context,
         input: UnlinkProviderRequest,
     ) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list-sync-records (request/response).
     fn list_sync_records(
         &self,
@@ -707,30 +843,35 @@ pub mod mirror_wire_ids {
 /// Instance service trait
 pub trait Instance {
     type Context;
+    #[allow(clippy::result_large_err)]
     /// Every instance role. Instance admins only.
     fn list_roles(
         &self,
         ctx: &Self::Context,
         input: Empty,
     ) -> Result<InstanceRoleList, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// set-role (request/response).
     fn set_role(
         &self,
         ctx: &Self::Context,
         input: SetInstanceRoleRequest,
     ) -> Result<InstanceRoleGrant, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// remove-role (request/response).
     fn remove_role(
         &self,
         ctx: &Self::Context,
         input: RemoveInstanceRoleRequest,
     ) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// create-local-account (request/response).
     fn create_local_account(
         &self,
         ctx: &Self::Context,
         input: CreateLocalAccountRequest,
     ) -> Result<LocalAccount, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// reset-local-password (request/response).
     fn reset_local_password(
         &self,
@@ -752,35 +893,42 @@ pub mod instance_wire_ids {
 /// ServiceAccounts service trait
 pub trait ServiceAccounts {
     type Context;
+    #[allow(clippy::result_large_err)]
     /// create (request/response).
     fn create(
         &self,
         ctx: &Self::Context,
         input: CreateServiceAccountRequest,
     ) -> Result<ServiceAccount, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list (request/response).
     fn list(
         &self,
         ctx: &Self::Context,
         input: GetOrgRequest,
     ) -> Result<ListServiceAccountsResponse, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// Disabling refuses every token of the account; enabling lets the
     /// tokens that were not revoked work again.
     fn disable(&self, ctx: &Self::Context, input: ServiceAccountRef) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// enable (request/response).
     fn enable(&self, ctx: &Self::Context, input: ServiceAccountRef) -> Result<Ok, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// create-token (request/response).
     fn create_token(
         &self,
         ctx: &Self::Context,
         input: CreateServiceAccountTokenRequest,
     ) -> Result<ApiToken, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// list-tokens (request/response).
     fn list_tokens(
         &self,
         ctx: &Self::Context,
         input: ServiceAccountRef,
     ) -> Result<ListTokensResponse, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// revoke-token (request/response).
     fn revoke_token(
         &self,
@@ -804,16 +952,20 @@ pub mod service_accounts_wire_ids {
 /// Federation service trait
 pub trait Federation {
     type Context;
+    #[allow(clippy::result_large_err)]
     /// handshake (request/response).
     fn handshake(&self, ctx: &Self::Context, input: FedHello) -> Result<FedHelloAck, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// verify-head (request/response).
     fn verify_head(
         &self,
         ctx: &Self::Context,
         input: VerifyHeadRequest,
     ) -> Result<HeadInfo, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// head-info (request/response).
     fn head_info(&self, ctx: &Self::Context, input: HeadQuery) -> Result<HeadInfo, ServiceError>;
+    #[allow(clippy::result_large_err)]
     /// repo-info (request/response).
     fn repo_info(&self, ctx: &Self::Context, input: GetRepoRequest) -> Result<Repo, ServiceError>;
 }
@@ -848,14 +1000,11 @@ pub fn route_event_stream_channel<H>(
     _ctx: &H::Context,
     method: &str,
     _bytes: &[u8],
-) -> Result<(), ServiceError>
+) -> Result<(), ChannelRouteError>
 where
     H: EventStream,
 {
-    Err(ServiceError {
-        code: 404,
-        message: format!("unknown channel {method}"),
-    })
+    Err(ChannelRouteError::UnknownMethod(method.to_owned()))
 }
 
 /// Decode one inbound channel frame for EventStream by its
@@ -868,12 +1017,9 @@ pub fn route_event_stream_channel_compact<H>(
     _ctx: &H::Context,
     op: u64,
     _bytes: &[u8],
-) -> Result<(), ServiceError>
+) -> Result<(), ChannelRouteError>
 where
     H: EventStream,
 {
-    Err(ServiceError {
-        code: 404,
-        message: format!("unknown channel ordinal {op}"),
-    })
+    Err(ChannelRouteError::UnknownOrdinal(op))
 }

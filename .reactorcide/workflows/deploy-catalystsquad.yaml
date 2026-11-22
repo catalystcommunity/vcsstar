@@ -23,8 +23,10 @@ paths:
     - "ui/**"
     - "Cargo.toml"
     - "Cargo.lock"
+    - "rust-toolchain.toml"
     - ".reactorcide/jobs/deploy.yaml"
     - ".reactorcide/jobs/scripts/deploy.sh"
+    - ".reactorcide/jobs/scripts/builder.sh"
     - ".reactorcide/overlays/deploy-catalystsquad.yaml"
     - ".reactorcide/workflows/deploy-catalystsquad.yaml"
 jobs:

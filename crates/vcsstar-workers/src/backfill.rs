@@ -13,8 +13,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::Utc;
 use diesel::prelude::*;
+use time::OffsetDateTime;
 use vcsstar_core::github_health::{self as health, Lane};
 use vcsstar_core::github_sync;
 use vcsstar_core::mirror;
@@ -23,11 +23,11 @@ use vcsstar_db::schema::{mirror_state, orgs, repos};
 
 /// A pass holds its repository at most this long; a node that dies
 /// mid-pass frees it after the lease.
-const LEASE: chrono::Duration = chrono::Duration::minutes(10);
+const LEASE: time::Duration = time::Duration::minutes(10);
 /// Wait when no repository has an import pending.
 const IDLE: Duration = Duration::from_secs(30);
 /// Wait after a failed pass of a repository before it is due again.
-const AFTER_ERROR: chrono::Duration = chrono::Duration::minutes(2);
+const AFTER_ERROR: time::Duration = time::Duration::minutes(2);
 
 pub fn run(app: App, stop: Arc<AtomicBool>) -> anyhow::Result<()> {
     while !stop.load(Ordering::SeqCst) {
@@ -52,7 +52,7 @@ pub fn tick(app: &App) -> anyhow::Result<Duration> {
         return Ok(Duration::from_secs(10));
     }
     let mut conn = app.conn()?;
-    let now = Utc::now();
+    let now = OffsetDateTime::now_utc();
     let due = || {
         mirror_state::backfill_pass_at
             .is_null()
@@ -106,18 +106,21 @@ pub fn tick(app: &App) -> anyhow::Result<Duration> {
             tracing::info!(repo = %name, pulls = o.pulls, changed = o.changed, skipped = o.skipped, calls = o.calls, done = o.done, "history import pass");
             match o.held {
                 Some(h) => {
-                    let h = chrono::Duration::from_std(h).unwrap_or(chrono::Duration::minutes(1));
+                    let h = time::Duration::try_from(h).unwrap_or(time::Duration::minutes(1));
                     // Other repositories on the same installation are held
                     // too; the tick finds them not due or held in turn.
-                    (Utc::now() + h, Duration::from_secs(1))
+                    (OffsetDateTime::now_utc() + h, Duration::from_secs(1))
                 }
-                None => (Utc::now(), Duration::from_millis(200)),
+                None => (OffsetDateTime::now_utc(), Duration::from_millis(200)),
             }
         }
         Err(e) => {
             vcsstar_core::metrics::github_backfill("error");
             tracing::warn!(repo = %name, error = %e.message, "history import pass failed");
-            (Utc::now() + AFTER_ERROR, Duration::from_secs(1))
+            (
+                OffsetDateTime::now_utc() + AFTER_ERROR,
+                Duration::from_secs(1),
+            )
         }
     };
     diesel::update(mirror_state::table.find(repo_id))

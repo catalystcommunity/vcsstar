@@ -1,8 +1,8 @@
 //! Commit statuses: CI results per revision. Branch protections consume
 //! them as merge gates (phase 4).
 
-use chrono::{DateTime, Utc};
 use diesel::prelude::*;
+use time::OffsetDateTime;
 use vcsstar_db::models::Identity;
 use vcsstar_db::schema::{identities, statuses};
 use vcsstar_types::{
@@ -26,7 +26,7 @@ pub struct StatusRow {
     pub target_url: Option<String>,
     pub description: Option<String>,
     pub reporter: Option<uuid::Uuid>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: OffsetDateTime,
     pub base_sha: Option<String>,
 }
 
@@ -105,7 +105,7 @@ pub fn set(app: &App, ctx: &ReqCtx, req: SetStatusRequest) -> Result<CommitStatu
                 statuses::target_url.eq(req.target_url.as_deref()),
                 statuses::description.eq(req.description.as_deref()),
                 statuses::reporter.eq(p.identity.id),
-                statuses::created_at.eq(Utc::now()),
+                statuses::created_at.eq(OffsetDateTime::now_utc()),
             ))
             .returning(StatusRow::as_returning())
             .get_result(conn)?;

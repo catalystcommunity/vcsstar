@@ -16,7 +16,7 @@ members = [
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-repository = "https://github.com/catalystcommunity/vscstar"
+repository = "https://github.com/catalystcommunity/vcsstar"
 
 [workspace.dependencies]
 # Internal
@@ -30,15 +30,15 @@ vcsstar-workers = { path = "crates/vcsstar-workers", version = "0.1.0" }
 
 # Ecosystem pins. csilgen-transport must match the csilgen release in
 # tools/csilgen.sh (CSILGEN_COMMIT). corndogs must be >= 0.8.0.
-csilgen-transport = { git = "https://github.com/catalystcommunity/csilgen", rev = "6fcc0981fba034d4f34e3a3da0f59368b3ecb193" }
-liblinkkeys = { git = "https://github.com/catalystcommunity/linkkeys", rev = "3227a58c78a795a876b86258793375df291d3dcd" }
-linkkeys-rpc-client = { git = "https://github.com/catalystcommunity/linkkeys", rev = "3227a58c78a795a876b86258793375df291d3dcd" }
+csilgen-transport = { git = "https://github.com/catalystcommunity/csilgen", rev = "9690ed8794454c2beb21571ce525ffd62a2f0701" }
+liblinkkeys = { git = "https://github.com/catalystcommunity/linkkeys", rev = "d8e9215d82d0f57dd3d75d717640dac8d8219322" }
+linkkeys-rpc-client = { git = "https://github.com/catalystcommunity/linkkeys", rev = "d8e9215d82d0f57dd3d75d717640dac8d8219322" }
 corndogs = { git = "https://github.com/catalystcommunity/corndogs", rev = "f1b6ec6086dd0341c09629791bfaa959397b3f9c", features = ["tls"] }
 
 # Server
 rocket = { version = "0.5", default-features = false }
 rocket_ws = "0.1"
-diesel = { version = "2.2", features = ["postgres", "r2d2", "uuid", "chrono", "serde_json"] }
+diesel = { version = "2.2", features = ["postgres", "r2d2", "uuid", "time", "serde_json"] }
 diesel_migrations = "2.2"
 r2d2 = "0.8"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
@@ -50,7 +50,8 @@ sha2 = "0.10"
 hmac = "0.12"
 argon2 = "0.5.3"
 uuid = { version = "1", features = ["v7", "v4", "v5", "serde"] }
-chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+# PostgreSQL can store years outside the default four-digit range.
+time = { version = "0.3.47", features = ["large-dates"] }
 rand = "0.8"
 base64 = "0.22"
 hex = "0.4"

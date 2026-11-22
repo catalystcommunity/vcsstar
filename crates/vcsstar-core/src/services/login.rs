@@ -10,9 +10,9 @@
 //! approves the user code in a logged-in browser; the CLI polls and receives
 //! an API token once.
 
-use chrono::{Duration, Utc};
 use diesel::prelude::*;
 use liblinkkeys::generated::types as lk;
+use time::{Duration, OffsetDateTime};
 use vcsstar_db::models::{
     ApiToken as ApiTokenRow, DeviceLogin, Identity, NewApiToken, NewDeviceLogin, NewIdentity,
     NewPendingLogin, NewSession, PendingLogin,
@@ -78,7 +78,7 @@ pub fn begin(app: &App, ctx: &ReqCtx, req: BeginLoginRequest) -> Result<BeginLog
         linkkeys::authorize_url(&base, &signed, input.username.as_deref().unwrap_or(""));
 
     let attempt_token = tokens::new_secret(ATTEMPT_PREFIX);
-    let expires_at = Utc::now() + Duration::minutes(LOGIN_TTL_MINUTES);
+    let expires_at = OffsetDateTime::now_utc() + Duration::minutes(LOGIN_TTL_MINUTES);
     let device_login_id = match req.device_user_code.as_deref() {
         Some(code) => Some(find_device_by_user_code(&mut app.conn()?, code)?.id),
         None => None,
@@ -351,7 +351,7 @@ fn upsert_identity(
         .select(Identity::as_select())
         .first(conn)
         .optional()?;
-    let now = Utc::now();
+    let now = OffsetDateTime::now_utc();
     match existing {
         Some(i) => {
             let updated: Identity = diesel::update(identities::table.find(i.id))
@@ -394,9 +394,9 @@ fn claim_pending(conn: &mut DbConn, attempt_token: &str) -> Result<PendingLogin,
         pending_logins::table
             .filter(pending_logins::attempt_hash.eq(&digest))
             .filter(pending_logins::claimed_at.is_null())
-            .filter(pending_logins::expires_at.gt(Utc::now())),
+            .filter(pending_logins::expires_at.gt(OffsetDateTime::now_utc())),
     )
-    .set(pending_logins::claimed_at.eq(Utc::now()))
+    .set(pending_logins::claimed_at.eq(OffsetDateTime::now_utc()))
     .returning(PendingLogin::as_returning())
     .get_result(conn)
     .optional()?;
@@ -412,9 +412,9 @@ pub fn create_session(
     conn: &mut DbConn,
     identity_id: uuid::Uuid,
     user_agent: Option<&str>,
-) -> Result<(String, chrono::DateTime<Utc>), Error> {
+) -> Result<(String, OffsetDateTime), Error> {
     let token = tokens::new_secret(SESSION_PREFIX);
-    let expires_at = Utc::now() + Duration::hours(SESSION_SLIDING_HOURS);
+    let expires_at = OffsetDateTime::now_utc() + Duration::hours(SESSION_SLIDING_HOURS);
     let row = NewSession {
         id: vcsstar_db::new_id(),
         identity_id,
@@ -464,7 +464,7 @@ pub(crate) fn find_device_by_user_code(
     device_logins::table
         .filter(device_logins::user_code_hash.eq(&digest))
         .filter(device_logins::state.eq("pending"))
-        .filter(device_logins::expires_at.gt(Utc::now()))
+        .filter(device_logins::expires_at.gt(OffsetDateTime::now_utc()))
         .select(DeviceLogin::as_select())
         .first(conn)
         .optional()?
@@ -483,7 +483,7 @@ pub fn begin_device(app: &App, ctx: &ReqCtx, req: BeginDeviceRequest) -> Result<
     }
     let device_code = tokens::new_secret(DEVICE_PREFIX);
     let code = user_code();
-    let expires_at = Utc::now() + Duration::minutes(DEVICE_TTL_MINUTES);
+    let expires_at = OffsetDateTime::now_utc() + Duration::minutes(DEVICE_TTL_MINUTES);
     let row = NewDeviceLogin {
         id: vcsstar_db::new_id(),
         code_hash: tokens::hash(&device_code),
@@ -531,7 +531,7 @@ pub fn poll_device(
         .first(&mut conn)
         .optional()?;
     let row = row.ok_or_else(|| Error::new(Code::Unauthenticated, "unknown device code"))?;
-    if row.expires_at <= Utc::now() && row.state == "pending" {
+    if row.expires_at <= OffsetDateTime::now_utc() && row.state == "pending" {
         return Err(Error::new(
             Code::TokenExpired,
             "device code expired; start again",
@@ -560,7 +560,7 @@ pub fn poll_device(
                 name: &row.client_label,
                 scopes: scopes.iter().cloned().map(Some).collect(),
                 client_label: Some(&row.client_label),
-                expires_at: Some(Utc::now() + Duration::days(90)),
+                expires_at: Some(OffsetDateTime::now_utc() + Duration::days(90)),
             };
             let inserted: ApiTokenRow = conn.transaction::<ApiTokenRow, Error, _>(|conn| {
                 let inserted: ApiTokenRow = diesel::insert_into(api_tokens::table)
@@ -613,7 +613,7 @@ pub(crate) fn approve_device_by_id(
         device_logins::table
             .find(id)
             .filter(device_logins::state.eq("pending"))
-            .filter(device_logins::expires_at.gt(Utc::now())),
+            .filter(device_logins::expires_at.gt(OffsetDateTime::now_utc())),
     )
     .set((
         device_logins::state.eq("approved"),
@@ -664,11 +664,12 @@ fn peer_key(what: &str, ctx: &ReqCtx) -> String {
 pub fn purge_expired(conn: &mut DbConn) -> Result<usize, Error> {
     let a = diesel::delete(
         pending_logins::table
-            .filter(pending_logins::expires_at.lt(Utc::now() - Duration::hours(1))),
+            .filter(pending_logins::expires_at.lt(OffsetDateTime::now_utc() - Duration::hours(1))),
     )
     .execute(conn)?;
     let b = diesel::delete(
-        device_logins::table.filter(device_logins::expires_at.lt(Utc::now() - Duration::hours(24))),
+        device_logins::table
+            .filter(device_logins::expires_at.lt(OffsetDateTime::now_utc() - Duration::hours(24))),
     )
     .execute(conn)?;
     Ok(a + b)
@@ -679,6 +680,7 @@ mod tests {
     use super::*;
     use liblinkkeys::claims::{sign_claim, ClaimSigner, ClaimSpec};
     use liblinkkeys::crypto::{fingerprint, generate_keypair, SigningAlgorithm};
+    use liblinkkeys::timestamp::Rfc3339 as _;
 
     const USER: &str = "01a11ea7-24d3-7612-8586-8e4645452613";
 
@@ -691,7 +693,7 @@ mod tests {
 
     fn domain(name: &'static str, key_id: &'static str) -> Domain {
         let (public, private) = generate_keypair(SigningAlgorithm::Ed25519);
-        let now = Utc::now();
+        let now = OffsetDateTime::now_utc();
         Domain {
             name,
             key_id,
@@ -712,7 +714,7 @@ mod tests {
     }
 
     fn signed(d: &Domain, claim_type: &str, value: &str) -> lk::Claim {
-        let attested = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        let attested = OffsetDateTime::now_utc().to_rfc3339_secs_z();
         sign_claim(
             &ClaimSpec {
                 claim_id: &format!("{claim_type}-1"),

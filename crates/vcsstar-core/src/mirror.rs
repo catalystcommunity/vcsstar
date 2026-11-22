@@ -4,9 +4,9 @@
 //! `execute`; the dispatcher calls `expand_event`; the Mirror service ops
 //! read and replay the rows.
 
-use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 use uuid::Uuid;
 use vcsstar_db::models::{Org, Repo};
 use vcsstar_db::schema::{
@@ -33,8 +33,8 @@ pub const MODES: &[&str] = &["authoritative_vcsstar", "import_drift", "flag_drif
 pub const DEFAULT_PASS_INTERVAL_S: i32 = 900;
 
 /// How often the pull request pass runs for this repository.
-pub fn pull_sync_interval(s: &StateRow) -> chrono::Duration {
-    chrono::Duration::seconds(
+pub fn pull_sync_interval(s: &StateRow) -> time::Duration {
+    time::Duration::seconds(
         s.pull_sync_interval_s
             .unwrap_or(DEFAULT_PASS_INTERVAL_S)
             .into(),
@@ -42,8 +42,8 @@ pub fn pull_sync_interval(s: &StateRow) -> chrono::Duration {
 }
 
 /// How often the ref reconcile pass runs for this repository.
-pub fn ref_reconcile_interval(s: &StateRow) -> chrono::Duration {
-    chrono::Duration::seconds(
+pub fn ref_reconcile_interval(s: &StateRow) -> time::Duration {
+    time::Duration::seconds(
         s.ref_reconcile_interval_s
             .unwrap_or(DEFAULT_PASS_INTERVAL_S)
             .into(),
@@ -58,12 +58,12 @@ pub struct StateRow {
     pub mode: String,
     pub paused: bool,
     pub cursor_seq: i64,
-    pub last_success_at: Option<DateTime<Utc>>,
+    pub last_success_at: Option<OffsetDateTime>,
     pub last_error: Option<String>,
-    pub last_full_reconcile_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub last_pull_sync_at: Option<DateTime<Utc>>,
-    pub last_pull_pass_at: Option<DateTime<Utc>>,
+    pub last_full_reconcile_at: Option<OffsetDateTime>,
+    pub created_at: OffsetDateTime,
+    pub last_pull_sync_at: Option<OffsetDateTime>,
+    pub last_pull_pass_at: Option<OffsetDateTime>,
     /// History import cursor: page of the creation-ordered list (from 1).
     pub backfill_page: i32,
     /// History import cursor: next position in that page.
@@ -71,20 +71,20 @@ pub struct StateRow {
     /// Pull requests the history import went through.
     pub backfill_pulls: i32,
     /// When every pull request head was fetched in one go.
-    pub backfill_heads_at: Option<DateTime<Utc>>,
+    pub backfill_heads_at: Option<OffsetDateTime>,
     /// Claim and schedule of the history import pass.
-    pub backfill_pass_at: Option<DateTime<Utc>>,
-    pub backfill_started_at: Option<DateTime<Utc>>,
+    pub backfill_pass_at: Option<OffsetDateTime>,
+    pub backfill_started_at: Option<OffsetDateTime>,
     /// NULL while the history import is not complete.
-    pub backfill_done_at: Option<DateTime<Utc>>,
+    pub backfill_done_at: Option<OffsetDateTime>,
     /// Who asked for the import (the worker acts with their token order).
     pub import_requested_by: Option<Uuid>,
-    pub import_requested_at: Option<DateTime<Utc>>,
+    pub import_requested_at: Option<OffsetDateTime>,
     /// Claim of the import task (one worker at a time).
-    pub import_claimed_at: Option<DateTime<Utc>>,
+    pub import_claimed_at: Option<OffsetDateTime>,
     pub import_attempts: i32,
     /// NULL while the import of the refs is not complete.
-    pub import_done_at: Option<DateTime<Utc>>,
+    pub import_done_at: Option<OffsetDateTime>,
     /// Cadence of the pull request pass; NULL is the default.
     pub pull_sync_interval_s: Option<i32>,
     /// Cadence of the ref reconcile pass; NULL is the default.
@@ -171,12 +171,12 @@ pub struct ActionRow {
     pub object_key: String,
     pub state: String,
     pub blocked_reason: Option<String>,
-    pub blocked_at: Option<DateTime<Utc>>,
+    pub blocked_at: Option<OffsetDateTime>,
     pub credential_purpose: String,
     pub payload_cbor: Vec<u8>,
     pub attempts: i32,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
 }
 
 #[derive(Debug, Clone, Queryable, Selectable)]
@@ -193,7 +193,7 @@ pub struct CredentialRow {
     pub secret_ciphertext: Option<Vec<u8>>,
     pub enabled: bool,
     pub created_by: Option<Uuid>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: OffsetDateTime,
 }
 
 /// What an action converges. The ref target is read from Postgres at
@@ -880,7 +880,7 @@ pub fn upsert_action(
                 mirror_actions::event_lane.eq(ev.lane),
                 mirror_actions::event_seq.eq(ev.seq),
                 mirror_actions::payload_cbor.eq(encode_payload(&spec.payload)),
-                mirror_actions::updated_at.eq(Utc::now()),
+                mirror_actions::updated_at.eq(OffsetDateTime::now_utc()),
             ))
             .execute(conn)?;
         return Ok(id);
@@ -1260,7 +1260,7 @@ fn record_attempt(
         .values((
             mirror_attempts::id.eq(vcsstar_db::new_id()),
             mirror_attempts::action_id.eq(action_id),
-            mirror_attempts::finished_at.eq(Utc::now()),
+            mirror_attempts::finished_at.eq(OffsetDateTime::now_utc()),
             mirror_attempts::ok.eq(ok),
             mirror_attempts::http_status.eq(http_status),
             mirror_attempts::error.eq(error),
@@ -1269,7 +1269,7 @@ fn record_attempt(
     diesel::update(mirror_actions::table.find(action_id))
         .set((
             mirror_actions::attempts.eq(mirror_actions::attempts + 1),
-            mirror_actions::updated_at.eq(Utc::now()),
+            mirror_actions::updated_at.eq(OffsetDateTime::now_utc()),
         ))
         .execute(conn)?;
     Ok(())
@@ -1318,8 +1318,8 @@ fn set_blocked(
             .set((
                 mirror_actions::state.eq("blocked"),
                 mirror_actions::blocked_reason.eq(reason),
-                mirror_actions::blocked_at.eq(Utc::now()),
-                mirror_actions::updated_at.eq(Utc::now()),
+                mirror_actions::blocked_at.eq(OffsetDateTime::now_utc()),
+                mirror_actions::updated_at.eq(OffsetDateTime::now_utc()),
             ))
             .execute(conn)?;
         diesel::update(mirror_state::table.find(repo.id))
@@ -1341,12 +1341,12 @@ fn set_applied(conn: &mut PgConnection, repo_id: Uuid, action: &ActionRow) -> Re
     diesel::update(mirror_actions::table.find(action.id))
         .set((
             mirror_actions::state.eq("applied"),
-            mirror_actions::updated_at.eq(Utc::now()),
+            mirror_actions::updated_at.eq(OffsetDateTime::now_utc()),
         ))
         .execute(conn)?;
     diesel::update(mirror_state::table.find(repo_id))
         .set((
-            mirror_state::last_success_at.eq(Utc::now()),
+            mirror_state::last_success_at.eq(OffsetDateTime::now_utc()),
             mirror_state::last_error.eq::<Option<String>>(None),
         ))
         .execute(conn)?;
@@ -1366,15 +1366,15 @@ pub(crate) fn set_mirrored(
                     mirror_refs::repo_id.eq(repo_id),
                     mirror_refs::ref_.eq(r#ref),
                     mirror_refs::mirrored_sha.eq(s),
-                    mirror_refs::last_pushed_at.eq(Utc::now()),
-                    mirror_refs::last_verified_at.eq(Utc::now()),
+                    mirror_refs::last_pushed_at.eq(OffsetDateTime::now_utc()),
+                    mirror_refs::last_verified_at.eq(OffsetDateTime::now_utc()),
                 ))
                 .on_conflict((mirror_refs::repo_id, mirror_refs::ref_))
                 .do_update()
                 .set((
                     mirror_refs::mirrored_sha.eq(s),
-                    mirror_refs::last_pushed_at.eq(Utc::now()),
-                    mirror_refs::last_verified_at.eq(Utc::now()),
+                    mirror_refs::last_pushed_at.eq(OffsetDateTime::now_utc()),
+                    mirror_refs::last_verified_at.eq(OffsetDateTime::now_utc()),
                 ))
                 .execute(conn)?;
         }
@@ -1594,6 +1594,20 @@ fn exec_push(
     }
 }
 
+fn drift_ref_name(reference: &str) -> String {
+    let now = OffsetDateTime::now_utc();
+    let short = reference.trim_start_matches("refs/");
+    format!(
+        "refs/vcsstar/drift/{:04}{:02}{:02}T{:02}{:02}{:02}/{short}",
+        now.year(),
+        u8::from(now.month()),
+        now.day(),
+        now.hour(),
+        now.minute(),
+        now.second(),
+    )
+}
+
 /// GitHub's ref moved behind our back. Preserve what is there, then act
 /// by mode.
 #[allow(clippy::too_many_arguments)]
@@ -1651,11 +1665,7 @@ fn handle_drift(
         };
     };
     // Keep the drifted commits: fetch into an internal ref and record it.
-    let short = r#ref.trim_start_matches("refs/");
-    let drift_ref = format!(
-        "refs/vcsstar/drift/{}/{short}",
-        Utc::now().format("%Y%m%dT%H%M%S")
-    );
+    let drift_ref = drift_ref_name(r#ref);
     match fetch_ref_for(dir, url, Some(token), r#ref, &drift_ref, state.is_github()) {
         Ok(()) => {
             let _ = refs::apply(
@@ -1811,11 +1821,7 @@ pub fn note_drift(
     let url = state.git_url(app);
     let mut kept = None;
     if let Some(sha) = observed {
-        let short = r#ref.trim_start_matches("refs/");
-        let drift_ref = format!(
-            "refs/vcsstar/drift/{}/{short}",
-            Utc::now().format("%Y%m%dT%H%M%S")
-        );
+        let drift_ref = drift_ref_name(r#ref);
         match fetch_ref_for(dir, &url, token, r#ref, &drift_ref, state.is_github()) {
             Ok(()) => {
                 let _ = refs::apply(
@@ -2090,7 +2096,7 @@ pub fn reconcile(app: &App, conn: &mut DbConn, repo_id: Uuid) -> Result<Reconcil
         scheduled: vec![],
         drift: vec![],
     };
-    let now = Utc::now();
+    let now = OffsetDateTime::now_utc();
     let lane = outbox::lane_for_repo(&org.name, &repo.name);
     let cursor = state.cursor_seq;
     for (name, target) in &ours {

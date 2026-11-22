@@ -1,10 +1,10 @@
 //! Durable connection, replica, and history records.
 use super::Item;
 use crate::{App, Error};
-use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use diesel::sql_types::{BigInt, Bool, Jsonb, Nullable, Text, Timestamptz, Uuid as SqlUuid};
 use serde_json::Value;
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, QueryableByName)]
@@ -38,9 +38,9 @@ pub struct Connection {
     #[diesel(sql_type=BigInt)]
     pub completed: i64,
     #[diesel(sql_type=Timestamptz)]
-    pub poll_after: DateTime<Utc>,
+    pub poll_after: OffsetDateTime,
     #[diesel(sql_type=Nullable<Timestamptz>)]
-    pub last_success_at: Option<DateTime<Utc>>,
+    pub last_success_at: Option<OffsetDateTime>,
     #[diesel(sql_type=Nullable<Text>)]
     pub last_error: Option<String>,
 }
@@ -101,7 +101,7 @@ pub struct Conflict {
     #[diesel(sql_type=Nullable<Jsonb>)]
     pub remote_value: Option<Value>,
     #[diesel(sql_type=Timestamptz)]
-    pub created_at: DateTime<Utc>,
+    pub created_at: OffsetDateTime,
     #[diesel(sql_type=Nullable<Text>)]
     pub resolution: Option<String>,
 }

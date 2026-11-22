@@ -2,9 +2,9 @@
 //! domain key signs the grantee's attestations and the grant; the grantee
 //! presents a credential; the instance issues a scoped bearer once.
 
+use liblinkkeys::timestamp::Rfc3339 as _;
 use std::sync::Arc;
 
-use chrono::{Duration, Utc};
 use diesel::prelude::*;
 use liblinkkeys::act_as as aa;
 use liblinkkeys::application_keys::{
@@ -14,6 +14,7 @@ use liblinkkeys::claims::ClaimSigner;
 use liblinkkeys::crypto::{fingerprint, generate_ed25519_keypair, SigningAlgorithm};
 use liblinkkeys::generated::types as lk;
 use liblinkkeys::generated::{self as g};
+use time::{Duration, OffsetDateTime};
 use vcsstar_core::linkkeys::RpCaller;
 use vcsstar_core::principal::{CredentialKind, ReqCtx};
 use vcsstar_core::services::actas;
@@ -87,8 +88,8 @@ impl RpCaller for FakeRp {
                         domain: DOMAIN.into(),
                         keys: vec![domain_public(&self.domain)],
                         revocations: vec![],
-                        fetched_at: Utc::now().to_rfc3339(),
-                        revocations_checked_at: Utc::now().to_rfc3339(),
+                        fetched_at: OffsetDateTime::now_utc().to_rfc3339(),
+                        revocations_checked_at: OffsetDateTime::now_utc().to_rfc3339(),
                         cache_status: "fresh".into(),
                     },
                 ))
@@ -116,7 +117,7 @@ impl RpCaller for FakeRp {
                         let a = ak::build_attestation(
                             &instance,
                             &key_ref(k),
-                            Utc::now() - Duration::minutes(1),
+                            OffsetDateTime::now_utc() - Duration::minutes(1),
                             86_400,
                         );
                         ak::sign_attestation(&a, std::slice::from_ref(&signer)).unwrap()
@@ -132,8 +133,8 @@ impl RpCaller for FakeRp {
                         application_key_revocations: vec![],
                         home_domain_keys: vec![domain_public(&self.domain)],
                         home_domain_key_revocations: vec![],
-                        fetched_at: Utc::now().to_rfc3339(),
-                        revocations_checked_at: Utc::now().to_rfc3339(),
+                        fetched_at: OffsetDateTime::now_utc().to_rfc3339(),
+                        revocations_checked_at: OffsetDateTime::now_utc().to_rfc3339(),
                         cache_status: "fresh".into(),
                     },
                 ))
@@ -221,8 +222,8 @@ fn act_as_credential_becomes_a_scoped_bearer_once() {
                     hex::encode(&k.private).as_bytes(),
                 )
                 .unwrap()),
-                ik::attested_at.eq(Utc::now()),
-                ik::attestation_expires_at.eq(Utc::now() + Duration::days(1)),
+                ik::attested_at.eq(OffsetDateTime::now_utc()),
+                ik::attestation_expires_at.eq(OffsetDateTime::now_utc() + Duration::days(1)),
             ))
             .execute(&mut conn)
             .unwrap();
@@ -267,7 +268,7 @@ fn act_as_credential_becomes_a_scoped_bearer_once() {
         subject_domain: DOMAIN.into(),
         application_id: "vcsstar".into(),
     };
-    let now = Utc::now();
+    let now = OffsetDateTime::now_utc();
     let approved = vec!["repo:read".to_string()];
     let grant = aa::build_grant(&aa::NewGrant {
         grant_id: "grant-1",
@@ -332,7 +333,7 @@ fn act_as_credential_becomes_a_scoped_bearer_once() {
     let att = ak::build_attestation(
         &instance_ref,
         &gref,
-        Utc::now() - Duration::minutes(1),
+        OffsetDateTime::now_utc() - Duration::minutes(1),
         86_400,
     );
     let signed_att = ak::sign_attestation(
@@ -350,7 +351,7 @@ fn act_as_credential_becomes_a_scoped_bearer_once() {
         &[],
         std::slice::from_ref(&dom_pub),
         &instance_ref,
-        Utc::now(),
+        OffsetDateTime::now_utc(),
         300,
     );
     assert!(

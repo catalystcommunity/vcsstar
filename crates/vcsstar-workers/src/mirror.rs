@@ -4,12 +4,13 @@
 //! A second thread runs the history import (`crate::backfill`); two more
 //! run repository imports (`crate::import`).
 
+use liblinkkeys::timestamp::Rfc3339 as _;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use chrono::Utc;
 use diesel::prelude::*;
+use time::OffsetDateTime;
 use vcsstar_core::github_health::{self as health, Lane};
 use vcsstar_core::mirror::{self, Exec};
 use vcsstar_core::App;
@@ -188,7 +189,7 @@ fn handle(app: &App, q: &Queue, claimed: &Claimed) -> anyhow::Result<()> {
         Err(e) => {
             tracing::error!(action = %action_id, error = %e.message, "mirror action errored");
             diesel::update(vcsstar_db::schema::mirror_actions::table.find(action_id))
-                .set(vcsstar_db::schema::mirror_actions::updated_at.eq(Utc::now()))
+                .set(vcsstar_db::schema::mirror_actions::updated_at.eq(OffsetDateTime::now_utc()))
                 .execute(&mut conn)
                 .ok();
             q.park(claimed, Duration::from_secs(60))?;
@@ -208,18 +209,21 @@ fn reconcile_pass(app: &App) -> anyhow::Result<()> {
         let stale: Vec<(uuid::Uuid, String, String)> = mirror_actions::table
             .inner_join(repos::table.inner_join(orgs::table))
             .filter(mirror_actions::state.eq("pending"))
-            .filter(mirror_actions::updated_at.lt(Utc::now() - chrono::Duration::minutes(2)))
+            .filter(
+                mirror_actions::updated_at
+                    .lt(OffsetDateTime::now_utc() - time::Duration::minutes(2)),
+            )
             .filter(repos::mirror_enabled.eq(true))
             .select((mirror_actions::id, orgs::name, repos::name))
             .limit(100)
             .load(&mut conn)?;
-        let minute = Utc::now().timestamp() / 60;
+        let minute = OffsetDateTime::now_utc().unix_timestamp() / 60;
         for (id, org, repo) in stale {
             if let Err(e) = mirror::submit_action(app, &org, &repo, id, minute) {
                 tracing::warn!(error = %e.message, "stale action resubmit failed");
             }
             diesel::update(mirror_actions::table.find(id))
-                .set(mirror_actions::updated_at.eq(Utc::now()))
+                .set(mirror_actions::updated_at.eq(OffsetDateTime::now_utc()))
                 .execute(&mut conn)?;
         }
     }
@@ -256,7 +260,7 @@ fn reconcile_pass(app: &App) -> anyhow::Result<()> {
             "ref_reconcile_interval_s",
             recovered,
         )))
-        .set(mirror_state::last_full_reconcile_at.eq(Utc::now()))
+        .set(mirror_state::last_full_reconcile_at.eq(OffsetDateTime::now_utc()))
         .execute(&mut conn)?;
         if claimed == 0 {
             continue;
@@ -275,7 +279,7 @@ fn reconcile_pass(app: &App) -> anyhow::Result<()> {
                 // Stamp anyway so one broken repo does not starve the others.
                 diesel::update(mirror_state::table.find(repo_id))
                     .set((
-                        mirror_state::last_full_reconcile_at.eq(Utc::now()),
+                        mirror_state::last_full_reconcile_at.eq(OffsetDateTime::now_utc()),
                         mirror_state::last_error.eq(&e.message),
                     ))
                     .execute(&mut conn)?;
@@ -319,7 +323,7 @@ fn pull_sync_pass(app: &App) -> anyhow::Result<()> {
             "pull_sync_interval_s",
             recovered,
         )))
-        .set(mirror_state::last_pull_pass_at.eq(Utc::now()))
+        .set(mirror_state::last_pull_pass_at.eq(OffsetDateTime::now_utc()))
         .execute(&mut conn)?;
         if claimed == 0 {
             continue;
@@ -351,7 +355,7 @@ fn pull_sync_pass(app: &App) -> anyhow::Result<()> {
                     diesel::update(mirror_state::table.find(repo_id))
                         .set(
                             mirror_state::last_pull_pass_at
-                                .eq(Utc::now() - every + chrono::Duration::seconds(60)),
+                                .eq(OffsetDateTime::now_utc() - every + time::Duration::seconds(60)),
                         )
                         .execute(&mut conn)?;
                 }
@@ -375,7 +379,7 @@ fn pull_sync_pass(app: &App) -> anyhow::Result<()> {
 fn due_filter(
     last: &'static str,
     interval: &'static str,
-    recovered: Option<chrono::DateTime<Utc>>,
+    recovered: Option<OffsetDateTime>,
 ) -> diesel::expression::SqlLiteral<diesel::sql_types::Bool> {
     let recovered = recovered
         .map(|t| {

@@ -177,7 +177,11 @@ fn run_keys(schema: &Schema, m: &ArgMatches, km: &ArgMatches) -> Result<(), CliE
                 .get_one::<String>("key-dir")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| {
-                    PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into())).join(".ssh")
+                    std::env::var_os("HOME")
+                        .map(PathBuf::from)
+                        .or_else(std::env::home_dir)
+                        .unwrap_or_else(|| PathBuf::from("."))
+                        .join(".ssh")
                 });
             eprintln!(
                 "enrolling {identity} at its home domain as application {}...",

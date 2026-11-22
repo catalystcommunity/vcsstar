@@ -4,7 +4,6 @@
 //! action made with it is attributed to the user with the grantee recorded
 //! as `acting_via`.
 
-use chrono::{Duration, Utc};
 use diesel::prelude::*;
 use liblinkkeys::act_as as aa;
 use liblinkkeys::application_keys::{self as ak, ApplicationKeyRef, InstanceRef};
@@ -12,6 +11,7 @@ use liblinkkeys::crypto::SigningAlgorithm;
 use liblinkkeys::generated::types as lk;
 use liblinkkeys::generated::{self as g};
 use sha2::Digest;
+use time::{Duration, OffsetDateTime};
 use vcsstar_db::models::{Identity, NewApiToken};
 use vcsstar_db::schema::{act_as_grants, act_as_nonces, api_tokens, identities};
 use vcsstar_types::{ActAsExchangeRequest, ScopeSetRequest, ScopedBearer, SignedActAsScopeSet};
@@ -84,7 +84,7 @@ pub fn scope_set(
             description: Some(d.to_string()),
         })
         .collect();
-    let now = Utc::now();
+    let now = OffsetDateTime::now_utc();
     let set = lk::ActAsScopeSet {
         audience: own_application(app)?,
         grantee,
@@ -199,7 +199,7 @@ fn rp_grantee_keys(
             application_id: &grantee.application_id,
             instance_id: instance,
         },
-        Utc::now(),
+        OffsetDateTime::now_utc(),
         300,
     );
     Ok(set
@@ -289,7 +289,7 @@ pub fn exchange(app: &App, ctx: &ReqCtx, req: ActAsExchangeRequest) -> Result<Sc
             expected_request_digest: &digest,
             revoked_grant_ids: &revoked,
             max_presentation_age_seconds: 300,
-            now: Utc::now(),
+            now: OffsetDateTime::now_utc(),
             skew_seconds: 300,
             revoked_key_policy: aa::RevokedKeyPolicy::AcceptBeforeRevocation,
         },
@@ -344,12 +344,11 @@ pub fn exchange(app: &App, ctx: &ReqCtx, req: ActAsExchangeRequest) -> Result<Sc
         }
         narrowed
     };
-    let grant_expires = chrono::DateTime::parse_from_rfc3339(&verified.expires_at)
-        .map(|t| t.with_timezone(&Utc))
-        .unwrap_or_else(|_| Utc::now());
+    let grant_expires = liblinkkeys::timestamp::parse_rfc3339(&verified.expires_at)
+        .unwrap_or_else(|_| OffsetDateTime::now_utc());
     let expires_at = std::cmp::min(
         grant_expires,
-        Utc::now() + Duration::seconds(MAX_BEARER_SECONDS),
+        OffsetDateTime::now_utc() + Duration::seconds(MAX_BEARER_SECONDS),
     );
     let grantee_label = format!(
         "{}@{}/{}#{}",
@@ -378,14 +377,14 @@ pub fn exchange(app: &App, ctx: &ReqCtx, req: ActAsExchangeRequest) -> Result<Sc
                 act_as_grants::grantee.eq(&grantee_label),
                 act_as_grants::scopes.eq(approved.iter().cloned().map(Some).collect::<Vec<_>>()),
                 act_as_grants::expires_at.eq(grant_expires),
-                act_as_grants::last_presentation_nonce_at.eq(Utc::now()),
+                act_as_grants::last_presentation_nonce_at.eq(OffsetDateTime::now_utc()),
             ))
             .on_conflict(act_as_grants::grant_id)
             .do_update()
             .set((
                 act_as_grants::scopes.eq(approved.iter().cloned().map(Some).collect::<Vec<_>>()),
                 act_as_grants::expires_at.eq(grant_expires),
-                act_as_grants::last_presentation_nonce_at.eq(Utc::now()),
+                act_as_grants::last_presentation_nonce_at.eq(OffsetDateTime::now_utc()),
             ))
             .execute(conn)?;
         Ok(())
@@ -404,7 +403,8 @@ pub fn exchange(app: &App, ctx: &ReqCtx, req: ActAsExchangeRequest) -> Result<Sc
 /// Prune replay nonces older than the window.
 pub fn prune_nonces(conn: &mut PgConnection) -> Result<usize, Error> {
     Ok(diesel::delete(
-        act_as_nonces::table.filter(act_as_nonces::seen_at.lt(Utc::now() - Duration::hours(1))),
+        act_as_nonces::table
+            .filter(act_as_nonces::seen_at.lt(OffsetDateTime::now_utc() - Duration::hours(1))),
     )
     .execute(conn)?)
 }

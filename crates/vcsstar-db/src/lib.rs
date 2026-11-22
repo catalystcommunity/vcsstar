@@ -57,3 +57,33 @@ pub fn next_lane_seq(conn: &mut PgConnection, lane: &str) -> Result<i64, DbError
 pub fn new_id() -> Uuid {
     Uuid::now_v7()
 }
+
+#[cfg(test)]
+mod tests {
+    use diesel::dsl::sql;
+    use diesel::prelude::*;
+    use diesel::sql_types::Timestamptz;
+    use time::OffsetDateTime;
+
+    #[test]
+    fn reads_existing_postgres_timestamps_and_binds_the_same_instant() {
+        let Ok(url) = std::env::var("DATABASE_URL") else {
+            return;
+        };
+        let mut conn = PgConnection::establish(&url).unwrap();
+        let stored = sql::<Timestamptz>("TIMESTAMPTZ '1969-12-31 18:59:59.123456-05'");
+        let instant: OffsetDateTime = diesel::select(stored.clone())
+            .get_result(&mut conn)
+            .unwrap();
+        assert_eq!(instant.unix_timestamp_nanos(), -876_544_000);
+        assert!(diesel::select(stored.eq(instant))
+            .get_result::<bool>(&mut conn)
+            .unwrap());
+
+        let far_future: OffsetDateTime =
+            diesel::select(sql::<Timestamptz>("TIMESTAMPTZ '10000-01-01 00:00:00+00'"))
+                .get_result(&mut conn)
+                .unwrap();
+        assert_eq!(far_future.year(), 10_000);
+    }
+}

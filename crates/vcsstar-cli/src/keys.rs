@@ -6,17 +6,18 @@
 //! with vcsstar (`Auth/register-key`). Renewal and revocation talk to the
 //! home domain with the keys themselves; vcsstar only learns the result.
 
+use liblinkkeys::timestamp::Rfc3339 as _;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
-use chrono::{DateTime, Duration, Utc};
 use liblinkkeys::application_keys as ak;
 use liblinkkeys::crypto::SigningAlgorithm;
 use liblinkkeys::generated::types as lk;
 use liblinkkeys::generated::{self as g};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
+use time::{Duration, OffsetDateTime};
 
 pub const APPLICATION_ID: &str = "vcsstar-client";
 const KEY_LIFETIME_SECONDS: i64 = 365 * 86_400;
@@ -238,10 +239,10 @@ fn write_private(path: &Path, key: &ssh_key::PrivateKey) -> Result<()> {
 }
 
 fn now_window() -> (String, String) {
-    let now = Utc::now();
+    let now = OffsetDateTime::now_utc();
     (
-        (now - Duration::seconds(30)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-        (now + Duration::seconds(120)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        (now - Duration::seconds(30)).to_rfc3339_secs_z(),
+        (now + Duration::seconds(120)).to_rfc3339_secs_z(),
     )
 }
 
@@ -406,7 +407,7 @@ pub fn renew(e: &mut Enrollment, force: bool) -> Result<Vec<String>> {
         server: &home.server,
         fingerprints: &home.fingerprints,
     };
-    let now = Utc::now();
+    let now = OffsetDateTime::now_utc();
     let mut changed = Vec::new();
     for k in e.keys.iter_mut() {
         let due = match (&k.attested_at, &k.attestation_expires_at) {
@@ -500,7 +501,7 @@ pub fn revoke(e: &Enrollment, target: &LocalKey) -> Result<String> {
             private_key_bytes: p,
         })
         .collect();
-    let revoked_at = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let revoked_at = OffsetDateTime::now_utc().to_rfc3339_secs_z();
     let rev = ak::sign_revocation(
         &ak::InstanceRef {
             subject_user_id: &e.subject_user_id,
@@ -527,16 +528,16 @@ pub fn revoke(e: &Enrollment, target: &LocalKey) -> Result<String> {
 }
 
 pub fn status_json(e: &Enrollment) -> Json {
-    let now = Utc::now();
+    let now = OffsetDateTime::now_utc();
     json!({
         "identity": e.identity,
         "application_id": e.application_id,
         "instance_id": e.instance_id,
         "home_server": e.server,
         "keys": e.keys.iter().map(|k| {
-            let expires = k.attestation_expires_at.as_deref().and_then(|s| DateTime::parse_from_rfc3339(s).ok());
+            let expires = k.attestation_expires_at.as_deref().and_then(|s| liblinkkeys::timestamp::parse_rfc3339(s).ok());
             let state = match expires {
-                Some(x) if x.with_timezone(&Utc) <= now => "attestation expired",
+                Some(x) if x <= now => "attestation expired",
                 Some(_) => "attested",
                 None => "not attested",
             };

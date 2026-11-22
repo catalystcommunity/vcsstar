@@ -8,9 +8,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 use vcsstar_core::mirror::{self, EventRef};
 use vcsstar_core::services::hooks::EndpointRow;
 use vcsstar_core::App;
@@ -39,7 +39,7 @@ struct EventRow {
     kind: String,
     actor: Option<uuid::Uuid>,
     payload_cbor: Vec<u8>,
-    created_at: DateTime<Utc>,
+    created_at: OffsetDateTime,
     origin: Option<String>,
 }
 
@@ -120,7 +120,7 @@ pub fn tick(app: &App, q: &Queue) -> anyhow::Result<usize> {
                 .filter(events::seq.eq(ev.seq))
                 .filter(events::created_at.eq(ev.created_at)),
         )
-        .set(events::dispatched_at.eq(Utc::now()))
+        .set(events::dispatched_at.eq(OffsetDateTime::now_utc()))
         .execute(&mut conn)?;
     }
     Ok(n)
@@ -194,7 +194,7 @@ fn dispatch_one(
                         hook_deliveries::event_kind.eq(&ev.kind),
                         hook_deliveries::state.eq("delivered"),
                         hook_deliveries::attempts.eq(1),
-                        hook_deliveries::delivered_at.eq(Utc::now()),
+                        hook_deliveries::delivered_at.eq(OffsetDateTime::now_utc()),
                         hook_deliveries::payload_cbor.eq(&ev.payload_cbor),
                     ))
                     .on_conflict_do_nothing()
@@ -270,13 +270,13 @@ pub fn reconcile(app: &App, q: &Queue) -> anyhow::Result<usize> {
     let due: Vec<uuid::Uuid> = hook_deliveries::table
         .inner_join(hook_endpoints::table)
         .filter(hook_deliveries::state.eq("pending"))
-        .filter(hook_deliveries::next_attempt_at.le(Utc::now()))
+        .filter(hook_deliveries::next_attempt_at.le(OffsetDateTime::now_utc()))
         .filter(hook_endpoints::kind.eq("https"))
         .filter(hook_endpoints::active.eq(true))
         .select(hook_deliveries::endpoint_id)
         .distinct()
         .load(&mut conn)?;
-    let minute = Utc::now().timestamp() / 60;
+    let minute = OffsetDateTime::now_utc().unix_timestamp() / 60;
     for ep in &due {
         q.submit(
             &hook_queue(*ep),

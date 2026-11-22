@@ -9,12 +9,12 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use base64::Engine;
-use chrono::{DateTime, Duration, Utc};
 use rsa::pkcs1::DecodeRsaPrivateKey;
 use rsa::pkcs8::DecodePrivateKey;
 use rsa::signature::{SignatureEncoding, Signer};
 use rsa::RsaPrivateKey;
 use serde::Deserialize;
+use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 use crate::github::Failure;
@@ -64,12 +64,12 @@ impl AppCredential {
 
     /// The App JWT GitHub expects: `iss` is the App id, `iat` a minute in the
     /// past for clock skew, `exp` at most ten minutes ahead.
-    pub fn jwt_at(&self, now: DateTime<Utc>) -> Result<String, Error> {
+    pub fn jwt_at(&self, now: OffsetDateTime) -> Result<String, Error> {
         let key = self.key()?;
         let header = serde_json::json!({ "alg": "RS256", "typ": "JWT" });
         let claims = serde_json::json!({
-            "iat": now.timestamp() - 60,
-            "exp": now.timestamp() + 9 * 60,
+            "iat": now.unix_timestamp() - 60,
+            "exp": now.unix_timestamp() + 9 * 60,
             "iss": self.app_id.trim(),
         });
         let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -87,7 +87,7 @@ impl AppCredential {
     }
 
     pub fn jwt(&self) -> Result<String, Error> {
-        self.jwt_at(Utc::now())
+        self.jwt_at(OffsetDateTime::now_utc())
     }
 }
 
@@ -110,21 +110,22 @@ const NOT_INSTALLED_TTL_MINUTES: i64 = 2;
 /// repositories the instance App turned out not to be installed for.
 #[derive(Default)]
 pub struct TokenCache {
-    tokens: Mutex<HashMap<Uuid, (String, DateTime<Utc>)>>,
-    not_installed: Mutex<HashMap<String, DateTime<Utc>>>,
+    tokens: Mutex<HashMap<Uuid, (String, OffsetDateTime)>>,
+    not_installed: Mutex<HashMap<String, OffsetDateTime>>,
 }
 
 impl TokenCache {
     pub fn not_installed(&self, full_name: &str) -> bool {
         let map = self.not_installed.lock().unwrap_or_else(|p| p.into_inner());
-        map.get(full_name).is_some_and(|until| *until > Utc::now())
+        map.get(full_name)
+            .is_some_and(|until| *until > OffsetDateTime::now_utc())
     }
 
     pub fn remember_not_installed(&self, full_name: &str) {
         let mut map = self.not_installed.lock().unwrap_or_else(|p| p.into_inner());
         map.insert(
             full_name.to_string(),
-            Utc::now() + Duration::minutes(NOT_INSTALLED_TTL_MINUTES),
+            OffsetDateTime::now_utc() + Duration::minutes(NOT_INSTALLED_TTL_MINUTES),
         );
     }
 
@@ -136,11 +137,11 @@ impl TokenCache {
     pub(crate) fn get(&self, id: Uuid) -> Option<String> {
         let map = self.tokens.lock().unwrap_or_else(|p| p.into_inner());
         map.get(&id)
-            .filter(|(_, exp)| *exp - Duration::minutes(5) > Utc::now())
+            .filter(|(_, exp)| *exp - Duration::minutes(5) > OffsetDateTime::now_utc())
             .map(|(t, _)| t.clone())
     }
 
-    pub(crate) fn put(&self, id: Uuid, token: String, expires_at: DateTime<Utc>) {
+    pub(crate) fn put(&self, id: Uuid, token: String, expires_at: OffsetDateTime) {
         let mut map = self.tokens.lock().unwrap_or_else(|p| p.into_inner());
         map.insert(id, (token, expires_at));
     }
@@ -192,7 +193,7 @@ mod tests {
     #[test]
     fn parses_and_signs_a_verifiable_jwt() {
         let cred = AppCredential::parse(&secret(TEST_KEY)).expect("parse");
-        let now = Utc::now();
+        let now = OffsetDateTime::now_utc();
         let jwt = cred.jwt_at(now).expect("jwt");
         let parts: Vec<&str> = jwt.split('.').collect();
         assert_eq!(parts.len(), 3);
@@ -203,8 +204,8 @@ mod tests {
         let claims: serde_json::Value =
             serde_json::from_slice(&b64.decode(parts[1]).unwrap()).unwrap();
         assert_eq!(claims["iss"], "123456");
-        assert_eq!(claims["iat"], now.timestamp() - 60);
-        assert_eq!(claims["exp"], now.timestamp() + 540);
+        assert_eq!(claims["iat"], now.unix_timestamp() - 60);
+        assert_eq!(claims["exp"], now.unix_timestamp() + 540);
 
         let public = RsaPrivateKey::from_pkcs1_pem(TEST_KEY)
             .unwrap()
@@ -234,9 +235,17 @@ mod tests {
         let c = TokenCache::default();
         let id = Uuid::now_v7();
         assert!(c.get(id).is_none());
-        c.put(id, "t1".into(), Utc::now() + Duration::minutes(4));
+        c.put(
+            id,
+            "t1".into(),
+            OffsetDateTime::now_utc() + Duration::minutes(4),
+        );
         assert!(c.get(id).is_none(), "too close to expiry");
-        c.put(id, "t2".into(), Utc::now() + Duration::minutes(50));
+        c.put(
+            id,
+            "t2".into(),
+            OffsetDateTime::now_utc() + Duration::minutes(50),
+        );
         assert_eq!(c.get(id).as_deref(), Some("t2"));
         c.forget(id);
         assert!(c.get(id).is_none());

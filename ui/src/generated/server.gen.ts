@@ -4,6 +4,8 @@
 
 import type { ActAsExchangeRequest, ApiToken, BeginDeviceRequest, BeginLoginRequest, BeginLoginResponse, BlobRequest, BlobResponse, BranchProtection, CaptureReport, ChangeLocalPasswordRequest, Comment, CommentRequest, Commit, CommitPage, CommitStatus, CompleteLoginRequest, ConfigureMirrorRequest, ConnectRemoteRequest, CreateEndpointRequest, CreateLocalAccountRequest, CreateOrgRequest, CreateRepoRequest, CreateServiceAccountRequest, CreateServiceAccountTokenRequest, CreateTeamRequest, CreateTokenRequest, Credential, CredentialRef, DeleteCommentRequest, DeleteRepoRequest, DeliveryPage, DeliveryQuery, DeliveryRef, DeviceApproveRequest, DeviceCode, DevicePollRequest, DevicePollResponse, DiffRequest, DiffResponse, EditCommentRequest, Empty, Endpoint, EndpointRef, FedHello, FedHelloAck, ForkRequest, GetCommitRequest, GetOrgRequest, GetRepoRequest, GithubHealth, GithubInstallationList, GithubLink, GithubRepoPage, Grant, HeadInfo, HeadQuery, ImportAllRequest, ImportAllResult, ImportRequest, InstanceRoleGrant, InstanceRoleList, KeyRef, LinkProviderRequest, ListBlockedResponse, ListCommentsResponse, ListCredentialsRequest, ListCredentialsResponse, ListEndpointsRequest, ListEndpointsResponse, ListGithubReposRequest, ListGrantsResponse, ListKeysResponse, ListOrgMembersRequest, ListOrgsRequest, ListPrRequest, ListProtectionsResponse, ListRefsRequest, ListRefsResponse, ListReposRequest, ListReviewsResponse, ListServiceAccountsResponse, ListStatusRequest, ListStatusResponse, ListTeamsResponse, ListTokensResponse, LocalAccount, LocalLoginRequest, LogRequest, MergeRequest, MergeResult, MirrorStatus, Ok, OpenPrRequest, Org, OrgMember, OrgMemberPage, OrgPage, PrPage, PrRef, Preferences, ProviderLink, ProviderLinks, PullRequest, ReconcileReport, RefInfo, RegisterKeyRequest, RemoveGrantRequest, RemoveInstanceRoleRequest, RemoveOrgMemberRequest, RemoveProtectionRequest, ReplayRequest, ReplayResult, Repo, RepoPage, ResetLocalPasswordRequest, ResolveSyncConflictRequest, RetargetRequest, Review, ReviewRequest, RevokeServiceAccountTokenRequest, RevokeTokenRequest, ScopeSetRequest, ScopedBearer, ServerInfo, ServiceAccount, ServiceAccountRef, ServiceError, Session, SetCredentialRequest, SetGithubTokenRequest, SetGrantRequest, SetInstanceRoleRequest, SetMirrorScheduleRequest, SetOrgMemberRequest, SetPreferencesRequest, SetProtectionRequest, SetStatusRequest, SetSyncPolicyRequest, SetTeamMemberRequest, SignedActAsScopeSet, SshKeyInfo, StreamControl, StreamMessage, SyncConflicts, SyncConnection, SyncConnectionRef, SyncConnections, SyncPolicy, SyncRecords, SyncRecordsRequest, SyncWebhookSecret, Team, TeamRef, TreeRequest, TreeResponse, UnlinkProviderRequest, UpdateConnectionRequest, UpdateEndpointRequest, UpdateOrgRequest, UpdatePrRequest, UpdateRefRequest, UpdateRepoRequest, VerifyHeadRequest, WhoAmI } from "./types.gen.ts";
 
+import { type RpcReply, encodeMetaServerInfoReply, encodeAuthBeginLoginReply, encodeAuthCompleteLoginReply, encodeAuthCreateTokenReply, encodeAuthRevokeTokenReply, encodeAuthWhoamiReply, encodeAuthBeginDeviceLoginReply, encodeAuthPollDeviceLoginReply, encodeAuthExchangeActAsCredentialReply, encodeAuthScopeSetReply, encodeAuthApproveDeviceLoginReply, encodeAuthRegisterKeyReply, encodeAuthListKeysReply, encodeAuthRevokeKeyReply, encodeAuthListTokensReply, encodeAuthLogoutReply, encodeAuthGithubLinkStatusReply, encodeAuthSetGithubTokenReply, encodeAuthUnlinkGithubReply, encodeAuthGetPreferencesReply, encodeAuthSetPreferencesReply, encodeAuthLocalLoginReply, encodeAuthLocalAccountReply, encodeAuthChangeLocalPasswordReply, encodeOrgsCreateReply, encodeOrgsGetReply, encodeOrgsListReply, encodeOrgsUpdateReply, encodeOrgsSetMemberReply, encodeOrgsRemoveMemberReply, encodeOrgsListMembersReply, encodeOrgsCreateTeamReply, encodeOrgsDeleteTeamReply, encodeOrgsSetTeamMemberReply, encodeOrgsListTeamsReply, encodeReposCreateReply, encodeReposGetReply, encodeReposListReply, encodeReposUpdateReply, encodeReposForkReply, encodeReposListRefsReply, encodeReposLogReply, encodeReposTreeReply, encodeReposBlobReply, encodeReposDiffReply, encodeReposDeleteReply, encodeReposUpdateRefReply, encodeReposGetCommitReply, encodeReposSetGrantReply, encodeReposRemoveGrantReply, encodeReposListGrantsReply, encodeReposSetProtectionReply, encodeReposRemoveProtectionReply, encodeReposListProtectionsReply, encodeReposCaptureHistoryReply, encodeReposListForksReply, encodePullRequestsOpenReply, encodePullRequestsGetReply, encodePullRequestsListReply, encodePullRequestsReviewReply, encodePullRequestsCommentReply, encodePullRequestsMergeReply, encodePullRequestsCloseReply, encodePullRequestsReopenReply, encodePullRequestsRetargetReply, encodePullRequestsUpdateReply, encodePullRequestsListReviewsReply, encodePullRequestsListCommentsReply, encodePullRequestsEditCommentReply, encodePullRequestsDeleteCommentReply, encodeStatusesSetReply, encodeStatusesListReply, encodeHooksCreateEndpointReply, encodeHooksListEndpointsReply, encodeHooksDeleteEndpointReply, encodeHooksListDeliveriesReply, encodeHooksRedeliverReply, encodeHooksUpdateEndpointReply, encodeMirrorStatusReply, encodeMirrorListBlockedReply, encodeMirrorReplayBlockedReply, encodeMirrorSetCredentialReply, encodeMirrorReconcileReply, encodeMirrorPauseReply, encodeMirrorResumeReply, encodeMirrorImportRepoReply, encodeMirrorConfigureReply, encodeMirrorListCredentialsReply, encodeMirrorRemoveCredentialReply, encodeMirrorListGithubReposReply, encodeMirrorHealthReply, encodeMirrorBackfillReply, encodeMirrorListGithubInstallationsReply, encodeMirrorImportAllReply, encodeMirrorSetScheduleReply, encodeMirrorListConnectionsReply, encodeMirrorConnectReply, encodeMirrorUpdateConnectionReply, encodeMirrorSyncNowReply, encodeMirrorWebhookSecretReply, encodeMirrorGetPolicyReply, encodeMirrorSetPolicyReply, encodeMirrorListConflictsReply, encodeMirrorResolveConflictReply, encodeMirrorLinkProviderReply, encodeMirrorListProviderLinksReply, encodeMirrorUnlinkProviderReply, encodeMirrorListSyncRecordsReply, encodeInstanceListRolesReply, encodeInstanceSetRoleReply, encodeInstanceRemoveRoleReply, encodeInstanceCreateLocalAccountReply, encodeInstanceResetLocalPasswordReply, encodeServiceAccountsCreateReply, encodeServiceAccountsListReply, encodeServiceAccountsDisableReply, encodeServiceAccountsEnableReply, encodeServiceAccountsCreateTokenReply, encodeServiceAccountsListTokensReply, encodeServiceAccountsRevokeTokenReply, encodeFederationHandshakeReply, encodeFederationVerifyHeadReply, encodeFederationHeadInfoReply, encodeFederationRepoInfoReply } from "./codec.gen.ts";
+
 // The consumer-defined context carries auth, request id, etc. It is opaque to
 // generated code; the adapter defines its shape.
 export interface RequestContext {
@@ -502,124 +504,101 @@ export async function dispatch(
   method: string,
   reqBytes: Uint8Array,
   ctx: RequestContext,
-): Promise<Uint8Array> {
+): Promise<Uint8Array | RpcReply> {
   switch (service) {
     case "Auth": {
       switch (method) {
         case "begin-login": {
           const req = codec.decode<BeginLoginRequest>(reqBytes);
-          const res = await handlers.auth.beginLogin(req, ctx);
-          return codec.encode(res);
+          return encodeAuthBeginLoginReply(() => handlers.auth.beginLogin(req, ctx));
         }
         case "complete-login": {
           const req = codec.decode<CompleteLoginRequest>(reqBytes);
-          const res = await handlers.auth.completeLogin(req, ctx);
-          return codec.encode(res);
+          return encodeAuthCompleteLoginReply(() => handlers.auth.completeLogin(req, ctx));
         }
         case "create-token": {
           const req = codec.decode<CreateTokenRequest>(reqBytes);
-          const res = await handlers.auth.createToken(req, ctx);
-          return codec.encode(res);
+          return encodeAuthCreateTokenReply(() => handlers.auth.createToken(req, ctx));
         }
         case "revoke-token": {
           const req = codec.decode<RevokeTokenRequest>(reqBytes);
-          const res = await handlers.auth.revokeToken(req, ctx);
-          return codec.encode(res);
+          return encodeAuthRevokeTokenReply(() => handlers.auth.revokeToken(req, ctx));
         }
         case "whoami": {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.auth.whoami(req, ctx);
-          return codec.encode(res);
+          return encodeAuthWhoamiReply(() => handlers.auth.whoami(req, ctx));
         }
         case "begin-device-login": {
           const req = codec.decode<BeginDeviceRequest>(reqBytes);
-          const res = await handlers.auth.beginDeviceLogin(req, ctx);
-          return codec.encode(res);
+          return encodeAuthBeginDeviceLoginReply(() => handlers.auth.beginDeviceLogin(req, ctx));
         }
         case "poll-device-login": {
           const req = codec.decode<DevicePollRequest>(reqBytes);
-          const res = await handlers.auth.pollDeviceLogin(req, ctx);
-          return codec.encode(res);
+          return encodeAuthPollDeviceLoginReply(() => handlers.auth.pollDeviceLogin(req, ctx));
         }
         case "exchange-act-as-credential": {
           const req = codec.decode<ActAsExchangeRequest>(reqBytes);
-          const res = await handlers.auth.exchangeActAsCredential(req, ctx);
-          return codec.encode(res);
+          return encodeAuthExchangeActAsCredentialReply(() => handlers.auth.exchangeActAsCredential(req, ctx));
         }
         case "scope-set": {
           const req = codec.decode<ScopeSetRequest>(reqBytes);
-          const res = await handlers.auth.scopeSet(req, ctx);
-          return codec.encode(res);
+          return encodeAuthScopeSetReply(() => handlers.auth.scopeSet(req, ctx));
         }
         case "approve-device-login": {
           const req = codec.decode<DeviceApproveRequest>(reqBytes);
-          const res = await handlers.auth.approveDeviceLogin(req, ctx);
-          return codec.encode(res);
+          return encodeAuthApproveDeviceLoginReply(() => handlers.auth.approveDeviceLogin(req, ctx));
         }
         case "register-key": {
           const req = codec.decode<RegisterKeyRequest>(reqBytes);
-          const res = await handlers.auth.registerKey(req, ctx);
-          return codec.encode(res);
+          return encodeAuthRegisterKeyReply(() => handlers.auth.registerKey(req, ctx));
         }
         case "list-keys": {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.auth.listKeys(req, ctx);
-          return codec.encode(res);
+          return encodeAuthListKeysReply(() => handlers.auth.listKeys(req, ctx));
         }
         case "revoke-key": {
           const req = codec.decode<KeyRef>(reqBytes);
-          const res = await handlers.auth.revokeKey(req, ctx);
-          return codec.encode(res);
+          return encodeAuthRevokeKeyReply(() => handlers.auth.revokeKey(req, ctx));
         }
         case "list-tokens": {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.auth.listTokens(req, ctx);
-          return codec.encode(res);
+          return encodeAuthListTokensReply(() => handlers.auth.listTokens(req, ctx));
         }
         case "logout": {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.auth.logout(req, ctx);
-          return codec.encode(res);
+          return encodeAuthLogoutReply(() => handlers.auth.logout(req, ctx));
         }
         case "github-link-status": {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.auth.githubLinkStatus(req, ctx);
-          return codec.encode(res);
+          return encodeAuthGithubLinkStatusReply(() => handlers.auth.githubLinkStatus(req, ctx));
         }
         case "set-github-token": {
           const req = codec.decode<SetGithubTokenRequest>(reqBytes);
-          const res = await handlers.auth.setGithubToken(req, ctx);
-          return codec.encode(res);
+          return encodeAuthSetGithubTokenReply(() => handlers.auth.setGithubToken(req, ctx));
         }
         case "unlink-github": {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.auth.unlinkGithub(req, ctx);
-          return codec.encode(res);
+          return encodeAuthUnlinkGithubReply(() => handlers.auth.unlinkGithub(req, ctx));
         }
         case "get-preferences": {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.auth.getPreferences(req, ctx);
-          return codec.encode(res);
+          return encodeAuthGetPreferencesReply(() => handlers.auth.getPreferences(req, ctx));
         }
         case "set-preferences": {
           const req = codec.decode<SetPreferencesRequest>(reqBytes);
-          const res = await handlers.auth.setPreferences(req, ctx);
-          return codec.encode(res);
+          return encodeAuthSetPreferencesReply(() => handlers.auth.setPreferences(req, ctx));
         }
         case "local-login": {
           const req = codec.decode<LocalLoginRequest>(reqBytes);
-          const res = await handlers.auth.localLogin(req, ctx);
-          return codec.encode(res);
+          return encodeAuthLocalLoginReply(() => handlers.auth.localLogin(req, ctx));
         }
         case "local-account": {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.auth.localAccount(req, ctx);
-          return codec.encode(res);
+          return encodeAuthLocalAccountReply(() => handlers.auth.localAccount(req, ctx));
         }
         case "change-local-password": {
           const req = codec.decode<ChangeLocalPasswordRequest>(reqBytes);
-          const res = await handlers.auth.changeLocalPassword(req, ctx);
-          return codec.encode(res);
+          return encodeAuthChangeLocalPasswordReply(() => handlers.auth.changeLocalPassword(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown method ${service}.${method}` } satisfies ServiceError;
@@ -635,23 +614,19 @@ export async function dispatch(
       switch (method) {
         case "handshake": {
           const req = codec.decode<FedHello>(reqBytes);
-          const res = await handlers.federation.handshake(req, ctx);
-          return codec.encode(res);
+          return encodeFederationHandshakeReply(() => handlers.federation.handshake(req, ctx));
         }
         case "verify-head": {
           const req = codec.decode<VerifyHeadRequest>(reqBytes);
-          const res = await handlers.federation.verifyHead(req, ctx);
-          return codec.encode(res);
+          return encodeFederationVerifyHeadReply(() => handlers.federation.verifyHead(req, ctx));
         }
         case "head-info": {
           const req = codec.decode<HeadQuery>(reqBytes);
-          const res = await handlers.federation.headInfo(req, ctx);
-          return codec.encode(res);
+          return encodeFederationHeadInfoReply(() => handlers.federation.headInfo(req, ctx));
         }
         case "repo-info": {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.federation.repoInfo(req, ctx);
-          return codec.encode(res);
+          return encodeFederationRepoInfoReply(() => handlers.federation.repoInfo(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown method ${service}.${method}` } satisfies ServiceError;
@@ -661,33 +636,27 @@ export async function dispatch(
       switch (method) {
         case "create-endpoint": {
           const req = codec.decode<CreateEndpointRequest>(reqBytes);
-          const res = await handlers.hooks.createEndpoint(req, ctx);
-          return codec.encode(res);
+          return encodeHooksCreateEndpointReply(() => handlers.hooks.createEndpoint(req, ctx));
         }
         case "list-endpoints": {
           const req = codec.decode<ListEndpointsRequest>(reqBytes);
-          const res = await handlers.hooks.listEndpoints(req, ctx);
-          return codec.encode(res);
+          return encodeHooksListEndpointsReply(() => handlers.hooks.listEndpoints(req, ctx));
         }
         case "delete-endpoint": {
           const req = codec.decode<EndpointRef>(reqBytes);
-          const res = await handlers.hooks.deleteEndpoint(req, ctx);
-          return codec.encode(res);
+          return encodeHooksDeleteEndpointReply(() => handlers.hooks.deleteEndpoint(req, ctx));
         }
         case "list-deliveries": {
           const req = codec.decode<DeliveryQuery>(reqBytes);
-          const res = await handlers.hooks.listDeliveries(req, ctx);
-          return codec.encode(res);
+          return encodeHooksListDeliveriesReply(() => handlers.hooks.listDeliveries(req, ctx));
         }
         case "redeliver": {
           const req = codec.decode<DeliveryRef>(reqBytes);
-          const res = await handlers.hooks.redeliver(req, ctx);
-          return codec.encode(res);
+          return encodeHooksRedeliverReply(() => handlers.hooks.redeliver(req, ctx));
         }
         case "update-endpoint": {
           const req = codec.decode<UpdateEndpointRequest>(reqBytes);
-          const res = await handlers.hooks.updateEndpoint(req, ctx);
-          return codec.encode(res);
+          return encodeHooksUpdateEndpointReply(() => handlers.hooks.updateEndpoint(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown method ${service}.${method}` } satisfies ServiceError;
@@ -697,28 +666,23 @@ export async function dispatch(
       switch (method) {
         case "list-roles": {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.instance.listRoles(req, ctx);
-          return codec.encode(res);
+          return encodeInstanceListRolesReply(() => handlers.instance.listRoles(req, ctx));
         }
         case "set-role": {
           const req = codec.decode<SetInstanceRoleRequest>(reqBytes);
-          const res = await handlers.instance.setRole(req, ctx);
-          return codec.encode(res);
+          return encodeInstanceSetRoleReply(() => handlers.instance.setRole(req, ctx));
         }
         case "remove-role": {
           const req = codec.decode<RemoveInstanceRoleRequest>(reqBytes);
-          const res = await handlers.instance.removeRole(req, ctx);
-          return codec.encode(res);
+          return encodeInstanceRemoveRoleReply(() => handlers.instance.removeRole(req, ctx));
         }
         case "create-local-account": {
           const req = codec.decode<CreateLocalAccountRequest>(reqBytes);
-          const res = await handlers.instance.createLocalAccount(req, ctx);
-          return codec.encode(res);
+          return encodeInstanceCreateLocalAccountReply(() => handlers.instance.createLocalAccount(req, ctx));
         }
         case "reset-local-password": {
           const req = codec.decode<ResetLocalPasswordRequest>(reqBytes);
-          const res = await handlers.instance.resetLocalPassword(req, ctx);
-          return codec.encode(res);
+          return encodeInstanceResetLocalPasswordReply(() => handlers.instance.resetLocalPassword(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown method ${service}.${method}` } satisfies ServiceError;
@@ -728,8 +692,7 @@ export async function dispatch(
       switch (method) {
         case "server-info": {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.meta.serverInfo(req, ctx);
-          return codec.encode(res);
+          return encodeMetaServerInfoReply(() => handlers.meta.serverInfo(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown method ${service}.${method}` } satisfies ServiceError;
@@ -739,153 +702,123 @@ export async function dispatch(
       switch (method) {
         case "status": {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.mirror.status(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorStatusReply(() => handlers.mirror.status(req, ctx));
         }
         case "list-blocked": {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.mirror.listBlocked(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorListBlockedReply(() => handlers.mirror.listBlocked(req, ctx));
         }
         case "replay-blocked": {
           const req = codec.decode<ReplayRequest>(reqBytes);
-          const res = await handlers.mirror.replayBlocked(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorReplayBlockedReply(() => handlers.mirror.replayBlocked(req, ctx));
         }
         case "set-credential": {
           const req = codec.decode<SetCredentialRequest>(reqBytes);
-          const res = await handlers.mirror.setCredential(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorSetCredentialReply(() => handlers.mirror.setCredential(req, ctx));
         }
         case "reconcile": {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.mirror.reconcile(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorReconcileReply(() => handlers.mirror.reconcile(req, ctx));
         }
         case "pause": {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.mirror.pause(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorPauseReply(() => handlers.mirror.pause(req, ctx));
         }
         case "resume": {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.mirror.resume(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorResumeReply(() => handlers.mirror.resume(req, ctx));
         }
         case "import-repo": {
           const req = codec.decode<ImportRequest>(reqBytes);
-          const res = await handlers.mirror.importRepo(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorImportRepoReply(() => handlers.mirror.importRepo(req, ctx));
         }
         case "configure": {
           const req = codec.decode<ConfigureMirrorRequest>(reqBytes);
-          const res = await handlers.mirror.configure(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorConfigureReply(() => handlers.mirror.configure(req, ctx));
         }
         case "list-credentials": {
           const req = codec.decode<ListCredentialsRequest>(reqBytes);
-          const res = await handlers.mirror.listCredentials(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorListCredentialsReply(() => handlers.mirror.listCredentials(req, ctx));
         }
         case "remove-credential": {
           const req = codec.decode<CredentialRef>(reqBytes);
-          const res = await handlers.mirror.removeCredential(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorRemoveCredentialReply(() => handlers.mirror.removeCredential(req, ctx));
         }
         case "list-github-repos": {
           const req = codec.decode<ListGithubReposRequest>(reqBytes);
-          const res = await handlers.mirror.listGithubRepos(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorListGithubReposReply(() => handlers.mirror.listGithubRepos(req, ctx));
         }
         case "health": {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.mirror.health(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorHealthReply(() => handlers.mirror.health(req, ctx));
         }
         case "backfill": {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.mirror.backfill(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorBackfillReply(() => handlers.mirror.backfill(req, ctx));
         }
         case "list-github-installations": {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.mirror.listGithubInstallations(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorListGithubInstallationsReply(() => handlers.mirror.listGithubInstallations(req, ctx));
         }
         case "import-all": {
           const req = codec.decode<ImportAllRequest>(reqBytes);
-          const res = await handlers.mirror.importAll(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorImportAllReply(() => handlers.mirror.importAll(req, ctx));
         }
         case "set-schedule": {
           const req = codec.decode<SetMirrorScheduleRequest>(reqBytes);
-          const res = await handlers.mirror.setSchedule(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorSetScheduleReply(() => handlers.mirror.setSchedule(req, ctx));
         }
         case "list-connections": {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.mirror.listConnections(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorListConnectionsReply(() => handlers.mirror.listConnections(req, ctx));
         }
         case "connect": {
           const req = codec.decode<ConnectRemoteRequest>(reqBytes);
-          const res = await handlers.mirror.connect(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorConnectReply(() => handlers.mirror.connect(req, ctx));
         }
         case "update-connection": {
           const req = codec.decode<UpdateConnectionRequest>(reqBytes);
-          const res = await handlers.mirror.updateConnection(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorUpdateConnectionReply(() => handlers.mirror.updateConnection(req, ctx));
         }
         case "sync-now": {
           const req = codec.decode<SyncConnectionRef>(reqBytes);
-          const res = await handlers.mirror.syncNow(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorSyncNowReply(() => handlers.mirror.syncNow(req, ctx));
         }
         case "webhook-secret": {
           const req = codec.decode<SyncConnectionRef>(reqBytes);
-          const res = await handlers.mirror.webhookSecret(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorWebhookSecretReply(() => handlers.mirror.webhookSecret(req, ctx));
         }
         case "get-policy": {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.mirror.getPolicy(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorGetPolicyReply(() => handlers.mirror.getPolicy(req, ctx));
         }
         case "set-policy": {
           const req = codec.decode<SetSyncPolicyRequest>(reqBytes);
-          const res = await handlers.mirror.setPolicy(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorSetPolicyReply(() => handlers.mirror.setPolicy(req, ctx));
         }
         case "list-conflicts": {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.mirror.listConflicts(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorListConflictsReply(() => handlers.mirror.listConflicts(req, ctx));
         }
         case "resolve-conflict": {
           const req = codec.decode<ResolveSyncConflictRequest>(reqBytes);
-          const res = await handlers.mirror.resolveConflict(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorResolveConflictReply(() => handlers.mirror.resolveConflict(req, ctx));
         }
         case "link-provider": {
           const req = codec.decode<LinkProviderRequest>(reqBytes);
-          const res = await handlers.mirror.linkProvider(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorLinkProviderReply(() => handlers.mirror.linkProvider(req, ctx));
         }
         case "list-provider-links": {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.mirror.listProviderLinks(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorListProviderLinksReply(() => handlers.mirror.listProviderLinks(req, ctx));
         }
         case "unlink-provider": {
           const req = codec.decode<UnlinkProviderRequest>(reqBytes);
-          const res = await handlers.mirror.unlinkProvider(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorUnlinkProviderReply(() => handlers.mirror.unlinkProvider(req, ctx));
         }
         case "list-sync-records": {
           const req = codec.decode<SyncRecordsRequest>(reqBytes);
-          const res = await handlers.mirror.listSyncRecords(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorListSyncRecordsReply(() => handlers.mirror.listSyncRecords(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown method ${service}.${method}` } satisfies ServiceError;
@@ -895,58 +828,47 @@ export async function dispatch(
       switch (method) {
         case "create": {
           const req = codec.decode<CreateOrgRequest>(reqBytes);
-          const res = await handlers.orgs.create(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsCreateReply(() => handlers.orgs.create(req, ctx));
         }
         case "get": {
           const req = codec.decode<GetOrgRequest>(reqBytes);
-          const res = await handlers.orgs.get(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsGetReply(() => handlers.orgs.get(req, ctx));
         }
         case "list": {
           const req = codec.decode<ListOrgsRequest>(reqBytes);
-          const res = await handlers.orgs.list(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsListReply(() => handlers.orgs.list(req, ctx));
         }
         case "update": {
           const req = codec.decode<UpdateOrgRequest>(reqBytes);
-          const res = await handlers.orgs.update(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsUpdateReply(() => handlers.orgs.update(req, ctx));
         }
         case "set-member": {
           const req = codec.decode<SetOrgMemberRequest>(reqBytes);
-          const res = await handlers.orgs.setMember(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsSetMemberReply(() => handlers.orgs.setMember(req, ctx));
         }
         case "remove-member": {
           const req = codec.decode<RemoveOrgMemberRequest>(reqBytes);
-          const res = await handlers.orgs.removeMember(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsRemoveMemberReply(() => handlers.orgs.removeMember(req, ctx));
         }
         case "list-members": {
           const req = codec.decode<ListOrgMembersRequest>(reqBytes);
-          const res = await handlers.orgs.listMembers(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsListMembersReply(() => handlers.orgs.listMembers(req, ctx));
         }
         case "create-team": {
           const req = codec.decode<CreateTeamRequest>(reqBytes);
-          const res = await handlers.orgs.createTeam(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsCreateTeamReply(() => handlers.orgs.createTeam(req, ctx));
         }
         case "delete-team": {
           const req = codec.decode<TeamRef>(reqBytes);
-          const res = await handlers.orgs.deleteTeam(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsDeleteTeamReply(() => handlers.orgs.deleteTeam(req, ctx));
         }
         case "set-team-member": {
           const req = codec.decode<SetTeamMemberRequest>(reqBytes);
-          const res = await handlers.orgs.setTeamMember(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsSetTeamMemberReply(() => handlers.orgs.setTeamMember(req, ctx));
         }
         case "list-teams": {
           const req = codec.decode<GetOrgRequest>(reqBytes);
-          const res = await handlers.orgs.listTeams(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsListTeamsReply(() => handlers.orgs.listTeams(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown method ${service}.${method}` } satisfies ServiceError;
@@ -956,73 +878,59 @@ export async function dispatch(
       switch (method) {
         case "open": {
           const req = codec.decode<OpenPrRequest>(reqBytes);
-          const res = await handlers.pullRequests.open(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsOpenReply(() => handlers.pullRequests.open(req, ctx));
         }
         case "get": {
           const req = codec.decode<PrRef>(reqBytes);
-          const res = await handlers.pullRequests.get(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsGetReply(() => handlers.pullRequests.get(req, ctx));
         }
         case "list": {
           const req = codec.decode<ListPrRequest>(reqBytes);
-          const res = await handlers.pullRequests.list(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsListReply(() => handlers.pullRequests.list(req, ctx));
         }
         case "review": {
           const req = codec.decode<ReviewRequest>(reqBytes);
-          const res = await handlers.pullRequests.review(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsReviewReply(() => handlers.pullRequests.review(req, ctx));
         }
         case "comment": {
           const req = codec.decode<CommentRequest>(reqBytes);
-          const res = await handlers.pullRequests.comment(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsCommentReply(() => handlers.pullRequests.comment(req, ctx));
         }
         case "merge": {
           const req = codec.decode<MergeRequest>(reqBytes);
-          const res = await handlers.pullRequests.merge(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsMergeReply(() => handlers.pullRequests.merge(req, ctx));
         }
         case "close": {
           const req = codec.decode<PrRef>(reqBytes);
-          const res = await handlers.pullRequests.close(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsCloseReply(() => handlers.pullRequests.close(req, ctx));
         }
         case "reopen": {
           const req = codec.decode<PrRef>(reqBytes);
-          const res = await handlers.pullRequests.reopen(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsReopenReply(() => handlers.pullRequests.reopen(req, ctx));
         }
         case "retarget": {
           const req = codec.decode<RetargetRequest>(reqBytes);
-          const res = await handlers.pullRequests.retarget(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsRetargetReply(() => handlers.pullRequests.retarget(req, ctx));
         }
         case "update": {
           const req = codec.decode<UpdatePrRequest>(reqBytes);
-          const res = await handlers.pullRequests.update(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsUpdateReply(() => handlers.pullRequests.update(req, ctx));
         }
         case "list-reviews": {
           const req = codec.decode<PrRef>(reqBytes);
-          const res = await handlers.pullRequests.listReviews(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsListReviewsReply(() => handlers.pullRequests.listReviews(req, ctx));
         }
         case "list-comments": {
           const req = codec.decode<PrRef>(reqBytes);
-          const res = await handlers.pullRequests.listComments(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsListCommentsReply(() => handlers.pullRequests.listComments(req, ctx));
         }
         case "edit-comment": {
           const req = codec.decode<EditCommentRequest>(reqBytes);
-          const res = await handlers.pullRequests.editComment(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsEditCommentReply(() => handlers.pullRequests.editComment(req, ctx));
         }
         case "delete-comment": {
           const req = codec.decode<DeleteCommentRequest>(reqBytes);
-          const res = await handlers.pullRequests.deleteComment(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsDeleteCommentReply(() => handlers.pullRequests.deleteComment(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown method ${service}.${method}` } satisfies ServiceError;
@@ -1032,108 +940,87 @@ export async function dispatch(
       switch (method) {
         case "create": {
           const req = codec.decode<CreateRepoRequest>(reqBytes);
-          const res = await handlers.repos.create(req, ctx);
-          return codec.encode(res);
+          return encodeReposCreateReply(() => handlers.repos.create(req, ctx));
         }
         case "get": {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.repos.get(req, ctx);
-          return codec.encode(res);
+          return encodeReposGetReply(() => handlers.repos.get(req, ctx));
         }
         case "list": {
           const req = codec.decode<ListReposRequest>(reqBytes);
-          const res = await handlers.repos.list(req, ctx);
-          return codec.encode(res);
+          return encodeReposListReply(() => handlers.repos.list(req, ctx));
         }
         case "update": {
           const req = codec.decode<UpdateRepoRequest>(reqBytes);
-          const res = await handlers.repos.update(req, ctx);
-          return codec.encode(res);
+          return encodeReposUpdateReply(() => handlers.repos.update(req, ctx));
         }
         case "fork": {
           const req = codec.decode<ForkRequest>(reqBytes);
-          const res = await handlers.repos.fork(req, ctx);
-          return codec.encode(res);
+          return encodeReposForkReply(() => handlers.repos.fork(req, ctx));
         }
         case "list-refs": {
           const req = codec.decode<ListRefsRequest>(reqBytes);
-          const res = await handlers.repos.listRefs(req, ctx);
-          return codec.encode(res);
+          return encodeReposListRefsReply(() => handlers.repos.listRefs(req, ctx));
         }
         case "log": {
           const req = codec.decode<LogRequest>(reqBytes);
-          const res = await handlers.repos.log(req, ctx);
-          return codec.encode(res);
+          return encodeReposLogReply(() => handlers.repos.log(req, ctx));
         }
         case "tree": {
           const req = codec.decode<TreeRequest>(reqBytes);
-          const res = await handlers.repos.tree(req, ctx);
-          return codec.encode(res);
+          return encodeReposTreeReply(() => handlers.repos.tree(req, ctx));
         }
         case "blob": {
           const req = codec.decode<BlobRequest>(reqBytes);
-          const res = await handlers.repos.blob(req, ctx);
-          return codec.encode(res);
+          return encodeReposBlobReply(() => handlers.repos.blob(req, ctx));
         }
         case "diff": {
           const req = codec.decode<DiffRequest>(reqBytes);
-          const res = await handlers.repos.diff(req, ctx);
-          return codec.encode(res);
+          return encodeReposDiffReply(() => handlers.repos.diff(req, ctx));
         }
         case "delete": {
           const req = codec.decode<DeleteRepoRequest>(reqBytes);
-          const res = await handlers.repos.delete(req, ctx);
-          return codec.encode(res);
+          return encodeReposDeleteReply(() => handlers.repos.delete(req, ctx));
         }
         case "update-ref": {
           const req = codec.decode<UpdateRefRequest>(reqBytes);
-          const res = await handlers.repos.updateRef(req, ctx);
-          return codec.encode(res);
+          return encodeReposUpdateRefReply(() => handlers.repos.updateRef(req, ctx));
         }
         case "get-commit": {
           const req = codec.decode<GetCommitRequest>(reqBytes);
-          const res = await handlers.repos.getCommit(req, ctx);
-          return codec.encode(res);
+          return encodeReposGetCommitReply(() => handlers.repos.getCommit(req, ctx));
         }
         case "set-grant": {
           const req = codec.decode<SetGrantRequest>(reqBytes);
-          const res = await handlers.repos.setGrant(req, ctx);
-          return codec.encode(res);
+          return encodeReposSetGrantReply(() => handlers.repos.setGrant(req, ctx));
         }
         case "remove-grant": {
           const req = codec.decode<RemoveGrantRequest>(reqBytes);
-          const res = await handlers.repos.removeGrant(req, ctx);
-          return codec.encode(res);
+          return encodeReposRemoveGrantReply(() => handlers.repos.removeGrant(req, ctx));
         }
         case "list-grants": {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.repos.listGrants(req, ctx);
-          return codec.encode(res);
+          return encodeReposListGrantsReply(() => handlers.repos.listGrants(req, ctx));
         }
         case "set-protection": {
           const req = codec.decode<SetProtectionRequest>(reqBytes);
-          const res = await handlers.repos.setProtection(req, ctx);
-          return codec.encode(res);
+          return encodeReposSetProtectionReply(() => handlers.repos.setProtection(req, ctx));
         }
         case "remove-protection": {
           const req = codec.decode<RemoveProtectionRequest>(reqBytes);
-          const res = await handlers.repos.removeProtection(req, ctx);
-          return codec.encode(res);
+          return encodeReposRemoveProtectionReply(() => handlers.repos.removeProtection(req, ctx));
         }
         case "list-protections": {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.repos.listProtections(req, ctx);
-          return codec.encode(res);
+          return encodeReposListProtectionsReply(() => handlers.repos.listProtections(req, ctx));
         }
         case "capture-history": {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.repos.captureHistory(req, ctx);
-          return codec.encode(res);
+          return encodeReposCaptureHistoryReply(() => handlers.repos.captureHistory(req, ctx));
         }
         case "list-forks": {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.repos.listForks(req, ctx);
-          return codec.encode(res);
+          return encodeReposListForksReply(() => handlers.repos.listForks(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown method ${service}.${method}` } satisfies ServiceError;
@@ -1143,38 +1030,31 @@ export async function dispatch(
       switch (method) {
         case "create": {
           const req = codec.decode<CreateServiceAccountRequest>(reqBytes);
-          const res = await handlers.serviceAccounts.create(req, ctx);
-          return codec.encode(res);
+          return encodeServiceAccountsCreateReply(() => handlers.serviceAccounts.create(req, ctx));
         }
         case "list": {
           const req = codec.decode<GetOrgRequest>(reqBytes);
-          const res = await handlers.serviceAccounts.list(req, ctx);
-          return codec.encode(res);
+          return encodeServiceAccountsListReply(() => handlers.serviceAccounts.list(req, ctx));
         }
         case "disable": {
           const req = codec.decode<ServiceAccountRef>(reqBytes);
-          const res = await handlers.serviceAccounts.disable(req, ctx);
-          return codec.encode(res);
+          return encodeServiceAccountsDisableReply(() => handlers.serviceAccounts.disable(req, ctx));
         }
         case "enable": {
           const req = codec.decode<ServiceAccountRef>(reqBytes);
-          const res = await handlers.serviceAccounts.enable(req, ctx);
-          return codec.encode(res);
+          return encodeServiceAccountsEnableReply(() => handlers.serviceAccounts.enable(req, ctx));
         }
         case "create-token": {
           const req = codec.decode<CreateServiceAccountTokenRequest>(reqBytes);
-          const res = await handlers.serviceAccounts.createToken(req, ctx);
-          return codec.encode(res);
+          return encodeServiceAccountsCreateTokenReply(() => handlers.serviceAccounts.createToken(req, ctx));
         }
         case "list-tokens": {
           const req = codec.decode<ServiceAccountRef>(reqBytes);
-          const res = await handlers.serviceAccounts.listTokens(req, ctx);
-          return codec.encode(res);
+          return encodeServiceAccountsListTokensReply(() => handlers.serviceAccounts.listTokens(req, ctx));
         }
         case "revoke-token": {
           const req = codec.decode<RevokeServiceAccountTokenRequest>(reqBytes);
-          const res = await handlers.serviceAccounts.revokeToken(req, ctx);
-          return codec.encode(res);
+          return encodeServiceAccountsRevokeTokenReply(() => handlers.serviceAccounts.revokeToken(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown method ${service}.${method}` } satisfies ServiceError;
@@ -1184,13 +1064,11 @@ export async function dispatch(
       switch (method) {
         case "set": {
           const req = codec.decode<SetStatusRequest>(reqBytes);
-          const res = await handlers.statuses.set(req, ctx);
-          return codec.encode(res);
+          return encodeStatusesSetReply(() => handlers.statuses.set(req, ctx));
         }
         case "list": {
           const req = codec.decode<ListStatusRequest>(reqBytes);
-          const res = await handlers.statuses.list(req, ctx);
-          return codec.encode(res);
+          return encodeStatusesListReply(() => handlers.statuses.list(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown method ${service}.${method}` } satisfies ServiceError;
@@ -1215,124 +1093,101 @@ export async function dispatchCompact(
   method: number,
   reqBytes: Uint8Array,
   ctx: RequestContext,
-): Promise<Uint8Array> {
+): Promise<Uint8Array | RpcReply> {
   switch (service) {
     case 1: {
       switch (method) {
         case 0: {
           const req = codec.decode<BeginLoginRequest>(reqBytes);
-          const res = await handlers.auth.beginLogin(req, ctx);
-          return codec.encode(res);
+          return encodeAuthBeginLoginReply(() => handlers.auth.beginLogin(req, ctx));
         }
         case 1: {
           const req = codec.decode<CompleteLoginRequest>(reqBytes);
-          const res = await handlers.auth.completeLogin(req, ctx);
-          return codec.encode(res);
+          return encodeAuthCompleteLoginReply(() => handlers.auth.completeLogin(req, ctx));
         }
         case 2: {
           const req = codec.decode<CreateTokenRequest>(reqBytes);
-          const res = await handlers.auth.createToken(req, ctx);
-          return codec.encode(res);
+          return encodeAuthCreateTokenReply(() => handlers.auth.createToken(req, ctx));
         }
         case 3: {
           const req = codec.decode<RevokeTokenRequest>(reqBytes);
-          const res = await handlers.auth.revokeToken(req, ctx);
-          return codec.encode(res);
+          return encodeAuthRevokeTokenReply(() => handlers.auth.revokeToken(req, ctx));
         }
         case 4: {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.auth.whoami(req, ctx);
-          return codec.encode(res);
+          return encodeAuthWhoamiReply(() => handlers.auth.whoami(req, ctx));
         }
         case 5: {
           const req = codec.decode<BeginDeviceRequest>(reqBytes);
-          const res = await handlers.auth.beginDeviceLogin(req, ctx);
-          return codec.encode(res);
+          return encodeAuthBeginDeviceLoginReply(() => handlers.auth.beginDeviceLogin(req, ctx));
         }
         case 6: {
           const req = codec.decode<DevicePollRequest>(reqBytes);
-          const res = await handlers.auth.pollDeviceLogin(req, ctx);
-          return codec.encode(res);
+          return encodeAuthPollDeviceLoginReply(() => handlers.auth.pollDeviceLogin(req, ctx));
         }
         case 7: {
           const req = codec.decode<ActAsExchangeRequest>(reqBytes);
-          const res = await handlers.auth.exchangeActAsCredential(req, ctx);
-          return codec.encode(res);
+          return encodeAuthExchangeActAsCredentialReply(() => handlers.auth.exchangeActAsCredential(req, ctx));
         }
         case 8: {
           const req = codec.decode<ScopeSetRequest>(reqBytes);
-          const res = await handlers.auth.scopeSet(req, ctx);
-          return codec.encode(res);
+          return encodeAuthScopeSetReply(() => handlers.auth.scopeSet(req, ctx));
         }
         case 9: {
           const req = codec.decode<DeviceApproveRequest>(reqBytes);
-          const res = await handlers.auth.approveDeviceLogin(req, ctx);
-          return codec.encode(res);
+          return encodeAuthApproveDeviceLoginReply(() => handlers.auth.approveDeviceLogin(req, ctx));
         }
         case 10: {
           const req = codec.decode<RegisterKeyRequest>(reqBytes);
-          const res = await handlers.auth.registerKey(req, ctx);
-          return codec.encode(res);
+          return encodeAuthRegisterKeyReply(() => handlers.auth.registerKey(req, ctx));
         }
         case 11: {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.auth.listKeys(req, ctx);
-          return codec.encode(res);
+          return encodeAuthListKeysReply(() => handlers.auth.listKeys(req, ctx));
         }
         case 12: {
           const req = codec.decode<KeyRef>(reqBytes);
-          const res = await handlers.auth.revokeKey(req, ctx);
-          return codec.encode(res);
+          return encodeAuthRevokeKeyReply(() => handlers.auth.revokeKey(req, ctx));
         }
         case 13: {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.auth.listTokens(req, ctx);
-          return codec.encode(res);
+          return encodeAuthListTokensReply(() => handlers.auth.listTokens(req, ctx));
         }
         case 14: {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.auth.logout(req, ctx);
-          return codec.encode(res);
+          return encodeAuthLogoutReply(() => handlers.auth.logout(req, ctx));
         }
         case 15: {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.auth.githubLinkStatus(req, ctx);
-          return codec.encode(res);
+          return encodeAuthGithubLinkStatusReply(() => handlers.auth.githubLinkStatus(req, ctx));
         }
         case 16: {
           const req = codec.decode<SetGithubTokenRequest>(reqBytes);
-          const res = await handlers.auth.setGithubToken(req, ctx);
-          return codec.encode(res);
+          return encodeAuthSetGithubTokenReply(() => handlers.auth.setGithubToken(req, ctx));
         }
         case 17: {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.auth.unlinkGithub(req, ctx);
-          return codec.encode(res);
+          return encodeAuthUnlinkGithubReply(() => handlers.auth.unlinkGithub(req, ctx));
         }
         case 18: {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.auth.getPreferences(req, ctx);
-          return codec.encode(res);
+          return encodeAuthGetPreferencesReply(() => handlers.auth.getPreferences(req, ctx));
         }
         case 19: {
           const req = codec.decode<SetPreferencesRequest>(reqBytes);
-          const res = await handlers.auth.setPreferences(req, ctx);
-          return codec.encode(res);
+          return encodeAuthSetPreferencesReply(() => handlers.auth.setPreferences(req, ctx));
         }
         case 20: {
           const req = codec.decode<LocalLoginRequest>(reqBytes);
-          const res = await handlers.auth.localLogin(req, ctx);
-          return codec.encode(res);
+          return encodeAuthLocalLoginReply(() => handlers.auth.localLogin(req, ctx));
         }
         case 21: {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.auth.localAccount(req, ctx);
-          return codec.encode(res);
+          return encodeAuthLocalAccountReply(() => handlers.auth.localAccount(req, ctx));
         }
         case 22: {
           const req = codec.decode<ChangeLocalPasswordRequest>(reqBytes);
-          const res = await handlers.auth.changeLocalPassword(req, ctx);
-          return codec.encode(res);
+          return encodeAuthChangeLocalPasswordReply(() => handlers.auth.changeLocalPassword(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown ordinal ${service}.${method}` } satisfies ServiceError;
@@ -1348,23 +1203,19 @@ export async function dispatchCompact(
       switch (method) {
         case 0: {
           const req = codec.decode<FedHello>(reqBytes);
-          const res = await handlers.federation.handshake(req, ctx);
-          return codec.encode(res);
+          return encodeFederationHandshakeReply(() => handlers.federation.handshake(req, ctx));
         }
         case 1: {
           const req = codec.decode<VerifyHeadRequest>(reqBytes);
-          const res = await handlers.federation.verifyHead(req, ctx);
-          return codec.encode(res);
+          return encodeFederationVerifyHeadReply(() => handlers.federation.verifyHead(req, ctx));
         }
         case 2: {
           const req = codec.decode<HeadQuery>(reqBytes);
-          const res = await handlers.federation.headInfo(req, ctx);
-          return codec.encode(res);
+          return encodeFederationHeadInfoReply(() => handlers.federation.headInfo(req, ctx));
         }
         case 3: {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.federation.repoInfo(req, ctx);
-          return codec.encode(res);
+          return encodeFederationRepoInfoReply(() => handlers.federation.repoInfo(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown ordinal ${service}.${method}` } satisfies ServiceError;
@@ -1374,33 +1225,27 @@ export async function dispatchCompact(
       switch (method) {
         case 0: {
           const req = codec.decode<CreateEndpointRequest>(reqBytes);
-          const res = await handlers.hooks.createEndpoint(req, ctx);
-          return codec.encode(res);
+          return encodeHooksCreateEndpointReply(() => handlers.hooks.createEndpoint(req, ctx));
         }
         case 1: {
           const req = codec.decode<ListEndpointsRequest>(reqBytes);
-          const res = await handlers.hooks.listEndpoints(req, ctx);
-          return codec.encode(res);
+          return encodeHooksListEndpointsReply(() => handlers.hooks.listEndpoints(req, ctx));
         }
         case 2: {
           const req = codec.decode<EndpointRef>(reqBytes);
-          const res = await handlers.hooks.deleteEndpoint(req, ctx);
-          return codec.encode(res);
+          return encodeHooksDeleteEndpointReply(() => handlers.hooks.deleteEndpoint(req, ctx));
         }
         case 3: {
           const req = codec.decode<DeliveryQuery>(reqBytes);
-          const res = await handlers.hooks.listDeliveries(req, ctx);
-          return codec.encode(res);
+          return encodeHooksListDeliveriesReply(() => handlers.hooks.listDeliveries(req, ctx));
         }
         case 4: {
           const req = codec.decode<DeliveryRef>(reqBytes);
-          const res = await handlers.hooks.redeliver(req, ctx);
-          return codec.encode(res);
+          return encodeHooksRedeliverReply(() => handlers.hooks.redeliver(req, ctx));
         }
         case 5: {
           const req = codec.decode<UpdateEndpointRequest>(reqBytes);
-          const res = await handlers.hooks.updateEndpoint(req, ctx);
-          return codec.encode(res);
+          return encodeHooksUpdateEndpointReply(() => handlers.hooks.updateEndpoint(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown ordinal ${service}.${method}` } satisfies ServiceError;
@@ -1410,28 +1255,23 @@ export async function dispatchCompact(
       switch (method) {
         case 0: {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.instance.listRoles(req, ctx);
-          return codec.encode(res);
+          return encodeInstanceListRolesReply(() => handlers.instance.listRoles(req, ctx));
         }
         case 1: {
           const req = codec.decode<SetInstanceRoleRequest>(reqBytes);
-          const res = await handlers.instance.setRole(req, ctx);
-          return codec.encode(res);
+          return encodeInstanceSetRoleReply(() => handlers.instance.setRole(req, ctx));
         }
         case 2: {
           const req = codec.decode<RemoveInstanceRoleRequest>(reqBytes);
-          const res = await handlers.instance.removeRole(req, ctx);
-          return codec.encode(res);
+          return encodeInstanceRemoveRoleReply(() => handlers.instance.removeRole(req, ctx));
         }
         case 3: {
           const req = codec.decode<CreateLocalAccountRequest>(reqBytes);
-          const res = await handlers.instance.createLocalAccount(req, ctx);
-          return codec.encode(res);
+          return encodeInstanceCreateLocalAccountReply(() => handlers.instance.createLocalAccount(req, ctx));
         }
         case 4: {
           const req = codec.decode<ResetLocalPasswordRequest>(reqBytes);
-          const res = await handlers.instance.resetLocalPassword(req, ctx);
-          return codec.encode(res);
+          return encodeInstanceResetLocalPasswordReply(() => handlers.instance.resetLocalPassword(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown ordinal ${service}.${method}` } satisfies ServiceError;
@@ -1441,8 +1281,7 @@ export async function dispatchCompact(
       switch (method) {
         case 0: {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.meta.serverInfo(req, ctx);
-          return codec.encode(res);
+          return encodeMetaServerInfoReply(() => handlers.meta.serverInfo(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown ordinal ${service}.${method}` } satisfies ServiceError;
@@ -1452,153 +1291,123 @@ export async function dispatchCompact(
       switch (method) {
         case 0: {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.mirror.status(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorStatusReply(() => handlers.mirror.status(req, ctx));
         }
         case 1: {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.mirror.listBlocked(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorListBlockedReply(() => handlers.mirror.listBlocked(req, ctx));
         }
         case 2: {
           const req = codec.decode<ReplayRequest>(reqBytes);
-          const res = await handlers.mirror.replayBlocked(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorReplayBlockedReply(() => handlers.mirror.replayBlocked(req, ctx));
         }
         case 3: {
           const req = codec.decode<SetCredentialRequest>(reqBytes);
-          const res = await handlers.mirror.setCredential(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorSetCredentialReply(() => handlers.mirror.setCredential(req, ctx));
         }
         case 4: {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.mirror.reconcile(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorReconcileReply(() => handlers.mirror.reconcile(req, ctx));
         }
         case 5: {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.mirror.pause(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorPauseReply(() => handlers.mirror.pause(req, ctx));
         }
         case 6: {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.mirror.resume(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorResumeReply(() => handlers.mirror.resume(req, ctx));
         }
         case 7: {
           const req = codec.decode<ImportRequest>(reqBytes);
-          const res = await handlers.mirror.importRepo(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorImportRepoReply(() => handlers.mirror.importRepo(req, ctx));
         }
         case 8: {
           const req = codec.decode<ConfigureMirrorRequest>(reqBytes);
-          const res = await handlers.mirror.configure(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorConfigureReply(() => handlers.mirror.configure(req, ctx));
         }
         case 9: {
           const req = codec.decode<ListCredentialsRequest>(reqBytes);
-          const res = await handlers.mirror.listCredentials(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorListCredentialsReply(() => handlers.mirror.listCredentials(req, ctx));
         }
         case 10: {
           const req = codec.decode<CredentialRef>(reqBytes);
-          const res = await handlers.mirror.removeCredential(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorRemoveCredentialReply(() => handlers.mirror.removeCredential(req, ctx));
         }
         case 11: {
           const req = codec.decode<ListGithubReposRequest>(reqBytes);
-          const res = await handlers.mirror.listGithubRepos(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorListGithubReposReply(() => handlers.mirror.listGithubRepos(req, ctx));
         }
         case 12: {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.mirror.health(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorHealthReply(() => handlers.mirror.health(req, ctx));
         }
         case 13: {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.mirror.backfill(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorBackfillReply(() => handlers.mirror.backfill(req, ctx));
         }
         case 14: {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.mirror.listGithubInstallations(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorListGithubInstallationsReply(() => handlers.mirror.listGithubInstallations(req, ctx));
         }
         case 15: {
           const req = codec.decode<ImportAllRequest>(reqBytes);
-          const res = await handlers.mirror.importAll(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorImportAllReply(() => handlers.mirror.importAll(req, ctx));
         }
         case 16: {
           const req = codec.decode<SetMirrorScheduleRequest>(reqBytes);
-          const res = await handlers.mirror.setSchedule(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorSetScheduleReply(() => handlers.mirror.setSchedule(req, ctx));
         }
         case 17: {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.mirror.listConnections(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorListConnectionsReply(() => handlers.mirror.listConnections(req, ctx));
         }
         case 18: {
           const req = codec.decode<ConnectRemoteRequest>(reqBytes);
-          const res = await handlers.mirror.connect(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorConnectReply(() => handlers.mirror.connect(req, ctx));
         }
         case 19: {
           const req = codec.decode<UpdateConnectionRequest>(reqBytes);
-          const res = await handlers.mirror.updateConnection(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorUpdateConnectionReply(() => handlers.mirror.updateConnection(req, ctx));
         }
         case 20: {
           const req = codec.decode<SyncConnectionRef>(reqBytes);
-          const res = await handlers.mirror.syncNow(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorSyncNowReply(() => handlers.mirror.syncNow(req, ctx));
         }
         case 21: {
           const req = codec.decode<SyncConnectionRef>(reqBytes);
-          const res = await handlers.mirror.webhookSecret(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorWebhookSecretReply(() => handlers.mirror.webhookSecret(req, ctx));
         }
         case 22: {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.mirror.getPolicy(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorGetPolicyReply(() => handlers.mirror.getPolicy(req, ctx));
         }
         case 23: {
           const req = codec.decode<SetSyncPolicyRequest>(reqBytes);
-          const res = await handlers.mirror.setPolicy(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorSetPolicyReply(() => handlers.mirror.setPolicy(req, ctx));
         }
         case 24: {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.mirror.listConflicts(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorListConflictsReply(() => handlers.mirror.listConflicts(req, ctx));
         }
         case 25: {
           const req = codec.decode<ResolveSyncConflictRequest>(reqBytes);
-          const res = await handlers.mirror.resolveConflict(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorResolveConflictReply(() => handlers.mirror.resolveConflict(req, ctx));
         }
         case 26: {
           const req = codec.decode<LinkProviderRequest>(reqBytes);
-          const res = await handlers.mirror.linkProvider(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorLinkProviderReply(() => handlers.mirror.linkProvider(req, ctx));
         }
         case 27: {
           const req = codec.decode<Empty>(reqBytes);
-          const res = await handlers.mirror.listProviderLinks(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorListProviderLinksReply(() => handlers.mirror.listProviderLinks(req, ctx));
         }
         case 28: {
           const req = codec.decode<UnlinkProviderRequest>(reqBytes);
-          const res = await handlers.mirror.unlinkProvider(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorUnlinkProviderReply(() => handlers.mirror.unlinkProvider(req, ctx));
         }
         case 29: {
           const req = codec.decode<SyncRecordsRequest>(reqBytes);
-          const res = await handlers.mirror.listSyncRecords(req, ctx);
-          return codec.encode(res);
+          return encodeMirrorListSyncRecordsReply(() => handlers.mirror.listSyncRecords(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown ordinal ${service}.${method}` } satisfies ServiceError;
@@ -1608,58 +1417,47 @@ export async function dispatchCompact(
       switch (method) {
         case 0: {
           const req = codec.decode<CreateOrgRequest>(reqBytes);
-          const res = await handlers.orgs.create(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsCreateReply(() => handlers.orgs.create(req, ctx));
         }
         case 1: {
           const req = codec.decode<GetOrgRequest>(reqBytes);
-          const res = await handlers.orgs.get(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsGetReply(() => handlers.orgs.get(req, ctx));
         }
         case 2: {
           const req = codec.decode<ListOrgsRequest>(reqBytes);
-          const res = await handlers.orgs.list(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsListReply(() => handlers.orgs.list(req, ctx));
         }
         case 3: {
           const req = codec.decode<UpdateOrgRequest>(reqBytes);
-          const res = await handlers.orgs.update(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsUpdateReply(() => handlers.orgs.update(req, ctx));
         }
         case 4: {
           const req = codec.decode<SetOrgMemberRequest>(reqBytes);
-          const res = await handlers.orgs.setMember(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsSetMemberReply(() => handlers.orgs.setMember(req, ctx));
         }
         case 5: {
           const req = codec.decode<RemoveOrgMemberRequest>(reqBytes);
-          const res = await handlers.orgs.removeMember(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsRemoveMemberReply(() => handlers.orgs.removeMember(req, ctx));
         }
         case 6: {
           const req = codec.decode<ListOrgMembersRequest>(reqBytes);
-          const res = await handlers.orgs.listMembers(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsListMembersReply(() => handlers.orgs.listMembers(req, ctx));
         }
         case 7: {
           const req = codec.decode<CreateTeamRequest>(reqBytes);
-          const res = await handlers.orgs.createTeam(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsCreateTeamReply(() => handlers.orgs.createTeam(req, ctx));
         }
         case 8: {
           const req = codec.decode<TeamRef>(reqBytes);
-          const res = await handlers.orgs.deleteTeam(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsDeleteTeamReply(() => handlers.orgs.deleteTeam(req, ctx));
         }
         case 9: {
           const req = codec.decode<SetTeamMemberRequest>(reqBytes);
-          const res = await handlers.orgs.setTeamMember(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsSetTeamMemberReply(() => handlers.orgs.setTeamMember(req, ctx));
         }
         case 10: {
           const req = codec.decode<GetOrgRequest>(reqBytes);
-          const res = await handlers.orgs.listTeams(req, ctx);
-          return codec.encode(res);
+          return encodeOrgsListTeamsReply(() => handlers.orgs.listTeams(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown ordinal ${service}.${method}` } satisfies ServiceError;
@@ -1669,73 +1467,59 @@ export async function dispatchCompact(
       switch (method) {
         case 0: {
           const req = codec.decode<OpenPrRequest>(reqBytes);
-          const res = await handlers.pullRequests.open(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsOpenReply(() => handlers.pullRequests.open(req, ctx));
         }
         case 1: {
           const req = codec.decode<PrRef>(reqBytes);
-          const res = await handlers.pullRequests.get(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsGetReply(() => handlers.pullRequests.get(req, ctx));
         }
         case 2: {
           const req = codec.decode<ListPrRequest>(reqBytes);
-          const res = await handlers.pullRequests.list(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsListReply(() => handlers.pullRequests.list(req, ctx));
         }
         case 3: {
           const req = codec.decode<ReviewRequest>(reqBytes);
-          const res = await handlers.pullRequests.review(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsReviewReply(() => handlers.pullRequests.review(req, ctx));
         }
         case 4: {
           const req = codec.decode<CommentRequest>(reqBytes);
-          const res = await handlers.pullRequests.comment(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsCommentReply(() => handlers.pullRequests.comment(req, ctx));
         }
         case 5: {
           const req = codec.decode<MergeRequest>(reqBytes);
-          const res = await handlers.pullRequests.merge(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsMergeReply(() => handlers.pullRequests.merge(req, ctx));
         }
         case 6: {
           const req = codec.decode<PrRef>(reqBytes);
-          const res = await handlers.pullRequests.close(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsCloseReply(() => handlers.pullRequests.close(req, ctx));
         }
         case 7: {
           const req = codec.decode<PrRef>(reqBytes);
-          const res = await handlers.pullRequests.reopen(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsReopenReply(() => handlers.pullRequests.reopen(req, ctx));
         }
         case 8: {
           const req = codec.decode<RetargetRequest>(reqBytes);
-          const res = await handlers.pullRequests.retarget(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsRetargetReply(() => handlers.pullRequests.retarget(req, ctx));
         }
         case 9: {
           const req = codec.decode<UpdatePrRequest>(reqBytes);
-          const res = await handlers.pullRequests.update(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsUpdateReply(() => handlers.pullRequests.update(req, ctx));
         }
         case 10: {
           const req = codec.decode<PrRef>(reqBytes);
-          const res = await handlers.pullRequests.listReviews(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsListReviewsReply(() => handlers.pullRequests.listReviews(req, ctx));
         }
         case 11: {
           const req = codec.decode<PrRef>(reqBytes);
-          const res = await handlers.pullRequests.listComments(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsListCommentsReply(() => handlers.pullRequests.listComments(req, ctx));
         }
         case 12: {
           const req = codec.decode<EditCommentRequest>(reqBytes);
-          const res = await handlers.pullRequests.editComment(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsEditCommentReply(() => handlers.pullRequests.editComment(req, ctx));
         }
         case 13: {
           const req = codec.decode<DeleteCommentRequest>(reqBytes);
-          const res = await handlers.pullRequests.deleteComment(req, ctx);
-          return codec.encode(res);
+          return encodePullRequestsDeleteCommentReply(() => handlers.pullRequests.deleteComment(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown ordinal ${service}.${method}` } satisfies ServiceError;
@@ -1745,108 +1529,87 @@ export async function dispatchCompact(
       switch (method) {
         case 0: {
           const req = codec.decode<CreateRepoRequest>(reqBytes);
-          const res = await handlers.repos.create(req, ctx);
-          return codec.encode(res);
+          return encodeReposCreateReply(() => handlers.repos.create(req, ctx));
         }
         case 1: {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.repos.get(req, ctx);
-          return codec.encode(res);
+          return encodeReposGetReply(() => handlers.repos.get(req, ctx));
         }
         case 2: {
           const req = codec.decode<ListReposRequest>(reqBytes);
-          const res = await handlers.repos.list(req, ctx);
-          return codec.encode(res);
+          return encodeReposListReply(() => handlers.repos.list(req, ctx));
         }
         case 3: {
           const req = codec.decode<UpdateRepoRequest>(reqBytes);
-          const res = await handlers.repos.update(req, ctx);
-          return codec.encode(res);
+          return encodeReposUpdateReply(() => handlers.repos.update(req, ctx));
         }
         case 4: {
           const req = codec.decode<ForkRequest>(reqBytes);
-          const res = await handlers.repos.fork(req, ctx);
-          return codec.encode(res);
+          return encodeReposForkReply(() => handlers.repos.fork(req, ctx));
         }
         case 5: {
           const req = codec.decode<ListRefsRequest>(reqBytes);
-          const res = await handlers.repos.listRefs(req, ctx);
-          return codec.encode(res);
+          return encodeReposListRefsReply(() => handlers.repos.listRefs(req, ctx));
         }
         case 6: {
           const req = codec.decode<LogRequest>(reqBytes);
-          const res = await handlers.repos.log(req, ctx);
-          return codec.encode(res);
+          return encodeReposLogReply(() => handlers.repos.log(req, ctx));
         }
         case 7: {
           const req = codec.decode<TreeRequest>(reqBytes);
-          const res = await handlers.repos.tree(req, ctx);
-          return codec.encode(res);
+          return encodeReposTreeReply(() => handlers.repos.tree(req, ctx));
         }
         case 8: {
           const req = codec.decode<BlobRequest>(reqBytes);
-          const res = await handlers.repos.blob(req, ctx);
-          return codec.encode(res);
+          return encodeReposBlobReply(() => handlers.repos.blob(req, ctx));
         }
         case 9: {
           const req = codec.decode<DiffRequest>(reqBytes);
-          const res = await handlers.repos.diff(req, ctx);
-          return codec.encode(res);
+          return encodeReposDiffReply(() => handlers.repos.diff(req, ctx));
         }
         case 10: {
           const req = codec.decode<DeleteRepoRequest>(reqBytes);
-          const res = await handlers.repos.delete(req, ctx);
-          return codec.encode(res);
+          return encodeReposDeleteReply(() => handlers.repos.delete(req, ctx));
         }
         case 11: {
           const req = codec.decode<UpdateRefRequest>(reqBytes);
-          const res = await handlers.repos.updateRef(req, ctx);
-          return codec.encode(res);
+          return encodeReposUpdateRefReply(() => handlers.repos.updateRef(req, ctx));
         }
         case 12: {
           const req = codec.decode<GetCommitRequest>(reqBytes);
-          const res = await handlers.repos.getCommit(req, ctx);
-          return codec.encode(res);
+          return encodeReposGetCommitReply(() => handlers.repos.getCommit(req, ctx));
         }
         case 13: {
           const req = codec.decode<SetGrantRequest>(reqBytes);
-          const res = await handlers.repos.setGrant(req, ctx);
-          return codec.encode(res);
+          return encodeReposSetGrantReply(() => handlers.repos.setGrant(req, ctx));
         }
         case 14: {
           const req = codec.decode<RemoveGrantRequest>(reqBytes);
-          const res = await handlers.repos.removeGrant(req, ctx);
-          return codec.encode(res);
+          return encodeReposRemoveGrantReply(() => handlers.repos.removeGrant(req, ctx));
         }
         case 15: {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.repos.listGrants(req, ctx);
-          return codec.encode(res);
+          return encodeReposListGrantsReply(() => handlers.repos.listGrants(req, ctx));
         }
         case 16: {
           const req = codec.decode<SetProtectionRequest>(reqBytes);
-          const res = await handlers.repos.setProtection(req, ctx);
-          return codec.encode(res);
+          return encodeReposSetProtectionReply(() => handlers.repos.setProtection(req, ctx));
         }
         case 17: {
           const req = codec.decode<RemoveProtectionRequest>(reqBytes);
-          const res = await handlers.repos.removeProtection(req, ctx);
-          return codec.encode(res);
+          return encodeReposRemoveProtectionReply(() => handlers.repos.removeProtection(req, ctx));
         }
         case 18: {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.repos.listProtections(req, ctx);
-          return codec.encode(res);
+          return encodeReposListProtectionsReply(() => handlers.repos.listProtections(req, ctx));
         }
         case 19: {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.repos.captureHistory(req, ctx);
-          return codec.encode(res);
+          return encodeReposCaptureHistoryReply(() => handlers.repos.captureHistory(req, ctx));
         }
         case 20: {
           const req = codec.decode<GetRepoRequest>(reqBytes);
-          const res = await handlers.repos.listForks(req, ctx);
-          return codec.encode(res);
+          return encodeReposListForksReply(() => handlers.repos.listForks(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown ordinal ${service}.${method}` } satisfies ServiceError;
@@ -1856,38 +1619,31 @@ export async function dispatchCompact(
       switch (method) {
         case 0: {
           const req = codec.decode<CreateServiceAccountRequest>(reqBytes);
-          const res = await handlers.serviceAccounts.create(req, ctx);
-          return codec.encode(res);
+          return encodeServiceAccountsCreateReply(() => handlers.serviceAccounts.create(req, ctx));
         }
         case 1: {
           const req = codec.decode<GetOrgRequest>(reqBytes);
-          const res = await handlers.serviceAccounts.list(req, ctx);
-          return codec.encode(res);
+          return encodeServiceAccountsListReply(() => handlers.serviceAccounts.list(req, ctx));
         }
         case 2: {
           const req = codec.decode<ServiceAccountRef>(reqBytes);
-          const res = await handlers.serviceAccounts.disable(req, ctx);
-          return codec.encode(res);
+          return encodeServiceAccountsDisableReply(() => handlers.serviceAccounts.disable(req, ctx));
         }
         case 3: {
           const req = codec.decode<ServiceAccountRef>(reqBytes);
-          const res = await handlers.serviceAccounts.enable(req, ctx);
-          return codec.encode(res);
+          return encodeServiceAccountsEnableReply(() => handlers.serviceAccounts.enable(req, ctx));
         }
         case 4: {
           const req = codec.decode<CreateServiceAccountTokenRequest>(reqBytes);
-          const res = await handlers.serviceAccounts.createToken(req, ctx);
-          return codec.encode(res);
+          return encodeServiceAccountsCreateTokenReply(() => handlers.serviceAccounts.createToken(req, ctx));
         }
         case 5: {
           const req = codec.decode<ServiceAccountRef>(reqBytes);
-          const res = await handlers.serviceAccounts.listTokens(req, ctx);
-          return codec.encode(res);
+          return encodeServiceAccountsListTokensReply(() => handlers.serviceAccounts.listTokens(req, ctx));
         }
         case 6: {
           const req = codec.decode<RevokeServiceAccountTokenRequest>(reqBytes);
-          const res = await handlers.serviceAccounts.revokeToken(req, ctx);
-          return codec.encode(res);
+          return encodeServiceAccountsRevokeTokenReply(() => handlers.serviceAccounts.revokeToken(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown ordinal ${service}.${method}` } satisfies ServiceError;
@@ -1897,13 +1653,11 @@ export async function dispatchCompact(
       switch (method) {
         case 0: {
           const req = codec.decode<SetStatusRequest>(reqBytes);
-          const res = await handlers.statuses.set(req, ctx);
-          return codec.encode(res);
+          return encodeStatusesSetReply(() => handlers.statuses.set(req, ctx));
         }
         case 1: {
           const req = codec.decode<ListStatusRequest>(reqBytes);
-          const res = await handlers.statuses.list(req, ctx);
-          return codec.encode(res);
+          return encodeStatusesListReply(() => handlers.statuses.list(req, ctx));
         }
         default:
           throw { code: 404, message: `unknown ordinal ${service}.${method}` } satisfies ServiceError;

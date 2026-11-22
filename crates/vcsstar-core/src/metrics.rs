@@ -346,7 +346,7 @@ pub fn refresh_backlog(conn: &mut diesel::PgConnection) -> Result<(), diesel::re
         .filter(mirror_actions::state.eq("blocked"))
         .count()
         .get_result(conn)?;
-    let oldest: Option<chrono::DateTime<chrono::Utc>> = mirror_actions::table
+    let oldest: Option<time::OffsetDateTime> = mirror_actions::table
         .filter(mirror_actions::state.eq("pending"))
         .select(diesel::dsl::min(mirror_actions::created_at))
         .first(conn)?;
@@ -355,7 +355,7 @@ pub fn refresh_backlog(conn: &mut diesel::PgConnection) -> Result<(), diesel::re
     m.mirror_blocked.set(blocked);
     m.mirror_lag.set(
         oldest
-            .map(|t| (chrono::Utc::now() - t).num_seconds().max(0))
+            .map(|t| (time::OffsetDateTime::now_utc() - t).whole_seconds().max(0))
             .unwrap_or(0),
     );
     Ok(())

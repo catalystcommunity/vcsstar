@@ -704,7 +704,7 @@ mod tests {
             size: s.1,
             content_hash: s.2.clone(),
             kind: "pack".into(),
-            created_at: chrono::Utc::now(),
+            created_at: time::OffsetDateTime::now_utc(),
             superseded_at: None,
             has_bitmap: false,
         }
@@ -792,7 +792,7 @@ mod tests {
                 size: *size,
                 content_hash: hash.clone(),
                 kind: "pack".into(),
-                created_at: chrono::Utc::now(),
+                created_at: time::OffsetDateTime::now_utc(),
                 superseded_at: None,
                 has_bitmap: false,
             })

@@ -82,16 +82,20 @@ impl HttpTransport {
     }
 }
 
-/// Map a decoded envelope to the generated client's expectations: a status-0
-/// reply with the `ServiceError` variant becomes `ClientError::Service`.
-pub fn response_to_payload(response: RpcResponse) -> Result<Vec<u8>, ClientError> {
+fn check_status(response: &RpcResponse) -> Result<(), ClientError> {
     if response.status != csilgen_transport::conventions::Status::Ok {
-        let message = response.error.clone().unwrap_or_default();
+        let message = response.error.as_deref().unwrap_or_default();
         return Err(ClientError::Transport(format!(
             "transport status {:?}: {message}",
             response.status
         )));
     }
+    Ok(())
+}
+
+/// Return the payload of an envelope without operation metadata.
+pub fn response_to_payload(response: RpcResponse) -> Result<Vec<u8>, ClientError> {
+    check_status(&response)?;
     if response.variant.as_deref() == Some("ServiceError") {
         let err = vcsstar_types::decode_service_error(&response.payload)
             .map_err(|e| ClientError::Transport(format!("bad ServiceError payload: {e}")))?;
@@ -103,9 +107,14 @@ pub fn response_to_payload(response: RpcResponse) -> Result<Vec<u8>, ClientError
     Ok(response.payload)
 }
 
+fn resolve_reply(service: &str, op: &str, response: RpcResponse) -> Result<Vec<u8>, ClientError> {
+    check_status(&response)?;
+    vcsstar_types::resolve_rpc_reply(service, op, response.variant.as_deref(), response.payload)
+}
+
 impl Transport for HttpTransport {
     fn call(&self, service: &str, op: &str, req: &[u8]) -> Result<Vec<u8>, ClientError> {
-        response_to_payload(self.call_envelope(service, op, req.to_vec())?)
+        resolve_reply(service, op, self.call_envelope(service, op, req.to_vec())?)
     }
 }
 
@@ -156,6 +165,6 @@ impl TcpTransport {
 
 impl Transport for TcpTransport {
     fn call(&self, service: &str, op: &str, req: &[u8]) -> Result<Vec<u8>, ClientError> {
-        response_to_payload(self.call_envelope(service, op, req.to_vec())?)
+        resolve_reply(service, op, self.call_envelope(service, op, req.to_vec())?)
     }
 }

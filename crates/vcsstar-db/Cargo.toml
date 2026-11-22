@@ -9,7 +9,7 @@ diesel.workspace = true
 diesel_migrations.workspace = true
 r2d2.workspace = true
 uuid.workspace = true
-chrono.workspace = true
+time.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 # Static libpq for environments without the system library (CI runner).

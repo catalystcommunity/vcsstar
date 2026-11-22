@@ -1,8 +1,8 @@
 //! Outbound hook endpoints and their delivery log. The dispatcher and the
 //! hook worker (vcsstar-workers) do the delivery; these ops manage the rows.
 
-use chrono::{DateTime, Utc};
 use diesel::prelude::*;
+use time::OffsetDateTime;
 use vcsstar_db::schema::{hook_deliveries, hook_endpoints, orgs, repos};
 use vcsstar_db::DbConn;
 use vcsstar_types::{
@@ -61,7 +61,7 @@ pub struct EndpointRow {
     pub active: bool,
     pub unordered: bool,
     pub created_by: Option<uuid::Uuid>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: OffsetDateTime,
 }
 
 impl EndpointRow {
@@ -86,12 +86,12 @@ pub struct DeliveryRow {
     pub event_kind: String,
     pub state: String,
     pub attempts: i32,
-    pub next_attempt_at: DateTime<Utc>,
+    pub next_attempt_at: OffsetDateTime,
     pub last_status: Option<i32>,
     pub last_error: Option<String>,
-    pub delivered_at: Option<DateTime<Utc>>,
+    pub delivered_at: Option<OffsetDateTime>,
     pub payload_cbor: Vec<u8>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: OffsetDateTime,
 }
 
 fn to_wire(conn: &mut DbConn, e: &EndpointRow) -> Result<Endpoint, Error> {
@@ -370,7 +370,7 @@ pub fn redeliver(app: &App, ctx: &ReqCtx, req: DeliveryRef) -> Result<WireOk, Er
     diesel::update(hook_deliveries::table.find(id))
         .set((
             hook_deliveries::state.eq("pending"),
-            hook_deliveries::next_attempt_at.eq(Utc::now()),
+            hook_deliveries::next_attempt_at.eq(OffsetDateTime::now_utc()),
             hook_deliveries::last_error.eq::<Option<String>>(None),
         ))
         .execute(&mut conn)?;

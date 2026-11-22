@@ -11,9 +11,9 @@
 //! the provider as their origin. Only GitHub imports start a pull request
 //! history job.
 
-use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 use uuid::Uuid;
 use vcsstar_db::models::{Org as OrgRow, Repo as RepoRow};
 use vcsstar_db::schema::{mirror_refs, mirror_state, orgs, repos};
@@ -29,7 +29,7 @@ pub const QUEUE: &str = "import:github";
 /// After this many failed attempts the import stops retrying ("failed").
 pub const MAX_ATTEMPTS: i32 = 6;
 /// A claim older than this belongs to a worker that died.
-const CLAIM_STALE: chrono::Duration = chrono::Duration::minutes(30);
+const CLAIM_STALE: time::Duration = time::Duration::minutes(30);
 
 /// The task payload: a pointer; the worker reads the rest from Postgres.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,12 +55,12 @@ pub fn state(repo: &RepoRow, s: &StateRow) -> Option<&'static str> {
 /// the request, so a new request after a final failure is a new task and
 /// a repeated submission of the same request is refused by corndogs (and
 /// taken as success). Retries are the same task, parked with a backoff.
-pub fn submit(app: &App, repo_id: Uuid, requested_at: DateTime<Utc>) -> Result<(), Error> {
+pub fn submit(app: &App, repo_id: Uuid, requested_at: OffsetDateTime) -> Result<(), Error> {
     let mut payload = Vec::new();
     ciborium::ser::into_writer(&ImportTask { repo_id }, &mut payload).map_err(Error::internal)?;
     match app.submit_task(
         QUEUE,
-        &format!("import:{repo_id}:{}", requested_at.timestamp_millis()),
+        &format!("import:{repo_id}:{}", crate::to_ms(requested_at)),
         payload,
         3,
     ) {
@@ -104,7 +104,7 @@ pub fn run(app: &App, repo_id: Uuid) -> Result<Outcome, Error> {
         return Ok(Outcome::Held(std::time::Duration::from_secs(60)));
     }
     // Claim: one worker at a time per repository.
-    let now = Utc::now();
+    let now = OffsetDateTime::now_utc();
     let claimed = diesel::update(
         mirror_state::table
             .find(repo_id)
@@ -163,13 +163,13 @@ fn release(
     match failure {
         Some((attempts, message)) => diesel::update(target)
             .set((
-                mirror_state::import_claimed_at.eq(None::<DateTime<Utc>>),
+                mirror_state::import_claimed_at.eq(None::<OffsetDateTime>),
                 mirror_state::import_attempts.eq(attempts),
                 mirror_state::last_error.eq(message),
             ))
             .execute(conn)?,
         None => diesel::update(target)
-            .set(mirror_state::import_claimed_at.eq(None::<DateTime<Utc>>))
+            .set(mirror_state::import_claimed_at.eq(None::<OffsetDateTime>))
             .execute(conn)?,
     };
     Ok(())
@@ -289,18 +289,18 @@ fn fetch_and_enable(
                         mirror_refs::repo_id.eq(repo.id),
                         mirror_refs::ref_.eq(n),
                         mirror_refs::mirrored_sha.eq(s),
-                        mirror_refs::last_verified_at.eq(Utc::now()),
+                        mirror_refs::last_verified_at.eq(OffsetDateTime::now_utc()),
                     ))
                     .on_conflict_do_nothing()
                     .execute(conn)?;
             }
-            let now = Utc::now();
+            let now = OffsetDateTime::now_utc();
             diesel::update(mirror_state::table.find(repo.id))
                 .set((
                     mirror_state::paused.eq(false),
                     mirror_state::last_full_reconcile_at.eq(now),
                     mirror_state::import_done_at.eq(now),
-                    mirror_state::import_claimed_at.eq(None::<DateTime<Utc>>),
+                    mirror_state::import_claimed_at.eq(None::<OffsetDateTime>),
                     mirror_state::last_error.eq(None::<String>),
                 ))
                 .execute(conn)?;
@@ -324,10 +324,10 @@ fn fetch_and_enable(
 /// attempts. Returns how many were submitted.
 pub fn resubmit_lost(app: &App) -> Result<usize, Error> {
     let mut conn = app.conn()?;
-    let now = Utc::now();
-    let rows: Vec<(Uuid, Option<DateTime<Utc>>)> = mirror_state::table
+    let now = OffsetDateTime::now_utc();
+    let rows: Vec<(Uuid, Option<OffsetDateTime>)> = mirror_state::table
         .filter(mirror_state::import_done_at.is_null())
-        .filter(mirror_state::import_requested_at.lt(now - chrono::Duration::minutes(2)))
+        .filter(mirror_state::import_requested_at.lt(now - time::Duration::minutes(2)))
         .filter(mirror_state::import_attempts.eq(0))
         .filter(mirror_state::import_claimed_at.is_null())
         .select((mirror_state::repo_id, mirror_state::import_requested_at))

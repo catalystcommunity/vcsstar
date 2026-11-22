@@ -10,6 +10,12 @@ pub mod server;
 pub use csilgen_transport::conventions::Status;
 pub use csilgen_transport::rpc::{HandlerOutcome, RpcRequest, RpcResponse};
 
+/// Release version reported by the server and CLI. Local builds use the workspace version.
+pub const VERSION: &str = match option_env!("VCSSTAR_VERSION") {
+    Some(version) if !version.is_empty() => version,
+    _ => env!("CARGO_PKG_VERSION"),
+};
+
 /// Largest envelope accepted on any carrier. Git data never travels in an
 /// envelope, so 4 MiB covers every contract payload with room to spare.
 pub const MAX_FRAME: usize = 4 * 1024 * 1024;

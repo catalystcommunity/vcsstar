@@ -26,3 +26,6 @@ dev/corndogs.env
 
 # Scratch files with secrets (GitHub App credentials and similar)
 temp_*
+
+# requests
+request*.md

@@ -310,16 +310,16 @@ pub fn check_assertion(
             "assertion nonce does not match",
         ));
     }
-    let now = chrono::Utc::now();
-    let issued = chrono::DateTime::parse_from_rfc3339(&a.issued_at)
+    let now = time::OffsetDateTime::now_utc();
+    let issued = liblinkkeys::timestamp::parse_rfc3339(&a.issued_at)
         .map_err(|_| Error::new(Code::Unauthenticated, "assertion issued_at is not RFC 3339"))?;
-    let expires = chrono::DateTime::parse_from_rfc3339(&a.expires_at).map_err(|_| {
+    let expires = liblinkkeys::timestamp::parse_rfc3339(&a.expires_at).map_err(|_| {
         Error::new(
             Code::Unauthenticated,
             "assertion expires_at is not RFC 3339",
         )
     })?;
-    if issued > now + chrono::Duration::minutes(5) {
+    if issued > now + time::Duration::minutes(5) {
         return Err(Error::new(
             Code::Unauthenticated,
             "assertion is issued in the future",
@@ -414,7 +414,7 @@ pub fn urlencode(s: &str) -> String {
 /// One attested application key as the RP resolved it.
 pub struct ResolvedKey {
     pub public_key: Vec<u8>,
-    pub attestation_expires_at: chrono::DateTime<chrono::Utc>,
+    pub attestation_expires_at: time::OffsetDateTime,
 }
 
 /// Resolve one application key of a user through the RP, verifying the
@@ -462,7 +462,7 @@ pub fn resolve_application_key(
             application_id,
             instance_id,
         },
-        chrono::Utc::now(),
+        time::OffsetDateTime::now_utc(),
         300,
     );
     let key = set
@@ -490,9 +490,8 @@ pub fn resolve_application_key(
             "key is not an Ed25519 signing key",
         ));
     }
-    let until = chrono::DateTime::parse_from_rfc3339(&key.attestation.attestation_expires_at)
-        .map_err(|e| Error::internal(format!("attestation time: {e}")))?
-        .with_timezone(&chrono::Utc);
+    let until = liblinkkeys::timestamp::parse_rfc3339(&key.attestation.attestation_expires_at)
+        .map_err(|e| Error::internal(format!("attestation time: {e}")))?;
     Ok(ResolvedKey {
         public_key: key.attestation.public_key.clone(),
         attestation_expires_at: until,
@@ -502,16 +501,17 @@ pub fn resolve_application_key(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use liblinkkeys::timestamp::Rfc3339 as _;
 
     fn assertion(nonce: &str) -> lk::IdentityAssertion {
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         lk::IdentityAssertion {
             user_id: "u".into(),
             domain: "Example.com".into(),
             audience: "rp.example".into(),
             nonce: nonce.into(),
             issued_at: now.to_rfc3339(),
-            expires_at: (now + chrono::Duration::minutes(4)).to_rfc3339(),
+            expires_at: (now + time::Duration::minutes(4)).to_rfc3339(),
             authorized_claims: vec![],
             display_name: None,
         }
@@ -525,7 +525,8 @@ mod tests {
         assert!(check_assertion(&a, "example.com", "wrong", "n1").is_err());
         assert!(check_assertion(&a, "example.com", "rp.example", "n2").is_err());
         let mut expired = assertion("n1");
-        expired.expires_at = (chrono::Utc::now() - chrono::Duration::minutes(1)).to_rfc3339();
+        expired.expires_at =
+            (time::OffsetDateTime::now_utc() - time::Duration::minutes(1)).to_rfc3339();
         assert!(check_assertion(&expired, "example.com", "rp.example", "n1").is_err());
     }
 

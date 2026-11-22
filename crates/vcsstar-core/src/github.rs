@@ -44,7 +44,7 @@ pub fn installation_token(
     base: &str,
     jwt: &str,
     installation_id: &str,
-) -> Result<(String, chrono::DateTime<chrono::Utc>), Failure> {
+) -> Result<(String, time::OffsetDateTime), Failure> {
     let client = Client::new(base, jwt);
     let path = format!("/app/installations/{installation_id}/access_tokens");
     let (status, j) = client.call("POST", &path, Some(&json!({})))?;
@@ -60,9 +60,8 @@ pub fn installation_token(
     let expires_at = j
         .get("expires_at")
         .and_then(Json::as_str)
-        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-        .map(|t| t.with_timezone(&chrono::Utc))
-        .unwrap_or_else(|| chrono::Utc::now() + chrono::Duration::minutes(55));
+        .and_then(|s| liblinkkeys::timestamp::parse_rfc3339(s).ok())
+        .unwrap_or_else(|| time::OffsetDateTime::now_utc() + time::Duration::minutes(55));
     Ok((token.to_string(), expires_at))
 }
 
@@ -116,9 +115,9 @@ pub fn installation_for_repo(
 #[derive(Debug, Clone)]
 pub struct OauthTokens {
     pub access_token: String,
-    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub expires_at: Option<time::OffsetDateTime>,
     pub refresh_token: Option<String>,
-    pub refresh_expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub refresh_expires_at: Option<time::OffsetDateTime>,
 }
 
 /// Exchange an authorization code (`POST /login/oauth/access_token`).
@@ -204,17 +203,17 @@ fn oauth_token_call(web_base: &str, form: &[(&str, &str)]) -> Result<OauthTokens
         .and_then(Json::as_str)
         .ok_or_else(|| Failure::Terminal("GitHub OAuth answered without an access token".into()))?
         .to_string();
-    let now = chrono::Utc::now();
+    let now = time::OffsetDateTime::now_utc();
     let secs = |k: &str| j.get(k).and_then(Json::as_i64);
     Ok(OauthTokens {
         access_token,
-        expires_at: secs("expires_in").map(|n| now + chrono::Duration::seconds(n)),
+        expires_at: secs("expires_in").map(|n| now + time::Duration::seconds(n)),
         refresh_token: j
             .get("refresh_token")
             .and_then(Json::as_str)
             .map(str::to_string),
         refresh_expires_at: secs("refresh_token_expires_in")
-            .map(|n| now + chrono::Duration::seconds(n)),
+            .map(|n| now + time::Duration::seconds(n)),
     })
 }
 
@@ -307,8 +306,8 @@ impl Client {
             num("x-ratelimit-limit"),
             num("x-ratelimit-reset"),
         ) {
-            let reset_at =
-                chrono::DateTime::from_timestamp(reset as i64, 0).unwrap_or_else(chrono::Utc::now);
+            let reset_at = time::OffsetDateTime::from_unix_timestamp(reset as i64)
+                .unwrap_or_else(|_| time::OffsetDateTime::now_utc());
             crate::github_health::note_rate_limit(&self.label, remaining, limit, reset_at);
         }
     }

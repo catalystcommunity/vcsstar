@@ -6,10 +6,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+use time::OffsetDateTime;
 use vcsstar_core::events_json::event_to_json;
 use vcsstar_core::services::hooks::{DeliveryRow, EndpointRow};
 use vcsstar_core::App;
@@ -128,9 +128,9 @@ pub fn process_endpoint(conn: &mut PgConnection, ep: &EndpointRow) -> anyhow::Re
         if pending.is_empty() {
             return Ok(Outcome::Done);
         }
-        let now = Utc::now();
+        let now = OffsetDateTime::now_utc();
         let mut progressed = false;
-        let mut soonest: Option<DateTime<Utc>> = None;
+        let mut soonest: Option<OffsetDateTime> = None;
         for d in &pending {
             if d.next_attempt_at > now {
                 soonest = Some(soonest.map_or(d.next_attempt_at, |s| s.min(d.next_attempt_at)));
@@ -148,7 +148,7 @@ pub fn process_endpoint(conn: &mut PgConnection, ep: &EndpointRow) -> anyhow::Re
         }
         if !progressed {
             let wait = soonest
-                .map(|s| (s - now).to_std().unwrap_or(Duration::from_secs(1)))
+                .map(|s| Duration::try_from(s - now).unwrap_or(Duration::from_secs(1)))
                 .unwrap_or(Duration::from_secs(30));
             return Ok(Outcome::RetryAfter(wait.max(Duration::from_secs(1))));
         }
@@ -189,7 +189,7 @@ fn attempt(conn: &mut PgConnection, ep: &EndpointRow, d: &DeliveryRow) -> anyhow
                     hook_deliveries::attempts.eq(attempts),
                     hook_deliveries::last_status.eq(resp.status() as i32),
                     hook_deliveries::last_error.eq::<Option<String>>(None),
-                    hook_deliveries::delivered_at.eq(Utc::now()),
+                    hook_deliveries::delivered_at.eq(OffsetDateTime::now_utc()),
                 ))
                 .execute(conn)?;
             vcsstar_core::metrics::hook_delivery("delivered");
@@ -220,7 +220,8 @@ fn attempt(conn: &mut PgConnection, ep: &EndpointRow, d: &DeliveryRow) -> anyhow
                     hook_deliveries::attempts.eq(attempts),
                     hook_deliveries::last_status.eq(status),
                     hook_deliveries::last_error.eq(Some(error.clone())),
-                    hook_deliveries::next_attempt_at.eq(Utc::now() + backoff(attempts)),
+                    hook_deliveries::next_attempt_at
+                        .eq(OffsetDateTime::now_utc() + backoff(attempts)),
                 ))
                 .execute(conn)?;
             vcsstar_core::metrics::hook_delivery(if dead { "dead" } else { "retry" });
@@ -231,9 +232,9 @@ fn attempt(conn: &mut PgConnection, ep: &EndpointRow, d: &DeliveryRow) -> anyhow
 }
 
 /// 30 s doubling to a 1 h cap: about 3 days over 20 attempts.
-pub fn backoff(attempts: i32) -> chrono::Duration {
+pub fn backoff(attempts: i32) -> time::Duration {
     let secs = 30i64.saturating_mul(1i64 << (attempts.clamp(1, 12) - 1));
-    chrono::Duration::seconds(secs.min(3600))
+    time::Duration::seconds(secs.min(3600))
 }
 
 pub fn sign(secret: &[u8], body: &[u8]) -> String {
@@ -248,11 +249,11 @@ mod tests {
 
     #[test]
     fn backoff_schedule() {
-        assert_eq!(backoff(1).num_seconds(), 30);
-        assert_eq!(backoff(2).num_seconds(), 60);
-        assert_eq!(backoff(7).num_seconds(), 1920);
-        assert_eq!(backoff(8).num_seconds(), 3600);
-        assert_eq!(backoff(20).num_seconds(), 3600);
+        assert_eq!(backoff(1).whole_seconds(), 30);
+        assert_eq!(backoff(2).whole_seconds(), 60);
+        assert_eq!(backoff(7).whole_seconds(), 1920);
+        assert_eq!(backoff(8).whole_seconds(), 3600);
+        assert_eq!(backoff(20).whole_seconds(), 3600);
     }
 
     #[test]

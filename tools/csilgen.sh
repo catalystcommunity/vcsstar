@@ -8,13 +8,13 @@
 #   tools/csilgen.sh validate   validate csil/vcsstar.csil only
 set -euo pipefail
 
-CSILGEN_PIN="0.2.11"
+CSILGEN_PIN="0.2.15"
 # Commit of tag csilgen/v${CSILGEN_PIN}; Cargo.toml pins csilgen-transport
-# and csilgen-schema to the same commit.
-CSILGEN_COMMIT="6fcc0981fba034d4f34e3a3da0f59368b3ecb193"
-SHA_CLI_X86_64="b420175d68e34632ce4b069c4ed8970c73847ce5a69c885434b53b486c3428bf"
-SHA_CLI_AARCH64="a5b9c4a31b3c6d34c1731b7b3125b11ece8d590b6eeea02501f4e03abdb6ca3e"
-SHA_GENERATORS="df75c0cb590f256d9ac4f9457524ddc71d92cd14960dd4f585d3f7659de27cde"
+# to the same commit.
+CSILGEN_COMMIT="9690ed8794454c2beb21571ce525ffd62a2f0701"
+SHA_CLI_X86_64="a322246036d25ee013ad108ade04a4148fe0aab6cb5fd7522c757a4bb57817d8"
+SHA_CLI_AARCH64="a35571539e2f451253639a574eb617e76c11675d21bbc2b7c330b0e189fb62a4"
+SHA_GENERATORS="89c6d6ea88fc3ea5af7c9fb1fe30b87ddd166b2b8a6d6ce4c612791e97de9a75"
 RELEASE_BASE="https://github.com/catalystcommunity/csilgen/releases/download/csilgen/v${CSILGEN_PIN}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -79,6 +79,7 @@ generate_into() {
     rm -rf "$rust_out" "$ts_out"
     mkdir -p "$rust_out" "$ts_out"
     run_csilgen generate --quiet --input vcsstar.csil --target rust --output "$rust_out"
+    (cd "$ROOT" && rustfmt --edition 2021 "$rust_out/src/lib.rs")
     run_csilgen generate --quiet --input vcsstar.csil --target typescript --output "$ts_out"
     # The Rust generator writes a crate manifest without lints; the workspace
     # supplies them. Keep the manifest as generated.

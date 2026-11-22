@@ -8,6 +8,7 @@ cd "${REACTORCIDE_REPOROOT:-${REACTORCIDE_CODE_DIR:-/job/src}}"
 : "${K8S_NAMESPACE:?set K8S_NAMESPACE (instance overlay)}"
 : "${HELM_RELEASE:=vcsstar}"
 DEPLOY_MODE="${DEPLOY_MODE:-release}"
+BUILD_CLI="${BUILD_CLI:-false}"
 # A bind-mounted working tree (run-local) can belong to another uid.
 git config --global --add safe.directory "$(pwd)" 2>/dev/null || true
 SHA="${REACTORCIDE_SHA:-$(git rev-parse HEAD)}"
@@ -16,14 +17,12 @@ case "${DEPLOY_MODE}" in
     release)
         VERSION="${BASE_VERSION}-${SHA:0:12}"
         PULL_POLICY="IfNotPresent"
-        BUILD_CLI="${BUILD_CLI:-true}"
         ;;
     dev)
         DIRTY=""
         git diff --quiet HEAD -- 2>/dev/null || DIRTY="-dirty"
         VERSION="dev-$(date -u +%Y%m%d-%H%M%S)-${SHA:0:7}${DIRTY}"
         PULL_POLICY="Always"
-        BUILD_CLI="${BUILD_CLI:-false}"
         ;;
     *) echo "DEPLOY_MODE must be release or dev" >&2; exit 1 ;;
 esac
@@ -34,12 +33,8 @@ LOCAL_BIN="$HOME/.local/bin"
 mkdir -p "$HOME/.docker" "$LOCAL_BIN"
 export PATH="$LOCAL_BIN:$PATH"
 
-if ! command -v buildctl >/dev/null 2>&1; then
-    BUILDKIT_VERSION=0.17.3
-    curl -fsSL "https://github.com/moby/buildkit/releases/download/v${BUILDKIT_VERSION}/buildkit-v${BUILDKIT_VERSION}.linux-amd64.tar.gz" -o /tmp/buildkit.tar.gz
-    tar -xzf /tmp/buildkit.tar.gz -C "$LOCAL_BIN" --strip-components=1 bin/buildctl
-    rm /tmp/buildkit.tar.gz
-fi
+. "$(dirname "$0")/builder.sh"
+ensure_builder "$LOCAL_BIN"
 if ! command -v helm >/dev/null 2>&1; then
     curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | USE_SUDO=false HELM_INSTALL_DIR="$LOCAL_BIN" bash
 fi
@@ -49,17 +44,8 @@ if ! command -v kubectl >/dev/null 2>&1; then
     chmod +x "$LOCAL_BIN/kubectl"
 fi
 
-for i in $(seq 1 30); do
-    if buildctl debug info >/dev/null 2>&1; then break; fi
-    if [ "$i" -eq 30 ]; then echo "builder sidecar not ready" >&2; exit 1; fi
-    sleep 1
-done
-
-AUTH=$(printf "%s:%s" "$REGISTRY_USER" "$REGISTRY_PASSWORD" | base64 -w 0)
-cat > "$HOME/.docker/config.json" <<JSON
-{ "auths": { "${REGISTRY}": { "auth": "${AUTH}" } } }
-JSON
 export DOCKER_CONFIG="$HOME/.docker"
+registry_login
 
 IMAGE="${REGISTRY}/${IMAGE_PATH}"
 CLI_IMAGE="${REGISTRY}/${CLI_IMAGE_PATH}"

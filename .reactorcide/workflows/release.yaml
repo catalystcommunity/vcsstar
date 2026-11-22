@@ -1,0 +1,29 @@
+id: vcsstar-release
+name: vcsstar release
+on:
+  events: [tag_created]
+  branches: ["vcsstar/v*"]
+jobs:
+  vcsstar-release-prepare:
+    job_file: release-control.yaml
+    environment:
+      RELEASE_STEP: prepare
+  vcsstar-release-cli:
+    job_file: release-cli.yaml
+    depends_on: [vcsstar-release-prepare]
+    for_each:
+      - x86_64-unknown-linux-gnu
+      - aarch64-unknown-linux-gnu
+      - x86_64-apple-darwin
+      - aarch64-apple-darwin
+      - x86_64-pc-windows-gnu
+      - aarch64-pc-windows-gnullvm
+    item_var: TARGET
+  vcsstar-release-server:
+    job_file: release-server.yaml
+    depends_on: [vcsstar-release-prepare]
+  vcsstar-release-publish:
+    job_file: release-control.yaml
+    depends_on: [vcsstar-release-cli, vcsstar-release-server]
+    environment:
+      RELEASE_STEP: publish

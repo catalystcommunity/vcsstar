@@ -4,8 +4,8 @@
 //! mirroring. On a mirrored repository the PR is synced with a GitHub pull
 //! request both ways (`github_sync`).
 
-use chrono::{DateTime, Utc};
 use diesel::prelude::*;
+use time::OffsetDateTime;
 use vcsstar_db::models::{Identity, Org as OrgRow, Repo as RepoRow};
 use vcsstar_db::schema::{identities, pr_comments, pr_counters, pr_reviews, pull_requests, repos};
 use vcsstar_db::DbConn;
@@ -44,12 +44,12 @@ pub struct PrRow {
     pub merge_kind: Option<String>,
     pub merged_commit_sha: Option<String>,
     pub merged_by: Option<uuid::Uuid>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub closed_at: Option<DateTime<Utc>>,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+    pub closed_at: Option<OffsetDateTime>,
     pub github_number: Option<i32>,
     /// GitHub's `updated_at` of the pull request as last applied here.
-    pub github_updated_at: Option<DateTime<Utc>>,
+    pub github_updated_at: Option<OffsetDateTime>,
 }
 
 pub fn head_ref_name(n: i32) -> String {
@@ -310,7 +310,7 @@ pub(crate) fn trial_merge(
         .set((
             pull_requests::mergeable.eq(mergeable),
             pull_requests::merge_base_sha.eq(merge_base.map(|r| r.0)),
-            pull_requests::updated_at.eq(Utc::now()),
+            pull_requests::updated_at.eq(OffsetDateTime::now_utc()),
         ))
         .returning(PrRow::as_returning())
         .get_result(conn)?;
@@ -516,7 +516,7 @@ pub fn update(app: &App, ctx: &ReqCtx, req: UpdatePrRequest) -> Result<PullReque
                     .as_ref()
                     .map(|t| pull_requests::title.eq(t.trim().to_string())),
                 req.body.as_ref().map(|b| pull_requests::body.eq(b)),
-                pull_requests::updated_at.eq(Utc::now()),
+                pull_requests::updated_at.eq(OffsetDateTime::now_utc()),
             ))
             .returning(PrRow::as_returning())
             .get_result(conn)?;
@@ -553,7 +553,7 @@ fn set_state(
             .set((
                 pull_requests::state.eq(to),
                 pull_requests::closed_at.eq(if to == "closed" {
-                    Some(Utc::now())
+                    Some(OffsetDateTime::now_utc())
                 } else {
                     None
                 }),
@@ -562,7 +562,7 @@ fn set_state(
                 } else {
                     pr.mergeable.as_str()
                 }),
-                pull_requests::updated_at.eq(Utc::now()),
+                pull_requests::updated_at.eq(OffsetDateTime::now_utc()),
             ))
             .returning(PrRow::as_returning())
             .get_result(conn)?;
@@ -647,7 +647,7 @@ pub fn retarget(app: &App, ctx: &ReqCtx, req: RetargetRequest) -> Result<PullReq
                 pull_requests::base_ref.eq(&base_ref),
                 pull_requests::base_sha.eq(&base_sha.0),
                 pull_requests::mergeable.eq("unknown"),
-                pull_requests::updated_at.eq(Utc::now()),
+                pull_requests::updated_at.eq(OffsetDateTime::now_utc()),
             ))
             .returning(PrRow::as_returning())
             .get_result(conn)?;
@@ -673,7 +673,7 @@ pub(crate) struct ReviewRow {
     pub acting_via: Option<String>,
     pub approval_scope: Option<String>,
     pub body: Option<String>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: OffsetDateTime,
     pub github_id: Option<i64>,
 }
 
@@ -780,7 +780,7 @@ pub fn review(app: &App, ctx: &ReqCtx, req: ReviewRequest) -> Result<Review, Err
             .returning(ReviewRow::as_returning())
             .get_result(conn)?;
         diesel::update(pull_requests::table.find(pr.id))
-            .set(pull_requests::updated_at.eq(Utc::now()))
+            .set(pull_requests::updated_at.eq(OffsetDateTime::now_utc()))
             .execute(conn)?;
         outbox::emit(
             conn,
@@ -815,12 +815,12 @@ pub(crate) struct CommentRow {
     pub path: Option<String>,
     pub line: Option<i32>,
     pub commit_sha: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub edited_at: Option<DateTime<Utc>>,
+    pub created_at: OffsetDateTime,
+    pub edited_at: Option<OffsetDateTime>,
     pub github_id: Option<i64>,
     pub github_kind: Option<String>,
     /// GitHub's `updated_at` of the comment as last applied here.
-    pub github_updated_at: Option<DateTime<Utc>>,
+    pub github_updated_at: Option<OffsetDateTime>,
 }
 
 pub(crate) fn comment_wire(
@@ -863,7 +863,7 @@ pub fn comment(app: &App, ctx: &ReqCtx, req: CommentRequest) -> Result<Comment, 
             .returning(CommentRow::as_returning())
             .get_result(conn)?;
         diesel::update(pull_requests::table.find(pr.id))
-            .set(pull_requests::updated_at.eq(Utc::now()))
+            .set(pull_requests::updated_at.eq(OffsetDateTime::now_utc()))
             .execute(conn)?;
         outbox::emit(
             conn,
@@ -1295,8 +1295,8 @@ pub fn merge(app: &App, ctx: &ReqCtx, req: MergeRequest) -> Result<MergeResult, 
                 pull_requests::merged_commit_sha.eq(&merged.0),
                 pull_requests::merged_by.eq(p.identity.id),
                 pull_requests::mergeable.eq("clean"),
-                pull_requests::closed_at.eq(Utc::now()),
-                pull_requests::updated_at.eq(Utc::now()),
+                pull_requests::closed_at.eq(OffsetDateTime::now_utc()),
+                pull_requests::updated_at.eq(OffsetDateTime::now_utc()),
             ))
             .returning(PrRow::as_returning())
             .get_result(conn)?;
@@ -1375,7 +1375,7 @@ pub fn on_push(
                         .set((
                             pull_requests::head_sha.eq(&new.0),
                             pull_requests::mergeable.eq("unknown"),
-                            pull_requests::updated_at.eq(Utc::now()),
+                            pull_requests::updated_at.eq(OffsetDateTime::now_utc()),
                         ))
                         .returning(PrRow::as_returning())
                         .get_result(conn)?;
@@ -1444,7 +1444,7 @@ fn retarget_on_base_delete(
                 pull_requests::base_ref.eq(&default_ref),
                 pull_requests::base_sha.eq(&base_sha.0),
                 pull_requests::mergeable.eq("unknown"),
-                pull_requests::updated_at.eq(Utc::now()),
+                pull_requests::updated_at.eq(OffsetDateTime::now_utc()),
             ))
             .returning(PrRow::as_returning())
             .get_result(conn)?;
@@ -1480,7 +1480,7 @@ pub fn edit_comment(
         let row = diesel::update(pr_comments::table.find(id))
             .set((
                 pr_comments::body.eq(req.body),
-                pr_comments::edited_at.eq(Utc::now()),
+                pr_comments::edited_at.eq(OffsetDateTime::now_utc()),
             ))
             .returning(CommentRow::as_returning())
             .get_result(conn)?;
