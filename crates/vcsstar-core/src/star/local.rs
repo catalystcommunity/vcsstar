@@ -6,9 +6,9 @@ use crate::services::{
     statuses::StatusRow,
 };
 use crate::{outbox, push, vcs, App, Error};
-use chrono::{TimeZone, Utc};
 use diesel::prelude::*;
 use diesel::sql_types::{Jsonb, Text, Uuid as SqlUuid};
+use liblinkkeys::timestamp::Rfc3339 as _;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use uuid::Uuid;
@@ -56,7 +56,7 @@ fn row(
 }
 pub fn snapshot(conn: &mut PgConnection, repo: &Repo) -> Result<BTreeMap<String, Item>, Error> {
     let mut items = BTreeMap::new();
-    items.insert("settings".into(),row(conn,"settings",json!({"description":repo.description.clone().unwrap_or_default(),"default_branch":repo.default_branch,"archived":repo.archived}),None,repo.created_at.timestamp_millis())?);
+    items.insert("settings".into(),row(conn,"settings",json!({"description":repo.description.clone().unwrap_or_default(),"default_branch":repo.default_branch,"archived":repo.archived}),None,crate::to_ms(repo.created_at))?);
     for (name, sha) in refs::load(conn, repo.id)? {
         if name.starts_with("refs/heads/") || name.starts_with("refs/tags/") {
             use vcsstar_db::schema::repo_refs;
@@ -76,20 +76,20 @@ pub fn snapshot(conn: &mut PgConnection, repo: &Repo) -> Result<BTreeMap<String,
         .load::<PrRow>(conn)?
     {
         let key = format!("pr:{}", pr.id);
-        items.insert(key.clone(),row(conn,"pr",json!({"title":pr.title,"body":pr.body.unwrap_or_default(),"head_ref":pr.head_ref,"base_ref":pr.base_ref,"head_sha":pr.head_sha,"base_sha":pr.base_sha,"state":pr.state,"merge_sha":pr.merged_commit_sha.unwrap_or_default(),"head_remote":pr.head_remote.unwrap_or_default()}),Some(pr.author_identity_id),pr.created_at.timestamp_millis())?);
+        items.insert(key.clone(),row(conn,"pr",json!({"title":pr.title,"body":pr.body.unwrap_or_default(),"head_ref":pr.head_ref,"base_ref":pr.base_ref,"head_sha":pr.head_sha,"base_sha":pr.base_sha,"state":pr.state,"merge_sha":pr.merged_commit_sha.unwrap_or_default(),"head_remote":pr.head_remote.unwrap_or_default()}),Some(pr.author_identity_id),crate::to_ms(pr.created_at))?);
         for c in pr_comments::table
             .filter(pr_comments::pr_id.eq(pr.id))
             .select(CommentRow::as_select())
             .load::<CommentRow>(conn)?
         {
-            items.insert(format!("comment:{}",c.id),row(conn,"comment",json!({"parent":key,"body":c.body,"path":c.path,"line":c.line,"commit_sha":c.commit_sha}),Some(c.author),c.created_at.timestamp_millis())?);
+            items.insert(format!("comment:{}",c.id),row(conn,"comment",json!({"parent":key,"body":c.body,"path":c.path,"line":c.line,"commit_sha":c.commit_sha}),Some(c.author),crate::to_ms(c.created_at))?);
         }
         for r in pr_reviews::table
             .filter(pr_reviews::pr_id.eq(pr.id))
             .select(ReviewRow::as_select())
             .load::<ReviewRow>(conn)?
         {
-            items.insert(format!("review:{}",r.id),row(conn,"review",json!({"parent":key,"body":r.body.unwrap_or_default(),"state":r.state,"head_sha":r.head_sha_at_review}),Some(r.reviewer),r.created_at.timestamp_millis())?);
+            items.insert(format!("review:{}",r.id),row(conn,"review",json!({"parent":key,"body":r.body.unwrap_or_default(),"state":r.state,"head_sha":r.head_sha_at_review}),Some(r.reviewer),crate::to_ms(r.created_at))?);
         }
     }
     for s in statuses::table
@@ -97,7 +97,7 @@ pub fn snapshot(conn: &mut PgConnection, repo: &Repo) -> Result<BTreeMap<String,
         .select(StatusRow::as_select())
         .load::<StatusRow>(conn)?
     {
-        items.insert(format!("status:{}:{}",s.sha,super::encoded(&s.context)),row(conn,"status",json!({"sha":s.sha,"context":s.context,"state":s.state,"target_url":s.target_url,"description":s.description}),s.reporter,s.created_at.timestamp_millis())?);
+        items.insert(format!("status:{}:{}",s.sha,super::encoded(&s.context)),row(conn,"status",json!({"sha":s.sha,"context":s.context,"state":s.state,"target_url":s.target_url,"description":s.description}),s.reporter,crate::to_ms(s.created_at))?);
     }
     // Keep imported attribution, timestamps, and source links. Content is
     // always read from the native tables so local edits remain authoritative.
@@ -220,7 +220,7 @@ pub fn apply(
             let mut data=item.data.clone();
             data["id"]=json!(if kind=="settings" {repo.id} else if kind=="status" {Uuid::now_v7()} else {key_id(key)?});
             data["actor"]=json!(item.actor);
-            data["created_at"]=json!(Utc.timestamp_millis_opt(item.created_at).single().unwrap_or_else(Utc::now).to_rfc3339());
+            data["created_at"]=json!(crate::from_ms(item.created_at).to_rfc3339());
             if matches!(kind,"pr"|"comment"|"review") && item.actor.is_none() {return Err(Error::invalid("collaboration record has no author"));}
             let sql=match kind {
                 "settings" => "UPDATE repos SET description=$2->>'description',default_branch=$2->>'default_branch',archived=($2->>'archived')::boolean WHERE id=$1",

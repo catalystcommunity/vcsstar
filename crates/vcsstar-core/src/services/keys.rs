@@ -4,9 +4,9 @@
 
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use ssh_key::{HashAlg, PublicKey};
+use time::OffsetDateTime;
 use vcsstar_db::models::Identity;
 use vcsstar_db::schema::{identities, ssh_keys};
 use vcsstar_db::DbConn;
@@ -31,9 +31,9 @@ pub struct KeyRow {
     pub application_id: Option<String>,
     pub instance_id: Option<String>,
     pub key_id: Option<String>,
-    pub attested_until: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub revoked_at: Option<DateTime<Utc>>,
+    pub attested_until: Option<OffsetDateTime>,
+    pub created_at: OffsetDateTime,
+    pub revoked_at: Option<OffsetDateTime>,
 }
 
 impl KeyRow {
@@ -52,14 +52,13 @@ impl KeyRow {
     }
 
     /// Was this key an acceptable signer at `at`?
-    pub fn valid_at(&self, at: DateTime<Utc>) -> bool {
-        self.created_at <= at + chrono::Duration::minutes(5)
-            && self.revoked_at.is_none_or(|r| r > at)
+    pub fn valid_at(&self, at: OffsetDateTime) -> bool {
+        self.created_at <= at + time::Duration::minutes(5) && self.revoked_at.is_none_or(|r| r > at)
     }
 
     /// Was the attestation current at `at`? Expiry later is a missing proof,
     /// not a revocation (plan/01 time rules).
-    pub fn attested_at(&self, at: DateTime<Utc>) -> bool {
+    pub fn attested_at(&self, at: OffsetDateTime) -> bool {
         self.attested && self.valid_at(at) && self.attested_until.is_none_or(|u| u >= at)
     }
 }
@@ -217,7 +216,7 @@ pub fn revoke(app: &App, ctx: &ReqCtx, req: KeyRef) -> Result<WireOk, Error> {
             .filter(ssh_keys::identity_id.eq(p.identity.id))
             .filter(ssh_keys::revoked_at.is_null()),
     )
-    .set(ssh_keys::revoked_at.eq(Utc::now()))
+    .set(ssh_keys::revoked_at.eq(OffsetDateTime::now_utc()))
     .execute(&mut conn)?;
     if n == 0 {
         return Err(Error::not_found("key"));
@@ -244,7 +243,7 @@ pub fn identity_for_auth_key(
         return Ok(None);
     }
     // Attested keys need a current attestation for live operations.
-    if key.attested && !key.attested_at(Utc::now()) {
+    if key.attested && !key.attested_at(OffsetDateTime::now_utc()) {
         return Ok(None);
     }
     Ok(Some((identity, key)))

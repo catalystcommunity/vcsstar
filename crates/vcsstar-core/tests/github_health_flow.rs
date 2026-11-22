@@ -33,7 +33,7 @@ fn lane_and_rate_state_are_shared_rows() {
         health::is_open(Lane::Git),
         "three transient failures open it"
     );
-    let (failures, open_until): (i32, Option<chrono::DateTime<chrono::Utc>>) = github_lanes::table
+    let (failures, open_until): (i32, Option<time::OffsetDateTime>) = github_lanes::table
         .find("git")
         .select((github_lanes::consecutive_failures, github_lanes::open_until))
         .first(&mut conn)
@@ -49,8 +49,8 @@ fn lane_and_rate_state_are_shared_rows() {
     assert!(health::hold(Lane::Git).is_none());
     let (failures, open_until, recovered): (
         i32,
-        Option<chrono::DateTime<chrono::Utc>>,
-        Option<chrono::DateTime<chrono::Utc>>,
+        Option<time::OffsetDateTime>,
+        Option<time::OffsetDateTime>,
     ) = github_lanes::table
         .find("git")
         .select((
@@ -69,7 +69,7 @@ fn lane_and_rate_state_are_shared_rows() {
     assert_eq!(health::recovered_at(Lane::Git), recovered);
 
     let token = format!("test:{}", uuid::Uuid::now_v7().simple());
-    let reset = chrono::Utc::now() + chrono::Duration::minutes(5);
+    let reset = time::OffsetDateTime::now_utc() + time::Duration::minutes(5);
     health::note_rate_limit(&token, 10, 5000, reset);
     let remaining: i64 = github_rate_limits::table
         .find(&token)

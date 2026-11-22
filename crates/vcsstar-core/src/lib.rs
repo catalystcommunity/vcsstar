@@ -41,7 +41,7 @@ pub use errors::{Code, Error};
 pub struct App {
     pub config: Arc<Config>,
     pub db: DbPool,
-    pub started_at: chrono::DateTime<chrono::Utc>,
+    pub started_at: time::OffsetDateTime,
     /// Delegated RP client. `None` when LinkKeys login is not configured;
     /// token-based access still works.
     pub rp: Option<Arc<dyn linkkeys::RpCaller>>,
@@ -107,7 +107,7 @@ impl App {
         Self {
             config: Arc::new(config),
             db,
-            started_at: chrono::Utc::now(),
+            started_at: time::OffsetDateTime::now_utc(),
             rp,
             store,
             pushes: Arc::new(push::PushRegistry::default()),
@@ -171,13 +171,33 @@ impl App {
 }
 
 pub fn now_ms() -> i64 {
-    chrono::Utc::now().timestamp_millis()
+    to_ms(time::OffsetDateTime::now_utc())
 }
 
-pub fn to_ms(t: chrono::DateTime<chrono::Utc>) -> i64 {
-    t.timestamp_millis()
+pub fn to_ms(t: time::OffsetDateTime) -> i64 {
+    t.unix_timestamp() * 1_000 + i64::from(t.millisecond())
 }
 
-pub fn from_ms(ms: i64) -> chrono::DateTime<chrono::Utc> {
-    chrono::DateTime::<chrono::Utc>::from_timestamp_millis(ms).unwrap_or_else(chrono::Utc::now)
+pub fn from_ms(ms: i64) -> time::OffsetDateTime {
+    time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(ms) * 1_000_000)
+        .unwrap_or_else(|_| time::OffsetDateTime::now_utc())
+}
+
+#[cfg(test)]
+mod timestamp_tests {
+    use super::{from_ms, to_ms};
+    use time::OffsetDateTime;
+
+    #[test]
+    fn unix_milliseconds_round_down_before_the_epoch() {
+        let before_epoch = OffsetDateTime::from_unix_timestamp_nanos(-1).unwrap();
+        assert_eq!(to_ms(before_epoch), -1);
+        for ms in [-1_001, -1, 0, 1, 1_001] {
+            assert_eq!(
+                from_ms(ms).unix_timestamp_nanos(),
+                i128::from(ms) * 1_000_000
+            );
+            assert_eq!(to_ms(from_ms(ms)), ms);
+        }
+    }
 }

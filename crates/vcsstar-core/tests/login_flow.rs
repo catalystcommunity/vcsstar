@@ -1,6 +1,7 @@
 //! Browser login against a fake RP, through the real database. Runs only
 //! when DATABASE_URL points at a migrated dev database.
 
+use liblinkkeys::timestamp::Rfc3339 as _;
 use std::sync::{Arc, Mutex};
 
 use liblinkkeys::claims::{sign_claim, ClaimSigner, ClaimSpec};
@@ -36,15 +37,15 @@ impl HomeKey {
     }
 
     fn domain_key(&self) -> lk::DomainPublicKey {
-        let now = chrono::Utc::now();
+        let now = time::OffsetDateTime::now_utc();
         lk::DomainPublicKey {
             key_id: "k1".into(),
             public_key: self.public.clone(),
             fingerprint: fingerprint(&self.public),
             algorithm: "ed25519".into(),
             key_usage: "sign".into(),
-            created_at: (now - chrono::Duration::days(1)).to_rfc3339(),
-            expires_at: (now + chrono::Duration::days(1)).to_rfc3339(),
+            created_at: (now - time::Duration::days(1)).to_rfc3339(),
+            expires_at: (now + time::Duration::days(1)).to_rfc3339(),
             revoked_at: None,
             signed_by_key_id: None,
             key_signature: None,
@@ -52,7 +53,7 @@ impl HomeKey {
     }
 
     fn claim(&self, claim_type: &str, value: &str) -> lk::Claim {
-        let attested = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        let attested = time::OffsetDateTime::now_utc().to_rfc3339_secs_z();
         sign_claim(
             &ClaimSpec {
                 claim_id: &format!("c-{claim_type}"),
@@ -110,14 +111,14 @@ impl RpCaller for FakeRp {
             }
             "verify-assertion" => {
                 let req = decode_rp_verify_request(&payload).unwrap();
-                let now = chrono::Utc::now();
+                let now = time::OffsetDateTime::now_utc();
                 let assertion = lk::IdentityAssertion {
                     user_id: USER.into(),
                     domain: req.expected_domain.clone(),
                     audience: "catalystsquad.com".into(),
                     nonce: self.nonce.lock().unwrap().clone().unwrap_or_default(),
                     issued_at: now.to_rfc3339(),
-                    expires_at: (now + chrono::Duration::minutes(4)).to_rfc3339(),
+                    expires_at: (now + time::Duration::minutes(4)).to_rfc3339(),
                     authorized_claims: vec!["handle".into()],
                     display_name: Some("Alice".into()),
                 };
@@ -142,7 +143,7 @@ impl RpCaller for FakeRp {
             "resolve-domain-keys" => {
                 let req = decode_rp_resolve_domain_keys_request(&payload).unwrap();
                 assert_eq!(req.domain, HOME);
-                let now = chrono::Utc::now().to_rfc3339();
+                let now = time::OffsetDateTime::now_utc().to_rfc3339();
                 Ok(encode_rp_resolve_domain_keys_response(
                     &lk::RpResolveDomainKeysResponse {
                         domain: HOME.into(),

@@ -11,9 +11,9 @@
 //! pastes (`Auth/set-github-token`). Both are sealed with the instance
 //! credential key, like stored mirror credentials.
 
-use chrono::{DateTime, Duration, Utc};
 use diesel::prelude::*;
 use serde_json::Value as Json;
+use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 use vcsstar_db::models::Identity;
 use vcsstar_db::schema::{
@@ -39,14 +39,14 @@ pub struct LinkRow {
     pub login: String,
     pub kind: String,
     pub access_ciphertext: Vec<u8>,
-    pub access_expires_at: Option<DateTime<Utc>>,
+    pub access_expires_at: Option<OffsetDateTime>,
     pub refresh_ciphertext: Option<Vec<u8>>,
-    pub refresh_expires_at: Option<DateTime<Utc>>,
-    pub broken_at: Option<DateTime<Utc>>,
+    pub refresh_expires_at: Option<OffsetDateTime>,
+    pub broken_at: Option<OffsetDateTime>,
     pub broken_reason: Option<String>,
-    pub linked_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub last_used_at: Option<DateTime<Utc>>,
+    pub linked_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+    pub last_used_at: Option<OffsetDateTime>,
     /// The App whose client issued the token (NULL: the first App).
     pub app_id: Option<String>,
 }
@@ -98,7 +98,8 @@ pub fn begin(
     cred::require_key(app)?;
     let state = tokens::new_secret("vgl_");
     diesel::delete(
-        github_link_attempts::table.filter(github_link_attempts::expires_at.lt(Utc::now())),
+        github_link_attempts::table
+            .filter(github_link_attempts::expires_at.lt(OffsetDateTime::now_utc())),
     )
     .execute(conn)?;
     diesel::insert_into(github_link_attempts::table)
@@ -107,7 +108,7 @@ pub fn begin(
             github_link_attempts::identity_id.eq(identity_id),
             github_link_attempts::return_to.eq(return_to),
             github_link_attempts::expires_at
-                .eq(Utc::now() + Duration::minutes(ATTEMPT_TTL_MINUTES)),
+                .eq(OffsetDateTime::now_utc() + Duration::minutes(ATTEMPT_TTL_MINUTES)),
         ))
         .execute(conn)?;
     Ok(format!(
@@ -130,7 +131,7 @@ pub fn complete(
     code: &str,
 ) -> Result<(LinkRow, Option<String>), Error> {
     let cfg = app_config(app)?;
-    let attempt: Option<(Uuid, Option<String>, DateTime<Utc>)> = github_link_attempts::table
+    let attempt: Option<(Uuid, Option<String>, OffsetDateTime)> = github_link_attempts::table
         .find(tokens::hash(state))
         .select((
             github_link_attempts::identity_id,
@@ -146,7 +147,7 @@ pub fn complete(
         ));
     };
     diesel::delete(github_link_attempts::table.find(tokens::hash(state))).execute(conn)?;
-    if expires_at < Utc::now() {
+    if expires_at < OffsetDateTime::now_utc() {
         return Err(Error::new(
             Code::PreconditionFailed,
             "the GitHub authorization took too long; start again",
@@ -247,10 +248,10 @@ pub fn store(
                 github_links::access_expires_at.eq(tok.expires_at),
                 github_links::refresh_ciphertext.eq(&refresh),
                 github_links::refresh_expires_at.eq(tok.refresh_expires_at),
-                github_links::broken_at.eq(None::<DateTime<Utc>>),
+                github_links::broken_at.eq(None::<OffsetDateTime>),
                 github_links::broken_reason.eq(None::<String>),
                 github_links::app_id.eq(None::<String>),
-                github_links::updated_at.eq(Utc::now()),
+                github_links::updated_at.eq(OffsetDateTime::now_utc()),
             ))
             .returning(LinkRow::as_returning())
             .get_result(conn)?;
@@ -384,9 +385,9 @@ pub fn mark_broken(conn: &mut PgConnection, identity_id: Uuid, reason: &str) {
     let reason: String = reason.chars().take(300).collect();
     let _ = diesel::update(github_links::table.find(identity_id))
         .set((
-            github_links::broken_at.eq(Some(Utc::now())),
+            github_links::broken_at.eq(Some(OffsetDateTime::now_utc())),
             github_links::broken_reason.eq(Some(reason)),
-            github_links::updated_at.eq(Utc::now()),
+            github_links::updated_at.eq(OffsetDateTime::now_utc()),
         ))
         .execute(conn);
 }
@@ -407,7 +408,7 @@ pub fn user_token(
     }
     let fresh = row
         .access_expires_at
-        .is_none_or(|t| t - Duration::minutes(REFRESH_MARGIN_MINUTES) > Utc::now());
+        .is_none_or(|t| t - Duration::minutes(REFRESH_MARGIN_MINUTES) > OffsetDateTime::now_utc());
     let token = if fresh {
         cred::open(app, &row.access_ciphertext).map_err(|e| Failure::Terminal(e.message))?
     } else {
@@ -422,7 +423,7 @@ pub fn user_token(
         }
     };
     let _ = diesel::update(github_links::table.find(identity_id))
-        .set(github_links::last_used_at.eq(Some(Utc::now())))
+        .set(github_links::last_used_at.eq(Some(OffsetDateTime::now_utc())))
         .execute(conn);
     Ok(Some((row.login, token)))
 }
@@ -443,7 +444,10 @@ fn refresh(app: &App, conn: &mut PgConnection, row: &LinkRow) -> Result<String, 
     let refresh_ct = row.refresh_ciphertext.as_ref().ok_or_else(|| {
         Failure::Terminal("the access token expired and there is no refresh token".into())
     })?;
-    if row.refresh_expires_at.is_some_and(|t| t <= Utc::now()) {
+    if row
+        .refresh_expires_at
+        .is_some_and(|t| t <= OffsetDateTime::now_utc())
+    {
         return Err(Failure::Terminal("the refresh token expired".into()));
     }
     let refresh_token = cred::open(app, refresh_ct).map_err(|e| Failure::Terminal(e.message))?;
@@ -466,7 +470,7 @@ fn refresh(app: &App, conn: &mut PgConnection, row: &LinkRow) -> Result<String, 
             github_links::refresh_ciphertext
                 .eq(new_refresh.as_ref().or(row.refresh_ciphertext.as_ref())),
             github_links::refresh_expires_at.eq(tok.refresh_expires_at.or(row.refresh_expires_at)),
-            github_links::updated_at.eq(Utc::now()),
+            github_links::updated_at.eq(OffsetDateTime::now_utc()),
         ))
         .execute(conn)
         .map_err(|e| Failure::Transient(format!("database: {e}")))?;
@@ -477,11 +481,13 @@ fn refresh(app: &App, conn: &mut PgConnection, row: &LinkRow) -> Result<String, 
 mod tests {
     #[test]
     fn freshness_margin() {
-        use chrono::{Duration, Utc};
-        let soon = Utc::now() + Duration::minutes(2);
-        let later = Utc::now() + Duration::hours(1);
-        let fresh = |t: Option<chrono::DateTime<Utc>>| {
-            t.is_none_or(|t| t - Duration::minutes(super::REFRESH_MARGIN_MINUTES) > Utc::now())
+        use time::{Duration, OffsetDateTime};
+        let soon = OffsetDateTime::now_utc() + Duration::minutes(2);
+        let later = OffsetDateTime::now_utc() + Duration::hours(1);
+        let fresh = |t: Option<OffsetDateTime>| {
+            t.is_none_or(|t| {
+                t - Duration::minutes(super::REFRESH_MARGIN_MINUTES) > OffsetDateTime::now_utc()
+            })
         };
         assert!(fresh(None));
         assert!(!fresh(Some(soon)));

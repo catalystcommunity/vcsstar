@@ -12426,3 +12426,1090 @@ fn csil_dec_stream_message(csil_v: &CsilCborValue) -> Result<StreamMessage, Csil
         ))),
     }
 }
+
+pub fn encode_meta_server_info_reply(
+    reply: Result<ServerInfo, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("ServerInfo", encode_server_info(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_begin_login_reply(
+    reply: Result<BeginLoginResponse, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("BeginLoginResponse", encode_begin_login_response(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_complete_login_reply(
+    reply: Result<Session, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Session", encode_session(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_create_token_reply(
+    reply: Result<ApiToken, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("ApiToken", encode_api_token(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_revoke_token_reply(reply: Result<Ok, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_whoami_reply(reply: Result<WhoAmI, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("WhoAmI", encode_who_am_i(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_begin_device_login_reply(
+    reply: Result<DeviceCode, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("DeviceCode", encode_device_code(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_poll_device_login_reply(
+    reply: Result<DevicePollResponse, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("DevicePollResponse", encode_device_poll_response(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_exchange_act_as_credential_reply(
+    reply: Result<ScopedBearer, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("ScopedBearer", encode_scoped_bearer(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_scope_set_reply(
+    reply: Result<SignedActAsScopeSet, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => (
+            "SignedActAsScopeSet",
+            encode_signed_act_as_scope_set(&value),
+        ),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_approve_device_login_reply(
+    reply: Result<Ok, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_register_key_reply(
+    reply: Result<SshKeyInfo, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("SshKeyInfo", encode_ssh_key_info(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_list_keys_reply(
+    reply: Result<ListKeysResponse, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("ListKeysResponse", encode_list_keys_response(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_revoke_key_reply(reply: Result<Ok, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_list_tokens_reply(
+    reply: Result<ListTokensResponse, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("ListTokensResponse", encode_list_tokens_response(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_logout_reply(reply: Result<Ok, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_github_link_status_reply(
+    reply: Result<GithubLink, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("GithubLink", encode_github_link(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_set_github_token_reply(
+    reply: Result<GithubLink, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("GithubLink", encode_github_link(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_unlink_github_reply(reply: Result<Ok, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_get_preferences_reply(
+    reply: Result<Preferences, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Preferences", encode_preferences(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_set_preferences_reply(
+    reply: Result<Preferences, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Preferences", encode_preferences(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_local_login_reply(
+    reply: Result<Session, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Session", encode_session(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_local_account_reply(
+    reply: Result<LocalAccount, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("LocalAccount", encode_local_account(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_auth_change_local_password_reply(
+    reply: Result<Ok, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_orgs_create_reply(reply: Result<Org, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Org", encode_org(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_orgs_get_reply(reply: Result<Org, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Org", encode_org(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_orgs_list_reply(reply: Result<OrgPage, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("OrgPage", encode_org_page(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_orgs_update_reply(reply: Result<Org, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Org", encode_org(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_orgs_set_member_reply(
+    reply: Result<OrgMember, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("OrgMember", encode_org_member(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_orgs_remove_member_reply(reply: Result<Ok, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_orgs_list_members_reply(
+    reply: Result<OrgMemberPage, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("OrgMemberPage", encode_org_member_page(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_orgs_create_team_reply(reply: Result<Team, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Team", encode_team(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_orgs_delete_team_reply(reply: Result<Ok, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_orgs_set_team_member_reply(
+    reply: Result<Team, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Team", encode_team(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_orgs_list_teams_reply(
+    reply: Result<ListTeamsResponse, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("ListTeamsResponse", encode_list_teams_response(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_create_reply(reply: Result<Repo, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Repo", encode_repo(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_get_reply(reply: Result<Repo, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Repo", encode_repo(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_list_reply(reply: Result<RepoPage, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("RepoPage", encode_repo_page(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_update_reply(reply: Result<Repo, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Repo", encode_repo(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_fork_reply(reply: Result<Repo, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Repo", encode_repo(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_list_refs_reply(
+    reply: Result<ListRefsResponse, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("ListRefsResponse", encode_list_refs_response(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_log_reply(reply: Result<CommitPage, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("CommitPage", encode_commit_page(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_tree_reply(
+    reply: Result<TreeResponse, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("TreeResponse", encode_tree_response(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_blob_reply(
+    reply: Result<BlobResponse, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("BlobResponse", encode_blob_response(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_diff_reply(
+    reply: Result<DiffResponse, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("DiffResponse", encode_diff_response(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_delete_reply(reply: Result<Ok, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_update_ref_reply(
+    reply: Result<RefInfo, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("RefInfo", encode_ref_info(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_get_commit_reply(
+    reply: Result<Commit, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Commit", encode_commit(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_set_grant_reply(reply: Result<Grant, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Grant", encode_grant(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_remove_grant_reply(reply: Result<Ok, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_list_grants_reply(
+    reply: Result<ListGrantsResponse, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("ListGrantsResponse", encode_list_grants_response(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_set_protection_reply(
+    reply: Result<BranchProtection, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("BranchProtection", encode_branch_protection(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_remove_protection_reply(
+    reply: Result<Ok, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_list_protections_reply(
+    reply: Result<ListProtectionsResponse, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => (
+            "ListProtectionsResponse",
+            encode_list_protections_response(&value),
+        ),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_capture_history_reply(
+    reply: Result<CaptureReport, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("CaptureReport", encode_capture_report(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_repos_list_forks_reply(
+    reply: Result<RepoPage, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("RepoPage", encode_repo_page(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_pull_requests_open_reply(
+    reply: Result<PullRequest, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("PullRequest", encode_pull_request(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_pull_requests_get_reply(
+    reply: Result<PullRequest, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("PullRequest", encode_pull_request(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_pull_requests_list_reply(
+    reply: Result<PrPage, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("PrPage", encode_pr_page(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_pull_requests_review_reply(
+    reply: Result<Review, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Review", encode_review(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_pull_requests_comment_reply(
+    reply: Result<Comment, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Comment", encode_comment(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_pull_requests_merge_reply(
+    reply: Result<MergeResult, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("MergeResult", encode_merge_result(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_pull_requests_close_reply(
+    reply: Result<PullRequest, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("PullRequest", encode_pull_request(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_pull_requests_reopen_reply(
+    reply: Result<PullRequest, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("PullRequest", encode_pull_request(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_pull_requests_retarget_reply(
+    reply: Result<PullRequest, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("PullRequest", encode_pull_request(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_pull_requests_update_reply(
+    reply: Result<PullRequest, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("PullRequest", encode_pull_request(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_pull_requests_list_reviews_reply(
+    reply: Result<ListReviewsResponse, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("ListReviewsResponse", encode_list_reviews_response(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_pull_requests_list_comments_reply(
+    reply: Result<ListCommentsResponse, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => (
+            "ListCommentsResponse",
+            encode_list_comments_response(&value),
+        ),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_pull_requests_edit_comment_reply(
+    reply: Result<Comment, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Comment", encode_comment(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_pull_requests_delete_comment_reply(
+    reply: Result<Ok, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_statuses_set_reply(
+    reply: Result<CommitStatus, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("CommitStatus", encode_commit_status(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_statuses_list_reply(
+    reply: Result<ListStatusResponse, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("ListStatusResponse", encode_list_status_response(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_hooks_create_endpoint_reply(
+    reply: Result<Endpoint, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Endpoint", encode_endpoint(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_hooks_list_endpoints_reply(
+    reply: Result<ListEndpointsResponse, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => (
+            "ListEndpointsResponse",
+            encode_list_endpoints_response(&value),
+        ),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_hooks_delete_endpoint_reply(
+    reply: Result<Ok, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_hooks_list_deliveries_reply(
+    reply: Result<DeliveryPage, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("DeliveryPage", encode_delivery_page(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_hooks_redeliver_reply(reply: Result<Ok, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_hooks_update_endpoint_reply(
+    reply: Result<Endpoint, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Endpoint", encode_endpoint(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_status_reply(
+    reply: Result<MirrorStatus, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("MirrorStatus", encode_mirror_status(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_list_blocked_reply(
+    reply: Result<ListBlockedResponse, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("ListBlockedResponse", encode_list_blocked_response(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_replay_blocked_reply(
+    reply: Result<ReplayResult, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("ReplayResult", encode_replay_result(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_set_credential_reply(
+    reply: Result<Credential, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Credential", encode_credential(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_reconcile_reply(
+    reply: Result<ReconcileReport, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("ReconcileReport", encode_reconcile_report(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_pause_reply(reply: Result<Ok, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_resume_reply(reply: Result<Ok, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_import_repo_reply(
+    reply: Result<Repo, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Repo", encode_repo(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_configure_reply(
+    reply: Result<MirrorStatus, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("MirrorStatus", encode_mirror_status(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_list_credentials_reply(
+    reply: Result<ListCredentialsResponse, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => (
+            "ListCredentialsResponse",
+            encode_list_credentials_response(&value),
+        ),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_remove_credential_reply(
+    reply: Result<Ok, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_list_github_repos_reply(
+    reply: Result<GithubRepoPage, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("GithubRepoPage", encode_github_repo_page(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_health_reply(
+    reply: Result<GithubHealth, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("GithubHealth", encode_github_health(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_backfill_reply(
+    reply: Result<MirrorStatus, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("MirrorStatus", encode_mirror_status(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_list_github_installations_reply(
+    reply: Result<GithubInstallationList, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => (
+            "GithubInstallationList",
+            encode_github_installation_list(&value),
+        ),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_import_all_reply(
+    reply: Result<ImportAllResult, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("ImportAllResult", encode_import_all_result(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_set_schedule_reply(
+    reply: Result<MirrorStatus, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("MirrorStatus", encode_mirror_status(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_list_connections_reply(
+    reply: Result<SyncConnections, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("SyncConnections", encode_sync_connections(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_connect_reply(
+    reply: Result<SyncConnection, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("SyncConnection", encode_sync_connection(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_update_connection_reply(
+    reply: Result<SyncConnection, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("SyncConnection", encode_sync_connection(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_sync_now_reply(reply: Result<Ok, ServiceError>) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_webhook_secret_reply(
+    reply: Result<SyncWebhookSecret, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("SyncWebhookSecret", encode_sync_webhook_secret(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_get_policy_reply(
+    reply: Result<SyncPolicy, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("SyncPolicy", encode_sync_policy(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_set_policy_reply(
+    reply: Result<SyncPolicy, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("SyncPolicy", encode_sync_policy(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_list_conflicts_reply(
+    reply: Result<SyncConflicts, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("SyncConflicts", encode_sync_conflicts(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_resolve_conflict_reply(
+    reply: Result<Ok, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_link_provider_reply(
+    reply: Result<ProviderLink, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("ProviderLink", encode_provider_link(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_list_provider_links_reply(
+    reply: Result<ProviderLinks, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("ProviderLinks", encode_provider_links(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_unlink_provider_reply(
+    reply: Result<Ok, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_mirror_list_sync_records_reply(
+    reply: Result<SyncRecords, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("SyncRecords", encode_sync_records(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_instance_list_roles_reply(
+    reply: Result<InstanceRoleList, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("InstanceRoleList", encode_instance_role_list(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_instance_set_role_reply(
+    reply: Result<InstanceRoleGrant, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("InstanceRoleGrant", encode_instance_role_grant(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_instance_remove_role_reply(
+    reply: Result<Ok, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_instance_create_local_account_reply(
+    reply: Result<LocalAccount, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("LocalAccount", encode_local_account(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_instance_reset_local_password_reply(
+    reply: Result<Ok, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_service_accounts_create_reply(
+    reply: Result<ServiceAccount, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("ServiceAccount", encode_service_account(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_service_accounts_list_reply(
+    reply: Result<ListServiceAccountsResponse, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => (
+            "ListServiceAccountsResponse",
+            encode_list_service_accounts_response(&value),
+        ),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_service_accounts_disable_reply(
+    reply: Result<Ok, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_service_accounts_enable_reply(
+    reply: Result<Ok, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_service_accounts_create_token_reply(
+    reply: Result<ApiToken, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("ApiToken", encode_api_token(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_service_accounts_list_tokens_reply(
+    reply: Result<ListTokensResponse, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("ListTokensResponse", encode_list_tokens_response(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_service_accounts_revoke_token_reply(
+    reply: Result<Ok, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Ok", encode_ok(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_federation_handshake_reply(
+    reply: Result<FedHelloAck, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("FedHelloAck", encode_fed_hello_ack(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_federation_verify_head_reply(
+    reply: Result<HeadInfo, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("HeadInfo", encode_head_info(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_federation_head_info_reply(
+    reply: Result<HeadInfo, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("HeadInfo", encode_head_info(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}
+
+pub fn encode_federation_repo_info_reply(
+    reply: Result<Repo, ServiceError>,
+) -> (&'static str, Vec<u8>) {
+    match reply {
+        Ok(value) => ("Repo", encode_repo(&value)),
+        Err(value) => ("ServiceError", encode_service_error(&value)),
+    }
+}

@@ -15,7 +15,7 @@ use vcsstar_core::dispatch::AppDispatcher;
 use vcsstar_core::{App, Config};
 
 #[derive(Parser)]
-#[command(name = "vcsstard", version, about = "vcsstar server")]
+#[command(name = "vcsstard", version = vcsstar_transport::VERSION, about = "vcsstar server")]
 struct Cli {
     #[command(subcommand)]
     command: Command,

@@ -92,7 +92,7 @@ impl Client {
                         number("x-ratelimit-limit"),
                         number("x-ratelimit-reset"),
                     ) {
-                        if let Some(at) = chrono::DateTime::from_timestamp(reset as i64, 0) {
+                        if let Ok(at) = time::OffsetDateTime::from_unix_timestamp(reset as i64) {
                             health::note_rate_limit(&self.label, left, limit, at);
                         }
                     }
@@ -269,8 +269,8 @@ pub fn client_for(
 fn time(v: &Value, key: &str) -> i64 {
     v.get(key)
         .and_then(Value::as_str)
-        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-        .map(|t| t.timestamp_millis())
+        .and_then(|s| liblinkkeys::timestamp::parse_rfc3339(s).ok())
+        .map(crate::to_ms)
         .unwrap_or(0)
 }
 pub fn marker(repo: Uuid, key: &str) -> String {

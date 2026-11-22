@@ -1,8 +1,8 @@
 //! Tokens, sessions, and identity introspection. The LinkKeys login flows
 //! live in `linkkeys.rs` (phase 0, second half) and call into here.
 
-use chrono::Utc;
 use diesel::prelude::*;
+use time::OffsetDateTime;
 use vcsstar_db::models::{ApiToken as ApiTokenRow, NewApiToken};
 use vcsstar_db::schema::{api_tokens, sessions};
 use vcsstar_types::{
@@ -89,7 +89,7 @@ pub fn create_token(app: &App, ctx: &ReqCtx, req: CreateTokenRequest) -> Result<
     let secret = tokens::new_secret(API_TOKEN_PREFIX);
     let expires_at = req.expires_at.map(from_ms);
     if let Some(exp) = expires_at {
-        if exp <= Utc::now() {
+        if exp <= OffsetDateTime::now_utc() {
             return Err(Error::invalid("expires_at is in the past"));
         }
     }
@@ -121,7 +121,7 @@ pub fn revoke_token(app: &App, ctx: &ReqCtx, req: RevokeTokenRequest) -> Result<
             .filter(api_tokens::identity_id.eq(p.identity.id))
             .filter(api_tokens::revoked_at.is_null()),
     )
-    .set(api_tokens::revoked_at.eq(Utc::now()))
+    .set(api_tokens::revoked_at.eq(OffsetDateTime::now_utc()))
     .execute(&mut conn)?;
     if n == 0 {
         return Err(Error::not_found("token"));
@@ -153,7 +153,7 @@ pub fn logout(app: &App, ctx: &ReqCtx, _req: Empty) -> Result<WireOk, Error> {
         }
         (CredentialKind::ApiToken, Some(id)) => {
             diesel::update(api_tokens::table.find(id))
-                .set(api_tokens::revoked_at.eq(Utc::now()))
+                .set(api_tokens::revoked_at.eq(OffsetDateTime::now_utc()))
                 .execute(&mut conn)?;
         }
         _ => return Err(Error::invalid("this credential cannot be revoked here")),
@@ -254,7 +254,7 @@ pub fn set_preferences(
             .do_update()
             .set((
                 user_preferences::diff_layout.eq(l),
-                user_preferences::updated_at.eq(chrono::Utc::now()),
+                user_preferences::updated_at.eq(OffsetDateTime::now_utc()),
             ))
             .execute(&mut conn)?;
     }

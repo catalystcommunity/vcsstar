@@ -10,11 +10,11 @@ use argon2::{
     password_hash::SaltString, Algorithm, Argon2, Params, PasswordHash, PasswordHasher,
     PasswordVerifier, Version,
 };
-use chrono::Utc;
 use diesel::{
     prelude::*,
     sql_types::{Nullable, Text, Uuid as SqlUuid},
 };
+use time::OffsetDateTime;
 use vcsstar_db::{
     models::Identity,
     schema::{identities, sessions},
@@ -267,7 +267,7 @@ pub fn sign_in(app: &App, ctx: &ReqCtx, req: LocalLoginRequest) -> Result<Sessio
             .bind::<Text,_>(&username).get_result(conn).optional()?;
         if !verify(&req.password,row.as_ref().and_then(|r|r.password_hash.as_deref()))? { return Err(bad_login()); }
         let id=row.expect("verified stored password").identity_id;
-        let identity: Identity=diesel::update(identities::table.find(id)).set(identities::last_login.eq(Utc::now())).returning(Identity::as_returning()).get_result(conn)?;
+        let identity: Identity=diesel::update(identities::table.find(id)).set(identities::last_login.eq(OffsetDateTime::now_utc())).returning(Identity::as_returning()).get_result(conn)?;
         if let Some(code)=req.device_user_code.as_deref() {
             let device=login::find_device_by_user_code(conn,code)?;
             login::approve_device_by_id(conn,device.id,&identity)?;

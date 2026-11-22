@@ -12,3 +12,8 @@ jobs:
     job_file: test.yaml
   vcsstar-ui:
     job_file: ui.yaml
+  vcsstar-release-tag:
+    job_file: release-control.yaml
+    depends_on: [vcsstar-gen-check, vcsstar-test, vcsstar-ui]
+    environment:
+      RELEASE_STEP: tag

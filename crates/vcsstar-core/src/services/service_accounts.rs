@@ -4,8 +4,8 @@
 //! `<user_id>@svc.<instance host>`, a domain no LinkKeys server serves,
 //! so a login can never produce one. Grant them roles like any identity.
 
-use chrono::Utc;
 use diesel::prelude::*;
+use time::OffsetDateTime;
 use vcsstar_db::models::{ApiToken as ApiTokenRow, Identity, NewApiToken, NewIdentity};
 use vcsstar_db::schema::{api_tokens, identities, service_accounts};
 use vcsstar_db::DbConn;
@@ -44,7 +44,7 @@ struct Row {
     identity_id: uuid::Uuid,
     name: String,
     description: Option<String>,
-    created_at: chrono::DateTime<Utc>,
+    created_at: OffsetDateTime,
 }
 
 fn admin<'a>(
@@ -78,7 +78,7 @@ fn active_tokens(conn: &mut DbConn, identity_id: uuid::Uuid) -> Result<i64, Erro
         .filter(
             api_tokens::expires_at
                 .is_null()
-                .or(api_tokens::expires_at.gt(Utc::now())),
+                .or(api_tokens::expires_at.gt(OffsetDateTime::now_utc())),
         )
         .count()
         .get_result(conn)?)
@@ -223,7 +223,7 @@ fn set_disabled(
     let (row, _identity) = load(&mut conn, org.id, &req.name)?;
     conn.transaction::<(), Error, _>(|conn| {
         diesel::update(identities::table.find(row.identity_id))
-            .set(identities::disabled_at.eq(disabled.then(Utc::now)))
+            .set(identities::disabled_at.eq(disabled.then(OffsetDateTime::now_utc)))
             .execute(conn)?;
         note(
             conn,
@@ -296,7 +296,7 @@ pub fn create_token(
     }
     let expires_at = req.expires_at.map(from_ms);
     if let Some(exp) = expires_at {
-        if exp <= Utc::now() {
+        if exp <= OffsetDateTime::now_utc() {
             return Err(Error::invalid("expires_at is in the past"));
         }
     }
@@ -361,7 +361,7 @@ pub fn revoke_token(
                 .filter(api_tokens::identity_id.eq(row.identity_id))
                 .filter(api_tokens::revoked_at.is_null()),
         )
-        .set(api_tokens::revoked_at.eq(Utc::now()))
+        .set(api_tokens::revoked_at.eq(OffsetDateTime::now_utc()))
         .execute(conn)?;
         if n == 0 {
             return Err(Error::not_found("token"));

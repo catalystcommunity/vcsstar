@@ -1,0 +1,15 @@
+name: vcsstar-release-cli
+job:
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:latest
+  command: "bash ${REACTORCIDE_CI_SOURCE_DIR:-/job/ci}/.reactorcide/jobs/scripts/release-cli.sh"
+  capabilities: [builder]
+  resources:
+    cpu:
+      request: "1"
+      limit: "4"
+    memory:
+      limit: "4Gi"
+  timeout: 5400
+  disable_run_local: true
+environment:
+  GH_TOKEN: "${secret:catalystcommunity/ci:githubpat}"

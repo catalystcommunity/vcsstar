@@ -3,4 +3,5 @@
 # pinned csilgen produces from csil/vcsstar.csil.
 set -euo pipefail
 . "$(dirname "$0")/common.sh"
+ensure_rust rustfmt
 tools/csilgen.sh check

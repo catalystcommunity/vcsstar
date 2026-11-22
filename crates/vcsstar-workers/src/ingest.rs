@@ -9,9 +9,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::Utc;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 use vcsstar_core::mirror::{self, ActionPayload, ActionSpec, EventRef};
 use vcsstar_core::App;
 use vcsstar_db::schema::{mirror_refs, mirror_state, orgs, repos};
@@ -212,7 +212,7 @@ fn process_push(app: &App, body: &serde_json::Value) -> anyhow::Result<String> {
                 .filter(mirror_refs::repo_id.eq(repo_id))
                 .filter(mirror_refs::ref_.eq(r#ref)),
         )
-        .set(mirror_refs::last_verified_at.eq(Utc::now()))
+        .set(mirror_refs::last_verified_at.eq(OffsetDateTime::now_utc()))
         .execute(&mut conn)?;
         return Ok(format!("{ref} verified"));
     }

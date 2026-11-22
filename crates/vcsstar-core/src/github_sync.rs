@@ -22,9 +22,10 @@
 //! with a comment, because GitHub only detects a merge whose commits are
 //! reachable from the base.
 
-use chrono::Utc;
 use diesel::prelude::*;
+use liblinkkeys::timestamp::Rfc3339 as _;
 use serde_json::{json, Value as Json};
+use time::OffsetDateTime;
 use uuid::Uuid;
 use vcsstar_db::models::{Identity, NewIdentity, Org, Repo};
 use vcsstar_db::schema::{
@@ -110,7 +111,7 @@ pub fn shadow_identity(conn: &mut PgConnection, user: &Json) -> Result<Identity,
         .do_update()
         .set((
             github_identities::login.eq(login),
-            github_identities::updated_at.eq(Utc::now()),
+            github_identities::updated_at.eq(OffsetDateTime::now_utc()),
         ))
         .execute(conn)?;
     Ok(identity)
@@ -532,11 +533,11 @@ pub fn upsert_pull(
                 _ => None,
             };
             let number = number_for_import(conn, repo.id, gh.number)?;
-            let created = rfc3339(j, "created_at").unwrap_or_else(Utc::now);
+            let created = rfc3339(j, "created_at").unwrap_or_else(OffsetDateTime::now_utc);
             let closed = (gh.state != "open").then(|| {
                 rfc3339(j, "merged_at")
                     .or_else(|| rfc3339(j, "closed_at"))
-                    .unwrap_or_else(Utc::now)
+                    .unwrap_or_else(OffsetDateTime::now_utc)
             });
             let row: PrRow = diesel::insert_into(pull_requests::table)
                 .values((
@@ -621,7 +622,7 @@ pub fn upsert_pull(
                             pull_requests::title.eq(gh.title.trim()),
                             pull_requests::body
                                 .eq((!gh.body.is_empty()).then_some(gh.body.as_str())),
-                            pull_requests::updated_at.eq(Utc::now()),
+                            pull_requests::updated_at.eq(OffsetDateTime::now_utc()),
                         ))
                         .returning(PrRow::as_returning())
                         .get_result(conn)?;
@@ -635,7 +636,7 @@ pub fn upsert_pull(
                         pull_requests::base_ref.eq(&base_ref),
                         pull_requests::base_sha.eq(&base_now),
                         pull_requests::mergeable.eq("unknown"),
-                        pull_requests::updated_at.eq(Utc::now()),
+                        pull_requests::updated_at.eq(OffsetDateTime::now_utc()),
                     ))
                     .returning(PrRow::as_returning())
                     .get_result(conn)?;
@@ -658,7 +659,7 @@ pub fn upsert_pull(
                     .set((
                         pull_requests::head_sha.eq(&gh.head_sha),
                         pull_requests::mergeable.eq("unknown"),
-                        pull_requests::updated_at.eq(Utc::now()),
+                        pull_requests::updated_at.eq(OffsetDateTime::now_utc()),
                     ))
                     .returning(PrRow::as_returning())
                     .get_result(conn)?;
@@ -670,8 +671,8 @@ pub fn upsert_pull(
                     row = diesel::update(pull_requests::table.find(cur.id))
                         .set((
                             pull_requests::state.eq("closed"),
-                            pull_requests::closed_at.eq(Some(Utc::now())),
-                            pull_requests::updated_at.eq(Utc::now()),
+                            pull_requests::closed_at.eq(Some(OffsetDateTime::now_utc())),
+                            pull_requests::updated_at.eq(OffsetDateTime::now_utc()),
                         ))
                         .returning(PrRow::as_returning())
                         .get_result(conn)?;
@@ -690,8 +691,8 @@ pub fn upsert_pull(
                             pull_requests::merged_commit_sha.eq(gh.merge_commit_sha.clone()),
                             pull_requests::merged_by.eq(merged_by),
                             pull_requests::mergeable.eq("clean"),
-                            pull_requests::closed_at.eq(Some(Utc::now())),
-                            pull_requests::updated_at.eq(Utc::now()),
+                            pull_requests::closed_at.eq(Some(OffsetDateTime::now_utc())),
+                            pull_requests::updated_at.eq(OffsetDateTime::now_utc()),
                         ))
                         .returning(PrRow::as_returning())
                         .get_result(conn)?;
@@ -714,11 +715,11 @@ pub fn upsert_pull(
                     row = diesel::update(pull_requests::table.find(cur.id))
                         .set((
                             pull_requests::state.eq("open"),
-                            pull_requests::closed_at.eq(None::<chrono::DateTime<Utc>>),
+                            pull_requests::closed_at.eq(None::<OffsetDateTime>),
                             pull_requests::head_sha.eq(&gh.head_sha),
                             pull_requests::base_sha.eq(&base_now),
                             pull_requests::mergeable.eq("unknown"),
-                            pull_requests::updated_at.eq(Utc::now()),
+                            pull_requests::updated_at.eq(OffsetDateTime::now_utc()),
                         ))
                         .returning(PrRow::as_returning())
                         .get_result(conn)?;
@@ -829,11 +830,7 @@ fn ingest_review(
 /// Move a pull request's `updated_at` forward to `at`, never back: an
 /// imported old review or comment does not make the pull request look
 /// recent.
-fn touch_pull(
-    conn: &mut PgConnection,
-    pr_id: Uuid,
-    at: chrono::DateTime<Utc>,
-) -> Result<(), Error> {
+fn touch_pull(conn: &mut PgConnection, pr_id: Uuid, at: OffsetDateTime) -> Result<(), Error> {
     diesel::update(
         pull_requests::table
             .find(pr_id)
@@ -898,7 +895,7 @@ fn upsert_review(
         .unwrap_or(&pr.head_sha)
         .to_string();
     let text = strip_vcsstar(raw);
-    let submitted = rfc3339(review, "submitted_at").unwrap_or_else(Utc::now);
+    let submitted = rfc3339(review, "submitted_at").unwrap_or_else(OffsetDateTime::now_utc);
     if st == "comment" && text.is_empty() {
         // The review GitHub makes around an inline comment carries nothing
         // of its own; the comment arrives as pull_request_review_comment.
@@ -1009,7 +1006,7 @@ fn upsert_comment(
             diesel::update(pr_comments::table.find(row.id))
                 .set((
                     pr_comments::body.eq(&text),
-                    pr_comments::edited_at.eq(Some(Utc::now())),
+                    pr_comments::edited_at.eq(Some(OffsetDateTime::now_utc())),
                     pr_comments::github_updated_at.eq(incoming.or(row.github_updated_at)),
                 ))
                 .execute(conn)?;
@@ -1054,7 +1051,7 @@ fn upsert_comment(
                 return Ok(format!("comment {gh_id} is empty; ignored"));
             }
             let (path, line, commit_sha) = location.unwrap_or((String::new(), None, None));
-            let created = rfc3339(comment, "created_at").unwrap_or_else(Utc::now);
+            let created = rfc3339(comment, "created_at").unwrap_or_else(OffsetDateTime::now_utc);
             let row: CommentRow = conn.transaction::<CommentRow, Error, _>(|conn| {
                 let row: CommentRow = diesel::insert_into(pr_comments::table)
                     .values((
@@ -1220,7 +1217,7 @@ fn upsert_status(
                 statuses::target_url.eq(target_url),
                 statuses::description.eq(description),
                 statuses::reporter.eq(reporter.id),
-                statuses::created_at.eq(Utc::now()),
+                statuses::created_at.eq(OffsetDateTime::now_utc()),
             ))
             .execute(conn)?;
         outbox::emit(
@@ -1373,11 +1370,10 @@ impl Meter<'_> {
     }
 }
 
-fn rfc3339(j: &Json, key: &str) -> Option<chrono::DateTime<Utc>> {
+fn rfc3339(j: &Json, key: &str) -> Option<OffsetDateTime> {
     j.get(key)
         .and_then(Json::as_str)
-        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-        .map(|t| t.with_timezone(&Utc))
+        .and_then(|s| liblinkkeys::timestamp::parse_rfc3339(s).ok())
 }
 
 /// Bring vcsstar up to date with GitHub's pull requests by asking GitHub,
@@ -1423,7 +1419,7 @@ fn reconcile_pulls_inner(
     let gh = github::Client::new(&app.config.github_api_base, &token.1).with_label(&token.0);
     let full = state.github_repo.as_str();
     let since = state.last_pull_sync_at;
-    let started = Utc::now();
+    let started = OffsetDateTime::now_utc();
     let mut out = PullSyncOutcome::default();
     let mut meter = Meter {
         gh: &gh,
@@ -1457,11 +1453,11 @@ fn reconcile_pulls_inner(
     }
     // Oldest first, so the events land in the order GitHub saw them.
     pulls.reverse();
-    let since_text = since.map(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
+    let since_text = since.map(|t| t.to_rfc3339_secs_z());
     // Newest `updated_at` fully replayed in this pass. The list is oldest
     // first, so a pass that stops early may still move the watermark up
     // to here, and a long backlog drains over several passes.
-    let mut replayed: Option<chrono::DateTime<Utc>> = None;
+    let mut replayed: Option<OffsetDateTime> = None;
     if stopped.is_none() {
         for j in &pulls {
             match sync_one_pull(
@@ -1600,7 +1596,7 @@ fn backfill_inner(
     let mut out = BackfillOutcome::default();
     if state.backfill_started_at.is_none() {
         diesel::update(mirror::mirror_state_table().find(repo.id))
-            .set(ms::backfill_started_at.eq(Some(Utc::now())))
+            .set(ms::backfill_started_at.eq(Some(OffsetDateTime::now_utc())))
             .execute(conn)?;
     }
     if state.backfill_heads_at.is_none() {
@@ -1617,7 +1613,7 @@ fn backfill_inner(
         }
         tracing::info!(repo = %full, heads = heads.len(), "history import: pull request heads fetched");
         diesel::update(mirror::mirror_state_table().find(repo.id))
-            .set(ms::backfill_heads_at.eq(Some(Utc::now())))
+            .set(ms::backfill_heads_at.eq(Some(OffsetDateTime::now_utc())))
             .execute(conn)?;
     }
     let mut meter = Meter {
@@ -1710,7 +1706,7 @@ fn backfill_inner(
         if !more {
             out.done = true;
             diesel::update(mirror::mirror_state_table().find(repo.id))
-                .set(ms::backfill_done_at.eq(Some(Utc::now())))
+                .set(ms::backfill_done_at.eq(Some(OffsetDateTime::now_utc())))
                 .execute(conn)?;
             break;
         }
@@ -1744,10 +1740,10 @@ pub fn restart_backfill(conn: &mut PgConnection, repo_id: Uuid) -> Result<(), Er
             ms::backfill_page.eq(1),
             ms::backfill_index.eq(0),
             ms::backfill_pulls.eq(0),
-            ms::backfill_heads_at.eq(None::<chrono::DateTime<Utc>>),
-            ms::backfill_pass_at.eq(None::<chrono::DateTime<Utc>>),
-            ms::backfill_started_at.eq(None::<chrono::DateTime<Utc>>),
-            ms::backfill_done_at.eq(None::<chrono::DateTime<Utc>>),
+            ms::backfill_heads_at.eq(None::<OffsetDateTime>),
+            ms::backfill_pass_at.eq(None::<OffsetDateTime>),
+            ms::backfill_started_at.eq(None::<OffsetDateTime>),
+            ms::backfill_done_at.eq(None::<OffsetDateTime>),
         ))
         .execute(conn)?;
     Ok(())

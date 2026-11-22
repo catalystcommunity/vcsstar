@@ -157,7 +157,8 @@ impl Queue {
     /// Release expired leases and backoffs on one queue. corndogs evaluates
     /// timeouts only here.
     pub fn sweep(&self, queue: &str) -> Result<i64, QueueError> {
-        let now = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
+        let now = i64::try_from(time::OffsetDateTime::now_utc().unix_timestamp_nanos())
+            .unwrap_or_default();
         Ok(self
             .client
             .clean_up_timed_out(CleanUpTimedOutRequest {

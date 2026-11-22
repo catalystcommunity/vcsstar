@@ -49,12 +49,12 @@ pub fn to_wire(app: &App, org: &OrgRow, r: &RepoRow) -> Repo {
 fn last_push(
     conn: &mut DbConn,
     ids: &[uuid::Uuid],
-) -> Result<std::collections::HashMap<uuid::Uuid, chrono::DateTime<chrono::Utc>>, Error> {
+) -> Result<std::collections::HashMap<uuid::Uuid, time::OffsetDateTime>, Error> {
     use vcsstar_db::schema::repo_refs;
     if ids.is_empty() {
         return Ok(Default::default());
     }
-    let rows: Vec<(uuid::Uuid, Option<chrono::DateTime<chrono::Utc>>)> = repo_refs::table
+    let rows: Vec<(uuid::Uuid, Option<time::OffsetDateTime>)> = repo_refs::table
         .filter(repo_refs::repo_id.eq_any(ids))
         .group_by(repo_refs::repo_id)
         .select((repo_refs::repo_id, diesel::dsl::max(repo_refs::updated_at)))

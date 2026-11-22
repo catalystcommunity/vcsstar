@@ -344,7 +344,7 @@ pub fn link(
         webhook_secret: vec![],
         requested: 0,
         completed: 0,
-        poll_after: chrono::Utc::now(),
+        poll_after: time::OffsetDateTime::now_utc(),
         last_success_at: None,
         last_error: None,
     };

@@ -1,7 +1,7 @@
 //! Who is calling. Resolved once per request from the carrier credential.
 
-use chrono::Utc;
 use diesel::prelude::*;
+use time::OffsetDateTime;
 use vcsstar_db::models::{ApiToken, Identity, Session};
 use vcsstar_db::schema::{api_tokens, identities, sessions};
 use vcsstar_transport::Peer;
@@ -74,7 +74,7 @@ pub struct Principal {
     pub kind: CredentialKind,
     pub acting_via: Option<String>,
     pub credential_id: Option<uuid::Uuid>,
-    pub expires_at: Option<chrono::DateTime<Utc>>,
+    pub expires_at: Option<OffsetDateTime>,
     /// From `instance_roles`, read when the credential resolves.
     pub instance_role: Option<InstanceRole>,
 }
@@ -178,7 +178,7 @@ fn resolve_api_token(app: &App, secret: &str, kind: CredentialKind) -> Result<Pr
         return Err(Error::new(Code::Unauthenticated, "token revoked"));
     }
     if let Some(exp) = token.expires_at {
-        if exp <= Utc::now() {
+        if exp <= OffsetDateTime::now_utc() {
             return Err(Error::new(Code::TokenExpired, "token expired"));
         }
     }
@@ -207,14 +207,14 @@ fn resolve_session(app: &App, secret: &str) -> Result<Principal, Error> {
         .first(&mut conn)
         .optional()?
         .ok_or_else(|| Error::new(Code::Unauthenticated, "unknown session"))?;
-    if session.expires_at <= Utc::now() {
+    if session.expires_at <= OffsetDateTime::now_utc() {
         return Err(Error::new(Code::TokenExpired, "session expired"));
     }
     if identity.disabled_at.is_some() {
         return Err(Error::forbidden("identity disabled"));
     }
     diesel::update(sessions::table.find(session.id))
-        .set(sessions::last_used_at.eq(Utc::now()))
+        .set(sessions::last_used_at.eq(OffsetDateTime::now_utc()))
         .execute(&mut conn)
         .ok();
     let instance_role = load_instance_role(&mut conn, identity.id)?;

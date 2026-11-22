@@ -233,7 +233,7 @@ fn instance_roles_are_set_by_admins_and_shape_what_a_caller_sees() {
         .unwrap()
         .pushed_at
         .expect("pushed_at");
-    assert!((chrono::Utc::now().timestamp_millis() - pushed as i64 - 3_600_000).abs() < 60_000);
+    assert!((vcsstar_core::now_ms() - pushed as i64 - 3_600_000).abs() < 60_000);
     let listed = repos::list(
         &app,
         &as_someone(),

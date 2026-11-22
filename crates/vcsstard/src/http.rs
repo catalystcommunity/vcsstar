@@ -265,7 +265,8 @@ impl<'r> FromRequest<'r> for SyncHeaders {
         })
     }
 }
-#[post("/hooks/sync/<id>", data = "<body>")]
+// The Git POST routes also match /hooks/sync/git-{upload,receive}-pack.
+#[post("/hooks/sync/<id>", data = "<body>", rank = 1)]
 fn sync_hook(
     shared: &State<Shared>,
     id: &str,
@@ -400,4 +401,19 @@ pub fn serve(
         Ok::<(), rocket::Error>(())
     })?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn git_pack_posts_take_precedence_over_sync_webhook_ids() {
+        let webhook = routes![sync_hook].pop().unwrap();
+        for route in crate::gitwire::routes() {
+            if route.method == rocket::http::Method::Post {
+                assert!(route.rank < webhook.rank, "{route} overlaps {webhook}");
+            }
+        }
+    }
 }

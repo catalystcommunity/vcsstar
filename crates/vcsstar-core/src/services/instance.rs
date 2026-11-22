@@ -5,8 +5,8 @@
 //! Every change writes an event on the lane `@instance` (no organization
 //! name can start with `@`).
 
-use chrono::Utc;
 use diesel::prelude::*;
+use time::OffsetDateTime;
 use vcsstar_db::models::Identity;
 use vcsstar_db::schema::{identities, instance_roles};
 use vcsstar_db::DbConn;
@@ -49,7 +49,7 @@ type GrantRow = (
     String,
     String,
     Option<uuid::Uuid>,
-    chrono::DateTime<Utc>,
+    OffsetDateTime,
 );
 
 fn grant_wire(conn: &mut DbConn, row: &GrantRow) -> Result<InstanceRoleGrant, Error> {
@@ -128,7 +128,7 @@ pub fn set_role(
         .ok_or_else(|| Error::invalid("role must be \"admin\" or \"viewer\""))?;
     let mut conn = app.conn()?;
     let identity = load_identity(&mut conn, &req.identity)?;
-    let now = Utc::now();
+    let now = OffsetDateTime::now_utc();
     let row: GrantRow = conn.transaction::<GrantRow, Error, _>(|conn| {
         let row = diesel::insert_into(instance_roles::table)
             .values((

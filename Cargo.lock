@@ -548,7 +548,6 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
- "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -892,7 +891,7 @@ dependencies = [
 [[package]]
 name = "csilgen-transport"
 version = "0.1.0"
-source = "git+https://github.com/catalystcommunity/linkkeys?rev=3227a58c78a795a876b86258793375df291d3dcd#3227a58c78a795a876b86258793375df291d3dcd"
+source = "git+https://github.com/catalystcommunity/csilgen?rev=9690ed8794454c2beb21571ce525ffd62a2f0701#9690ed8794454c2beb21571ce525ffd62a2f0701"
 dependencies = [
  "ciborium",
  "ciborium-io",
@@ -903,7 +902,7 @@ dependencies = [
 [[package]]
 name = "csilgen-transport"
 version = "0.1.0"
-source = "git+https://github.com/catalystcommunity/csilgen?rev=6fcc0981fba034d4f34e3a3da0f59368b3ecb193#6fcc0981fba034d4f34e3a3da0f59368b3ecb193"
+source = "git+https://github.com/catalystcommunity/linkkeys?rev=d8e9215d82d0f57dd3d75d717640dac8d8219322#d8e9215d82d0f57dd3d75d717640dac8d8219322"
 dependencies = [
  "ciborium",
  "ciborium-io",
@@ -1130,13 +1129,13 @@ checksum = "ebe9f7eaef33febd60290c5a9f3b0571d03c4c04a24739cd64808ce30e65a5d3"
 dependencies = [
  "bitflags",
  "byteorder",
- "chrono",
  "diesel_derives",
  "downcast-rs",
  "itoa",
  "pq-sys",
  "r2d2",
  "serde_json",
+ "time",
  "uuid",
 ]
 
@@ -2316,13 +2315,12 @@ checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 [[package]]
 name = "liblinkkeys"
 version = "0.1.0"
-source = "git+https://github.com/catalystcommunity/linkkeys?rev=3227a58c78a795a876b86258793375df291d3dcd#3227a58c78a795a876b86258793375df291d3dcd"
+source = "git+https://github.com/catalystcommunity/linkkeys?rev=d8e9215d82d0f57dd3d75d717640dac8d8219322#d8e9215d82d0f57dd3d75d717640dac8d8219322"
 dependencies = [
  "aes-gcm 0.10.3",
  "argon2 0.5.3",
  "base64ct",
  "chacha20poly1305",
- "chrono",
  "ciborium",
  "ed25519-dalek 2.2.0",
  "hkdf 0.12.4",
@@ -2332,6 +2330,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "subtle",
+ "time",
  "x25519-dalek",
  "zeroize",
 ]
@@ -2345,10 +2344,10 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 [[package]]
 name = "linkkeys-rpc-client"
 version = "0.1.0"
-source = "git+https://github.com/catalystcommunity/linkkeys?rev=3227a58c78a795a876b86258793375df291d3dcd#3227a58c78a795a876b86258793375df291d3dcd"
+source = "git+https://github.com/catalystcommunity/linkkeys?rev=d8e9215d82d0f57dd3d75d717640dac8d8219322#d8e9215d82d0f57dd3d75d717640dac8d8219322"
 dependencies = [
  "ciborium",
- "csilgen-transport 0.1.0 (git+https://github.com/catalystcommunity/linkkeys?rev=3227a58c78a795a876b86258793375df291d3dcd)",
+ "csilgen-transport 0.1.0 (git+https://github.com/catalystcommunity/linkkeys?rev=d8e9215d82d0f57dd3d75d717640dac8d8219322)",
  "liblinkkeys",
  "log",
  "rcgen",
@@ -4648,6 +4647,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdb87b95ec50ddfa440816d227a17b2ccbdda963a316a727fda0fc4334f7d134"
 dependencies = [
  "deranged",
+ "js-sys",
  "num-conv",
  "powerfmt",
  "serde_core",
@@ -5139,7 +5139,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
- "chrono",
  "ciborium",
  "clap",
  "hex",
@@ -5151,6 +5150,7 @@ dependencies = [
  "serde",
  "serde_json",
  "ssh-key 0.6.7",
+ "time",
  "tokio",
  "uuid",
  "vcsstar-transport",
@@ -5164,10 +5164,9 @@ dependencies = [
  "argon2 0.5.3",
  "base64 0.22.1",
  "chacha20poly1305",
- "chrono",
  "ciborium",
  "corndogs",
- "csilgen-transport 0.1.0 (git+https://github.com/catalystcommunity/csilgen?rev=6fcc0981fba034d4f34e3a3da0f59368b3ecb193)",
+ "csilgen-transport 0.1.0 (git+https://github.com/catalystcommunity/csilgen?rev=9690ed8794454c2beb21571ce525ffd62a2f0701)",
  "diesel",
  "ed25519-dalek 2.2.0",
  "hex",
@@ -5185,6 +5184,7 @@ dependencies = [
  "ssh-key 0.6.7",
  "tempfile",
  "thiserror 2.0.21",
+ "time",
  "tokio",
  "tracing",
  "ureq",
@@ -5200,12 +5200,12 @@ dependencies = [
 name = "vcsstar-db"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "diesel",
  "diesel_migrations",
  "pq-sys",
  "r2d2",
  "thiserror 2.0.21",
+ "time",
  "tracing",
  "uuid",
 ]
@@ -5214,7 +5214,6 @@ dependencies = [
 name = "vcsstar-store"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "diesel",
  "hex",
  "rust-s3",
@@ -5223,6 +5222,7 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.21",
+ "time",
  "tracing",
  "uuid",
  "vcsstar-db",
@@ -5233,7 +5233,7 @@ dependencies = [
 name = "vcsstar-transport"
 version = "0.1.0"
 dependencies = [
- "csilgen-transport 0.1.0 (git+https://github.com/catalystcommunity/csilgen?rev=6fcc0981fba034d4f34e3a3da0f59368b3ecb193)",
+ "csilgen-transport 0.1.0 (git+https://github.com/catalystcommunity/csilgen?rev=9690ed8794454c2beb21571ce525ffd62a2f0701)",
  "thiserror 2.0.21",
  "tracing",
  "ureq",
@@ -5259,16 +5259,17 @@ name = "vcsstar-workers"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "chrono",
  "ciborium",
  "diesel",
  "hex",
  "hmac 0.12.1",
+ "liblinkkeys",
  "rand 0.8.8",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "thiserror 2.0.21",
+ "time",
  "tracing",
  "ureq",
  "uuid",

@@ -12,11 +12,11 @@ export CARGO_TERM_COLOR=never
 export RUSTFLAGS="-D warnings"
 
 ensure_rust() {
-    if ! command -v cargo >/dev/null 2>&1; then
-        curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable >/dev/null
+    if ! command -v rustup >/dev/null 2>&1; then
+        curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none >/dev/null
     fi
-    # The runner image ships the minimal profile: no rustfmt, no clippy.
-    rustup component add rustfmt clippy >/dev/null
+    rustup toolchain install --no-self-update
+    rustup component add "$@"
     rustc --version
     cargo --version
 }

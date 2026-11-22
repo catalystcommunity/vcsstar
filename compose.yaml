@@ -1,0 +1,72 @@
+# Single-host instance. Git history and queue data persist in named volumes.
+services:
+  vcsstar:
+    image: containers.catalystsquad.com/public/catalystcommunity/vcsstar:${VCSSTAR_TAG:-stable}
+    platform: linux/amd64
+    command: ["serve", "--roles", "api,git-ssh,dispatcher,sweeper,hook-worker,mirror-worker,ingest-worker,repack-worker"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      corndogs:
+        condition: service_started
+    environment:
+      VCSSTAR__DATABASE_URL: postgres://vcsstar:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres/vcsstar
+      SECRET_VCSSTAR__CREDENTIAL_KEY: ${VCSSTAR_CREDENTIAL_KEY:?Set VCSSTAR_CREDENTIAL_KEY in .env}
+      VCSSTAR__INSTANCE_DOMAIN: localhost
+      VCSSTAR__INSTANCE_ADMINS: ${VCSSTAR_ADMIN_ID:?Set VCSSTAR_ADMIN_ID in .env}@localhost
+      VCSSTAR__LISTEN_HTTP: 0.0.0.0:8080
+      VCSSTAR__PUBLIC_URL: http://127.0.0.1:${VCSSTAR_HTTP_PORT:-8080}
+      VCSSTAR__LISTEN_SSH: 0.0.0.0:2222
+      VCSSTAR__SSH_PUBLIC_HOST: 127.0.0.1:${VCSSTAR_SSH_PORT:-2222}
+      VCSSTAR__REPO_CACHE_DIR: /var/lib/vcsstar/repos
+      VCSSTAR__CORNDOGS_ADDR: corndogs:5080
+      VCSSTAR__CORNDOGS_TLS: "false"
+    ports:
+      - "127.0.0.1:${VCSSTAR_HTTP_PORT:-8080}:8080"
+      - "127.0.0.1:${VCSSTAR_SSH_PORT:-2222}:2222"
+    volumes:
+      - repositories:/var/lib/vcsstar
+
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vcsstar
+      POSTGRES_DB: vcsstar
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "vcsstar", "-d", "vcsstar"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  queue-init:
+    image: postgres:17
+    user: "0:0"
+    entrypoint: ["chown", "65532:65532", "/data"]
+    volumes:
+      - queue:/data
+
+  corndogs:
+    image: containers.catalystsquad.com/public/catalystcommunity/corndogs:0.8.0
+    platform: linux/amd64
+    restart: unless-stopped
+    depends_on:
+      queue-init:
+        condition: service_completed_successfully
+    environment:
+      STORAGE_BACKEND: file
+      CORNDOGS_FILESTORE_DIR: /data
+      CORNDOGS_SUBMISSION_KEY_POLICY: required
+      CORNDOGS_TASK_GUARD_POLICY: required
+      CORNDOGS_RECEIPT_RETENTION: 1h
+    volumes:
+      - queue:/data
+
+volumes:
+  repositories:
+  database:
+  queue:

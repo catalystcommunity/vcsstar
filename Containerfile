@@ -1,11 +1,12 @@
 # Build the vcsstar server and CLI. Two stages: a Rust builder and a slim
 # runtime that carries git (for the VCS layer) and CA certificates.
-FROM rust:1.98-bookworm AS builder
+FROM rust:1.100.0-trixie AS builder
 WORKDIR /src
 RUN apt-get update && apt-get install -y --no-install-recommends libpq-dev pkg-config && rm -rf /var/lib/apt/lists/*
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates ./crates
 COPY migrations ./migrations
+ARG VCSSTAR_VERSION
 RUN cargo build --release --locked --workspace \
     && strip target/release/vcsstard target/release/vcsstar
 

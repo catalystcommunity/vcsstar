@@ -128,8 +128,8 @@ pub struct Segment {
     pub size: i64,
     pub content_hash: String,
     pub kind: String,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub superseded_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub created_at: time::OffsetDateTime,
+    pub superseded_at: Option<time::OffsetDateTime>,
     /// A reachability bitmap (`.bitmap`) was uploaded beside the index.
     pub has_bitmap: bool,
 }
@@ -255,7 +255,7 @@ pub fn consolidate(
             .filter(repo_segments::ordinal.eq_any(&ordinals))
             .filter(repo_segments::superseded_at.is_null()),
     )
-    .set(repo_segments::superseded_at.eq(chrono::Utc::now()))
+    .set(repo_segments::superseded_at.eq(time::OffsetDateTime::now_utc()))
     .returning(repo_segments::object_key)
     .get_results(conn)?;
     let ordinal = append(conn, repo_id, object_key, size, content_hash, "pack")?;

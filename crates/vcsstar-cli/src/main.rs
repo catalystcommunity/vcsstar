@@ -16,7 +16,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use serde_json::Value as Json;
 use vcsstar_transport::client::HttpTransport;
-use vcsstar_transport::Status;
+use vcsstar_transport::{Status, VERSION};
 
 use descriptor::{Direction, Schema};
 
@@ -130,7 +130,7 @@ fn build_command(schema: &Schema) -> Command {
         api = api.subcommand(sc);
     }
     Command::new("vcsstar")
-        .version(env!("CARGO_PKG_VERSION"))
+        .version(VERSION)
         .about("vcsstar command line. Every server operation is available under `api`.")
         .arg(
             Arg::new("profile")
@@ -349,23 +349,15 @@ fn call(
             )),
         });
     }
-    let value = convert::decode(&response.payload)
+    let payload = vcsstar_types::resolve_rpc_reply(
+        service,
+        op_name,
+        response.variant.as_deref(),
+        response.payload,
+    )
+    .map_err(map_client_error)?;
+    let value = convert::decode(&payload)
         .map_err(|e| CliError::Transport(format!("response payload: {e:#}")))?;
-    if response.variant.as_deref() == Some("ServiceError") {
-        let err_ty = descriptor::Ty::Reference("ServiceError".into());
-        let err = convert::cbor_to_json(schema, &err_ty, &value, "$")
-            .unwrap_or_else(|_| convert::cbor_any_to_json(&value));
-        let code = err.get("code").and_then(Json::as_u64).unwrap_or(0);
-        if (10..=12).contains(&code) {
-            return Err(CliError::Auth(
-                err.get("message")
-                    .and_then(Json::as_str)
-                    .unwrap_or("authentication failed")
-                    .to_string(),
-            ));
-        }
-        return Err(CliError::Service(err));
-    }
     // The success arm: the output type minus the ServiceError arm.
     let out_ty = success_arm(schema, &op.output);
     convert::cbor_to_json(schema, &out_ty, &value, "$")
@@ -421,6 +413,16 @@ fn map_client_error(e: vcsstar_types::ClientError) -> CliError {
     match e {
         vcsstar_types::ClientError::Service { code, message } => {
             CliError::Service(serde_json::json!({"code": code, "message": message}))
+        }
+        vcsstar_types::ClientError::ApplicationServiceError(err) => {
+            if (10..=12).contains(&err.code) {
+                CliError::Auth(err.message)
+            } else {
+                CliError::Service(serde_json::json!({"code": err.code, "message": err.message}))
+            }
+        }
+        vcsstar_types::ClientError::Decode(message) => {
+            CliError::Transport(format!("invalid reply: {message}"))
         }
         vcsstar_types::ClientError::Transport(m) => CliError::Transport(m),
     }
@@ -717,7 +719,7 @@ fn run(schema: &Schema, m: &ArgMatches) -> Result<(), CliError> {
             Ok(())
         }
         Some(("version", _)) => {
-            println!("vcsstar {}", env!("CARGO_PKG_VERSION"));
+            println!("vcsstar {VERSION}");
             println!("contract {}", schema.version);
             println!("digest {}", hex::encode(&schema.digest));
             Ok(())

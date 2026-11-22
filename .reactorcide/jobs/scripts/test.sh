@@ -3,7 +3,7 @@
 # one when docker is available and skips those tests otherwise.
 set -euo pipefail
 . "$(dirname "$0")/common.sh"
-ensure_rust
+ensure_rust rustfmt clippy
 # The runner image has no libpq; link the bundled copy (CI only).
 FEATURES=(--features vcsstar-db/bundled-pq)
 cargo fmt --all -- --check || { echo "run cargo fmt --all"; exit 1; }

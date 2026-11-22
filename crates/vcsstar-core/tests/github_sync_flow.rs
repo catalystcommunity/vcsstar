@@ -4,6 +4,7 @@
 //! (`VCSSTAR__GITHUB_GIT_BASE=file://...`). Runs only when DATABASE_URL
 //! points at a migrated dev database and `git` is installed.
 
+use liblinkkeys::timestamp::Rfc3339 as _;
 use std::process::Command;
 
 use diesel::prelude::*;
@@ -682,9 +683,9 @@ fn github_pull_request_life_cycle_is_imported_without_echo() {
         .unwrap();
     let tok = vcsstar_core::github::OauthTokens {
         access_token: "gho_test_token".into(),
-        expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(8)),
+        expires_at: Some(time::OffsetDateTime::now_utc() + time::Duration::hours(8)),
         refresh_token: Some("ghr_test_refresh".into()),
-        refresh_expires_at: Some(chrono::Utc::now() + chrono::Duration::days(180)),
+        refresh_expires_at: Some(time::OffsetDateTime::now_utc() + time::Duration::days(180)),
     };
     let link = vcsstar_core::github_link::store(
         &app,
@@ -852,7 +853,7 @@ fn fake_api_with_methods(
                 Some(j) => ("200 OK", j.to_string()),
                 None => ("404 Not Found", json!({"message": "Not Found"}).to_string()),
             };
-            let reset = chrono::Utc::now().timestamp() + 3600;
+            let reset = time::OffsetDateTime::now_utc().unix_timestamp() + 3600;
             let resp = format!(
                 "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\nX-RateLimit-Limit: 5000\r\nX-RateLimit-Remaining: 4321\r\nX-RateLimit-Reset: {reset}\r\n\r\n{body}",
                 body.len()
@@ -943,7 +944,7 @@ fn pull_based_sync_imports_what_webhooks_missed() {
 
     // What GitHub holds that no webhook told us about: one open PR with
     // an approval, a conversation comment, and a CI status.
-    let t_open = chrono::Utc::now() - chrono::Duration::minutes(30);
+    let t_open = time::OffsetDateTime::now_utc() - time::Duration::minutes(30);
     let mut pr1 = pull_json(1, &full, &feat, &main, "open", false);
     pr1["updated_at"] = json!(t_open.to_rfc3339());
     {
@@ -1057,7 +1058,7 @@ fn pull_based_sync_imports_what_webhooks_missed() {
 
     // GitHub closed the PR while we were not listening.
     let mut closed = pull_json(1, &full, &feat, &main, "closed", false);
-    closed["updated_at"] = json!((watermark + chrono::Duration::seconds(5)).to_rfc3339());
+    closed["updated_at"] = json!((watermark + time::Duration::seconds(5)).to_rfc3339());
     routes
         .lock()
         .unwrap()
@@ -1088,7 +1089,8 @@ fn pull_based_sync_imports_what_webhooks_missed() {
 
     // A one-call budget lists but cannot go on: not complete, watermark kept.
     let mut again = pull_json(1, &full, &feat, &main, "closed", false);
-    again["updated_at"] = json!((chrono::Utc::now() + chrono::Duration::seconds(5)).to_rfc3339());
+    again["updated_at"] =
+        json!((time::OffsetDateTime::now_utc() + time::Duration::seconds(5)).to_rfc3339());
     routes
         .lock()
         .unwrap()
@@ -1276,13 +1278,13 @@ fn history_import_brings_every_pull_request_with_github_numbers_and_times() {
         r7.closed_at.map(|t| t.to_rfc3339()).as_deref(),
         Some("2022-03-02T10:00:00+00:00")
     );
-    let review_at: chrono::DateTime<chrono::Utc> = pr_reviews::table
+    let review_at: time::OffsetDateTime = pr_reviews::table
         .filter(pr_reviews::pr_id.eq(r7.id))
         .select(pr_reviews::created_at)
         .first(&mut conn)
         .unwrap();
     assert_eq!(review_at.to_rfc3339(), "2022-03-01T12:00:00+00:00");
-    let comment_at: chrono::DateTime<chrono::Utc> = pr_comments::table
+    let comment_at: time::OffsetDateTime = pr_comments::table
         .filter(pr_comments::pr_id.eq(r7.id))
         .select(pr_comments::created_at)
         .first(&mut conn)
@@ -1405,9 +1407,9 @@ fn stale_snapshots_do_not_overwrite_newer_state() {
         .unwrap()
         .unwrap();
     let lane = format!("{org_name}/thing");
-    let t1 = chrono::Utc::now() - chrono::Duration::minutes(10);
-    let t2 = t1 + chrono::Duration::minutes(1);
-    let stamped = |mut j: Json, t: chrono::DateTime<chrono::Utc>| {
+    let t1 = time::OffsetDateTime::now_utc() - time::Duration::minutes(10);
+    let t2 = t1 + time::Duration::minutes(1);
+    let stamped = |mut j: Json, t: time::OffsetDateTime| {
         j["updated_at"] = json!(t.to_rfc3339());
         j
     };
@@ -1454,7 +1456,7 @@ fn stale_snapshots_do_not_overwrite_newer_state() {
     );
 
     // Comments: an edit with an older updated_at never wins.
-    let comment = |body: &str, t: chrono::DateTime<chrono::Utc>| {
+    let comment = |body: &str, t: time::OffsetDateTime| {
         json!({
             "action": "edited",
             "sender": {"id": 500, "login": "octo"},
@@ -1498,7 +1500,7 @@ fn stale_snapshots_do_not_overwrite_newer_state() {
         &repo,
         &state,
         "issue_comment",
-        &comment("third", t2 + chrono::Duration::seconds(1)),
+        &comment("third", t2 + time::Duration::seconds(1)),
     )
     .expect("later comment");
     let body: String = pr_comments::table
@@ -1541,10 +1543,10 @@ fn several_github_apps_share_the_load_by_rate_room() {
         r.push((format!("/repos/{full}/installation"), json!({"id": 4242})));
         r.push((
             "/app/installations/4242/access_tokens".into(),
-            json!({"token": "ghs_not_real", "expires_at": (chrono::Utc::now() + chrono::Duration::hours(1)).to_rfc3339()}),
+            json!({"token": "ghs_not_real", "expires_at": (time::OffsetDateTime::now_utc() + time::Duration::hours(1)).to_rfc3339()}),
         ));
     }
-    let reset = chrono::Utc::now() + chrono::Duration::hours(1);
+    let reset = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
     let (la, lb) = (format!("app:{a}/4242"), format!("app:{b}/4242"));
     // App A is below its reserve: B is used.
     vcsstar_core::github_health::note_rate_limit(&la, 10, 5000, reset);

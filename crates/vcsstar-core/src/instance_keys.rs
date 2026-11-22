@@ -5,12 +5,13 @@
 //! key. They sign merge commits (SSH signature format) and act-as scope
 //! sets.
 
-use chrono::{DateTime, Duration, Utc};
 use diesel::prelude::*;
 use liblinkkeys::application_keys as ak;
 use liblinkkeys::crypto::SigningAlgorithm;
 use liblinkkeys::generated::types as lk;
 use liblinkkeys::generated::{self as g};
+use liblinkkeys::timestamp::Rfc3339 as _;
+use time::{Duration, OffsetDateTime};
 use vcsstar_db::schema::instance_keys;
 use vcsstar_db::DbConn;
 use vcsstar_vcs::Signer;
@@ -29,10 +30,10 @@ pub struct KeyRow {
     pub role: String,
     pub public_key: Vec<u8>,
     pub private_sealed: Vec<u8>,
-    pub attested_at: Option<DateTime<Utc>>,
-    pub attestation_expires_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub revoked_at: Option<DateTime<Utc>>,
+    pub attested_at: Option<OffsetDateTime>,
+    pub attestation_expires_at: Option<OffsetDateTime>,
+    pub created_at: OffsetDateTime,
+    pub revoked_at: Option<OffsetDateTime>,
 }
 
 /// A usable signing key: seed in memory for the duration of one operation.
@@ -95,10 +96,10 @@ fn home(app: &App) -> Result<crate::linkkeys::Rp<'_>, Error> {
 }
 
 fn now_window() -> (String, String) {
-    let now = Utc::now();
+    let now = OffsetDateTime::now_utc();
     (
-        (now - Duration::seconds(30)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-        (now + Duration::seconds(120)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        (now - Duration::seconds(30)).to_rfc3339_secs_z(),
+        (now + Duration::seconds(120)).to_rfc3339_secs_z(),
     )
 }
 
@@ -217,10 +218,8 @@ pub fn ensure_enrolled(app: &App, conn: &mut DbConn) -> Result<usize, Error> {
     Ok(3)
 }
 
-fn parse_time(s: &str) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(s)
-        .ok()
-        .map(|t| t.with_timezone(&Utc))
+fn parse_time(s: &str) -> Option<OffsetDateTime> {
+    liblinkkeys::timestamp::parse_rfc3339(s).ok()
 }
 
 /// Renew attestations below half-life. Call every few hours.
@@ -231,7 +230,7 @@ pub fn renew(app: &App, conn: &mut DbConn) -> Result<usize, Error> {
     }
     let (user_id, domain) = account(app)?;
     let rp = home(app)?;
-    let now = Utc::now();
+    let now = OffsetDateTime::now_utc();
     let mut renewed = 0;
     for row in &rows {
         let due = match (row.attested_at, row.attestation_expires_at) {
@@ -315,7 +314,10 @@ pub fn signer(app: &App, conn: &mut DbConn) -> Result<Option<SshSigner>, Error> 
         .collect();
     let Some(row) = rows
         .iter()
-        .find(|r| r.attestation_expires_at.is_some_and(|x| x > Utc::now()))
+        .find(|r| {
+            r.attestation_expires_at
+                .is_some_and(|x| x > OffsetDateTime::now_utc())
+        })
         .or(rows.first())
     else {
         return Ok(None);

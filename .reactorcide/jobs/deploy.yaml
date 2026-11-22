@@ -26,6 +26,7 @@
 #   GITHUB_APPS                   JSON list of the instance's GitHub Apps (secret, optional)
 #   OBJECT_STORE_ACCESS_KEY/_SECRET_KEY   history bucket keys (secret, optional)
 #   BACKUP_S3_ACCESS_KEY_ID/_SECRET_KEY   Postgres backup bucket keys (secret, optional)
+#   BUILD_CLI                     set true to also push a CLI-only image
 #   DEPLOY_MODE                   release (default): <version>-<sha> and :latest;
 #                                 dev: dev-<utc>-<sha>[-dirty], no :latest, pull Always
 name: vcsstar-deploy

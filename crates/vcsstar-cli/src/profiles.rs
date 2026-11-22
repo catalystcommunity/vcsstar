@@ -30,6 +30,12 @@ pub fn path() -> PathBuf {
     if let Ok(p) = std::env::var("VCSSTAR_PROFILES") {
         return PathBuf::from(p);
     }
+    #[cfg(windows)]
+    if std::env::var_os("XDG_CONFIG_HOME").is_none() && std::env::var_os("HOME").is_none() {
+        if let Some(dir) = std::env::var_os("APPDATA") {
+            return PathBuf::from(dir).join("vcsstar").join("profiles.json");
+        }
+    }
     let base = std::env::var("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {

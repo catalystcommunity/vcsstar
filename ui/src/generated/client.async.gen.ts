@@ -15,10 +15,14 @@ export interface AsyncCodec {
 }
 
 export class AuthAsyncClient {
-  constructor(private readonly t: AsyncServiceTransport) {}
+  private readonly t: AsyncServiceTransport;
+
+  constructor(t: AsyncServiceTransport) {
+    this.t = t;
+  }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async beginLogin(req: BeginLoginRequest): Promise<BeginLoginResponse> {
@@ -27,7 +31,7 @@ export class AuthAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async completeLogin(req: CompleteLoginRequest): Promise<Session> {
@@ -36,7 +40,7 @@ export class AuthAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async createToken(req: CreateTokenRequest): Promise<ApiToken> {
@@ -45,7 +49,7 @@ export class AuthAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async revokeToken(req: RevokeTokenRequest): Promise<Ok> {
@@ -54,7 +58,7 @@ export class AuthAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async whoami(req: Empty): Promise<WhoAmI> {
@@ -63,7 +67,7 @@ export class AuthAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async beginDeviceLogin(req: BeginDeviceRequest): Promise<DeviceCode> {
@@ -72,7 +76,7 @@ export class AuthAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async pollDeviceLogin(req: DevicePollRequest): Promise<DevicePollResponse> {
@@ -81,7 +85,7 @@ export class AuthAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async exchangeActAsCredential(req: ActAsExchangeRequest): Promise<ScopedBearer> {
@@ -90,7 +94,7 @@ export class AuthAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async scopeSet(req: ScopeSetRequest): Promise<SignedActAsScopeSet> {
@@ -100,7 +104,7 @@ export class AuthAsyncClient {
 
   /**
    * Browser side of the device flow. Needs a web session.
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async approveDeviceLogin(req: DeviceApproveRequest): Promise<Ok> {
@@ -109,7 +113,7 @@ export class AuthAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async registerKey(req: RegisterKeyRequest): Promise<SshKeyInfo> {
@@ -118,7 +122,7 @@ export class AuthAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listKeys(req: Empty): Promise<ListKeysResponse> {
@@ -127,7 +131,7 @@ export class AuthAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async revokeKey(req: KeyRef): Promise<Ok> {
@@ -136,7 +140,7 @@ export class AuthAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listTokens(req: Empty): Promise<ListTokensResponse> {
@@ -145,7 +149,7 @@ export class AuthAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async logout(req: Empty): Promise<Ok> {
@@ -155,7 +159,7 @@ export class AuthAsyncClient {
 
   /**
    * GitHub account link of the caller (see GithubLink).
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async githubLinkStatus(req: Empty): Promise<GithubLink> {
@@ -164,7 +168,7 @@ export class AuthAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async setGithubToken(req: SetGithubTokenRequest): Promise<GithubLink> {
@@ -173,7 +177,7 @@ export class AuthAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async unlinkGithub(req: Empty): Promise<Ok> {
@@ -183,7 +187,7 @@ export class AuthAsyncClient {
 
   /**
    * The caller's display preferences (defaults when none are saved).
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async getPreferences(req: Empty): Promise<Preferences> {
@@ -193,7 +197,7 @@ export class AuthAsyncClient {
 
   /**
    * Save the given fields; absent fields keep their value.
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async setPreferences(req: SetPreferencesRequest): Promise<Preferences> {
@@ -202,7 +206,7 @@ export class AuthAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async localLogin(req: LocalLoginRequest): Promise<Session> {
@@ -211,7 +215,7 @@ export class AuthAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async localAccount(req: Empty): Promise<LocalAccount> {
@@ -220,7 +224,7 @@ export class AuthAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async changeLocalPassword(req: ChangeLocalPasswordRequest): Promise<Ok> {
@@ -263,10 +267,14 @@ export function encodeEventStreamAsyncSubscribe(codec: AsyncCodec, msg: StreamCo
 }
 
 export class FederationAsyncClient {
-  constructor(private readonly t: AsyncServiceTransport) {}
+  private readonly t: AsyncServiceTransport;
+
+  constructor(t: AsyncServiceTransport) {
+    this.t = t;
+  }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async handshake(req: FedHello): Promise<FedHelloAck> {
@@ -275,7 +283,7 @@ export class FederationAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async verifyHead(req: VerifyHeadRequest): Promise<HeadInfo> {
@@ -284,7 +292,7 @@ export class FederationAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async headInfo(req: HeadQuery): Promise<HeadInfo> {
@@ -293,7 +301,7 @@ export class FederationAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async repoInfo(req: GetRepoRequest): Promise<Repo> {
@@ -303,10 +311,14 @@ export class FederationAsyncClient {
 }
 
 export class HooksAsyncClient {
-  constructor(private readonly t: AsyncServiceTransport) {}
+  private readonly t: AsyncServiceTransport;
+
+  constructor(t: AsyncServiceTransport) {
+    this.t = t;
+  }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async createEndpoint(req: CreateEndpointRequest): Promise<Endpoint> {
@@ -315,7 +327,7 @@ export class HooksAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listEndpoints(req: ListEndpointsRequest): Promise<ListEndpointsResponse> {
@@ -324,7 +336,7 @@ export class HooksAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async deleteEndpoint(req: EndpointRef): Promise<Ok> {
@@ -333,7 +345,7 @@ export class HooksAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listDeliveries(req: DeliveryQuery): Promise<DeliveryPage> {
@@ -342,7 +354,7 @@ export class HooksAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async redeliver(req: DeliveryRef): Promise<Ok> {
@@ -351,7 +363,7 @@ export class HooksAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async updateEndpoint(req: UpdateEndpointRequest): Promise<Endpoint> {
@@ -361,11 +373,15 @@ export class HooksAsyncClient {
 }
 
 export class InstanceAsyncClient {
-  constructor(private readonly t: AsyncServiceTransport) {}
+  private readonly t: AsyncServiceTransport;
+
+  constructor(t: AsyncServiceTransport) {
+    this.t = t;
+  }
 
   /**
    * Every instance role. Instance admins only.
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listRoles(req: Empty): Promise<InstanceRoleList> {
@@ -374,7 +390,7 @@ export class InstanceAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async setRole(req: SetInstanceRoleRequest): Promise<InstanceRoleGrant> {
@@ -383,7 +399,7 @@ export class InstanceAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async removeRole(req: RemoveInstanceRoleRequest): Promise<Ok> {
@@ -392,7 +408,7 @@ export class InstanceAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async createLocalAccount(req: CreateLocalAccountRequest): Promise<LocalAccount> {
@@ -401,7 +417,7 @@ export class InstanceAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async resetLocalPassword(req: ResetLocalPasswordRequest): Promise<Ok> {
@@ -411,10 +427,14 @@ export class InstanceAsyncClient {
 }
 
 export class MetaAsyncClient {
-  constructor(private readonly t: AsyncServiceTransport) {}
+  private readonly t: AsyncServiceTransport;
+
+  constructor(t: AsyncServiceTransport) {
+    this.t = t;
+  }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async serverInfo(req: Empty): Promise<ServerInfo> {
@@ -424,10 +444,14 @@ export class MetaAsyncClient {
 }
 
 export class MirrorAsyncClient {
-  constructor(private readonly t: AsyncServiceTransport) {}
+  private readonly t: AsyncServiceTransport;
+
+  constructor(t: AsyncServiceTransport) {
+    this.t = t;
+  }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async status(req: GetRepoRequest): Promise<MirrorStatus> {
@@ -436,7 +460,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listBlocked(req: GetRepoRequest): Promise<ListBlockedResponse> {
@@ -445,7 +469,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async replayBlocked(req: ReplayRequest): Promise<ReplayResult> {
@@ -454,7 +478,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async setCredential(req: SetCredentialRequest): Promise<Credential> {
@@ -463,7 +487,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async reconcile(req: GetRepoRequest): Promise<ReconcileReport> {
@@ -472,7 +496,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async pause(req: GetRepoRequest): Promise<Ok> {
@@ -481,7 +505,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async resume(req: GetRepoRequest): Promise<Ok> {
@@ -492,7 +516,7 @@ export class MirrorAsyncClient {
   /**
    * Make the repository and queue its import. The answer comes before
    * the branches are fetched; `status` reports `import_state`.
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async importRepo(req: ImportRequest): Promise<Repo> {
@@ -501,7 +525,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async configure(req: ConfigureMirrorRequest): Promise<MirrorStatus> {
@@ -510,7 +534,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listCredentials(req: ListCredentialsRequest): Promise<ListCredentialsResponse> {
@@ -519,7 +543,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async removeCredential(req: CredentialRef): Promise<Ok> {
@@ -531,7 +555,7 @@ export class MirrorAsyncClient {
    * Repositories visible under the organization's `github_owner`, with
    * the vcsstar repository that mirrors each one when there is one.
    * Enable one with `import-repo`.
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listGithubRepos(req: ListGithubReposRequest): Promise<GithubRepoPage> {
@@ -541,7 +565,7 @@ export class MirrorAsyncClient {
 
   /**
    * This node's view of GitHub availability and rate limits.
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async health(req: Empty): Promise<GithubHealth> {
@@ -553,7 +577,7 @@ export class MirrorAsyncClient {
    * Start the history import of the repository's GitHub pull requests
    * again from the first one. A mirrored repository imports its history
    * by itself; this is for a repository whose import must run again.
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async backfill(req: GetRepoRequest): Promise<MirrorStatus> {
@@ -564,7 +588,7 @@ export class MirrorAsyncClient {
   /**
    * Where the instance's GitHub Apps are installed, with the vcsstar
    * organizations whose `github_owner` is each owner.
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listGithubInstallations(req: Empty): Promise<GithubInstallationList> {
@@ -573,7 +597,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async importAll(req: ImportAllRequest): Promise<ImportAllResult> {
@@ -582,7 +606,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async setSchedule(req: SetMirrorScheduleRequest): Promise<MirrorStatus> {
@@ -591,7 +615,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listConnections(req: GetRepoRequest): Promise<SyncConnections> {
@@ -600,7 +624,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async connect(req: ConnectRemoteRequest): Promise<SyncConnection> {
@@ -609,7 +633,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async updateConnection(req: UpdateConnectionRequest): Promise<SyncConnection> {
@@ -618,7 +642,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async syncNow(req: SyncConnectionRef): Promise<Ok> {
@@ -627,7 +651,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async webhookSecret(req: SyncConnectionRef): Promise<SyncWebhookSecret> {
@@ -636,7 +660,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async getPolicy(req: GetRepoRequest): Promise<SyncPolicy> {
@@ -645,7 +669,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async setPolicy(req: SetSyncPolicyRequest): Promise<SyncPolicy> {
@@ -654,7 +678,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listConflicts(req: GetRepoRequest): Promise<SyncConflicts> {
@@ -663,7 +687,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async resolveConflict(req: ResolveSyncConflictRequest): Promise<Ok> {
@@ -672,7 +696,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async linkProvider(req: LinkProviderRequest): Promise<ProviderLink> {
@@ -681,7 +705,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listProviderLinks(req: Empty): Promise<ProviderLinks> {
@@ -690,7 +714,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async unlinkProvider(req: UnlinkProviderRequest): Promise<Ok> {
@@ -699,7 +723,7 @@ export class MirrorAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listSyncRecords(req: SyncRecordsRequest): Promise<SyncRecords> {
@@ -709,10 +733,14 @@ export class MirrorAsyncClient {
 }
 
 export class OrgsAsyncClient {
-  constructor(private readonly t: AsyncServiceTransport) {}
+  private readonly t: AsyncServiceTransport;
+
+  constructor(t: AsyncServiceTransport) {
+    this.t = t;
+  }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async create(req: CreateOrgRequest): Promise<Org> {
@@ -721,7 +749,7 @@ export class OrgsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async get(req: GetOrgRequest): Promise<Org> {
@@ -730,7 +758,7 @@ export class OrgsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async list(req: ListOrgsRequest): Promise<OrgPage> {
@@ -739,7 +767,7 @@ export class OrgsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async update(req: UpdateOrgRequest): Promise<Org> {
@@ -748,7 +776,7 @@ export class OrgsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async setMember(req: SetOrgMemberRequest): Promise<OrgMember> {
@@ -757,7 +785,7 @@ export class OrgsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async removeMember(req: RemoveOrgMemberRequest): Promise<Ok> {
@@ -766,7 +794,7 @@ export class OrgsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listMembers(req: ListOrgMembersRequest): Promise<OrgMemberPage> {
@@ -775,7 +803,7 @@ export class OrgsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async createTeam(req: CreateTeamRequest): Promise<Team> {
@@ -784,7 +812,7 @@ export class OrgsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async deleteTeam(req: TeamRef): Promise<Ok> {
@@ -793,7 +821,7 @@ export class OrgsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async setTeamMember(req: SetTeamMemberRequest): Promise<Team> {
@@ -802,7 +830,7 @@ export class OrgsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listTeams(req: GetOrgRequest): Promise<ListTeamsResponse> {
@@ -812,10 +840,14 @@ export class OrgsAsyncClient {
 }
 
 export class PullRequestsAsyncClient {
-  constructor(private readonly t: AsyncServiceTransport) {}
+  private readonly t: AsyncServiceTransport;
+
+  constructor(t: AsyncServiceTransport) {
+    this.t = t;
+  }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async open(req: OpenPrRequest): Promise<PullRequest> {
@@ -824,7 +856,7 @@ export class PullRequestsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async get(req: PrRef): Promise<PullRequest> {
@@ -833,7 +865,7 @@ export class PullRequestsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async list(req: ListPrRequest): Promise<PrPage> {
@@ -842,7 +874,7 @@ export class PullRequestsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async review(req: ReviewRequest): Promise<Review> {
@@ -851,7 +883,7 @@ export class PullRequestsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async comment(req: CommentRequest): Promise<Comment> {
@@ -860,7 +892,7 @@ export class PullRequestsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async merge(req: MergeRequest): Promise<MergeResult> {
@@ -869,7 +901,7 @@ export class PullRequestsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async close(req: PrRef): Promise<PullRequest> {
@@ -878,7 +910,7 @@ export class PullRequestsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async reopen(req: PrRef): Promise<PullRequest> {
@@ -887,7 +919,7 @@ export class PullRequestsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async retarget(req: RetargetRequest): Promise<PullRequest> {
@@ -896,7 +928,7 @@ export class PullRequestsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async update(req: UpdatePrRequest): Promise<PullRequest> {
@@ -905,7 +937,7 @@ export class PullRequestsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listReviews(req: PrRef): Promise<ListReviewsResponse> {
@@ -914,7 +946,7 @@ export class PullRequestsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listComments(req: PrRef): Promise<ListCommentsResponse> {
@@ -923,7 +955,7 @@ export class PullRequestsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async editComment(req: EditCommentRequest): Promise<Comment> {
@@ -932,7 +964,7 @@ export class PullRequestsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async deleteComment(req: DeleteCommentRequest): Promise<Ok> {
@@ -942,10 +974,14 @@ export class PullRequestsAsyncClient {
 }
 
 export class ReposAsyncClient {
-  constructor(private readonly t: AsyncServiceTransport) {}
+  private readonly t: AsyncServiceTransport;
+
+  constructor(t: AsyncServiceTransport) {
+    this.t = t;
+  }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async create(req: CreateRepoRequest): Promise<Repo> {
@@ -954,7 +990,7 @@ export class ReposAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async get(req: GetRepoRequest): Promise<Repo> {
@@ -963,7 +999,7 @@ export class ReposAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async list(req: ListReposRequest): Promise<RepoPage> {
@@ -972,7 +1008,7 @@ export class ReposAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async update(req: UpdateRepoRequest): Promise<Repo> {
@@ -981,7 +1017,7 @@ export class ReposAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async fork(req: ForkRequest): Promise<Repo> {
@@ -990,7 +1026,7 @@ export class ReposAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listRefs(req: ListRefsRequest): Promise<ListRefsResponse> {
@@ -999,7 +1035,7 @@ export class ReposAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async log(req: LogRequest): Promise<CommitPage> {
@@ -1008,7 +1044,7 @@ export class ReposAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async tree(req: TreeRequest): Promise<TreeResponse> {
@@ -1017,7 +1053,7 @@ export class ReposAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async blob(req: BlobRequest): Promise<BlobResponse> {
@@ -1026,7 +1062,7 @@ export class ReposAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async diff(req: DiffRequest): Promise<DiffResponse> {
@@ -1035,7 +1071,7 @@ export class ReposAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async delete(req: DeleteRepoRequest): Promise<Ok> {
@@ -1044,7 +1080,7 @@ export class ReposAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async updateRef(req: UpdateRefRequest): Promise<RefInfo> {
@@ -1053,7 +1089,7 @@ export class ReposAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async getCommit(req: GetCommitRequest): Promise<Commit> {
@@ -1062,7 +1098,7 @@ export class ReposAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async setGrant(req: SetGrantRequest): Promise<Grant> {
@@ -1071,7 +1107,7 @@ export class ReposAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async removeGrant(req: RemoveGrantRequest): Promise<Ok> {
@@ -1080,7 +1116,7 @@ export class ReposAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listGrants(req: GetRepoRequest): Promise<ListGrantsResponse> {
@@ -1089,7 +1125,7 @@ export class ReposAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async setProtection(req: SetProtectionRequest): Promise<BranchProtection> {
@@ -1098,7 +1134,7 @@ export class ReposAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async removeProtection(req: RemoveProtectionRequest): Promise<Ok> {
@@ -1107,7 +1143,7 @@ export class ReposAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listProtections(req: GetRepoRequest): Promise<ListProtectionsResponse> {
@@ -1119,7 +1155,7 @@ export class ReposAsyncClient {
    * Pack every object reachable from the current refs that no live segment
    * holds, and upload it as one new segment. Use it for history that was
    * written before the object store existed. Repeatable; no-op when covered.
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async captureHistory(req: GetRepoRequest): Promise<CaptureReport> {
@@ -1130,7 +1166,7 @@ export class ReposAsyncClient {
   /**
    * Direct forks of the repository that the caller can see, on this
    * instance. A pull request into the repository may come from one.
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listForks(req: GetRepoRequest): Promise<RepoPage> {
@@ -1140,10 +1176,14 @@ export class ReposAsyncClient {
 }
 
 export class ServiceAccountsAsyncClient {
-  constructor(private readonly t: AsyncServiceTransport) {}
+  private readonly t: AsyncServiceTransport;
+
+  constructor(t: AsyncServiceTransport) {
+    this.t = t;
+  }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async create(req: CreateServiceAccountRequest): Promise<ServiceAccount> {
@@ -1152,7 +1192,7 @@ export class ServiceAccountsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async list(req: GetOrgRequest): Promise<ListServiceAccountsResponse> {
@@ -1163,7 +1203,7 @@ export class ServiceAccountsAsyncClient {
   /**
    * Disabling refuses every token of the account; enabling lets the
    * tokens that were not revoked work again.
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async disable(req: ServiceAccountRef): Promise<Ok> {
@@ -1172,7 +1212,7 @@ export class ServiceAccountsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async enable(req: ServiceAccountRef): Promise<Ok> {
@@ -1181,7 +1221,7 @@ export class ServiceAccountsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async createToken(req: CreateServiceAccountTokenRequest): Promise<ApiToken> {
@@ -1190,7 +1230,7 @@ export class ServiceAccountsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async listTokens(req: ServiceAccountRef): Promise<ListTokensResponse> {
@@ -1199,7 +1239,7 @@ export class ServiceAccountsAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async revokeToken(req: RevokeServiceAccountTokenRequest): Promise<Ok> {
@@ -1209,10 +1249,14 @@ export class ServiceAccountsAsyncClient {
 }
 
 export class StatusesAsyncClient {
-  constructor(private readonly t: AsyncServiceTransport) {}
+  private readonly t: AsyncServiceTransport;
+
+  constructor(t: AsyncServiceTransport) {
+    this.t = t;
+  }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async set(req: SetStatusRequest): Promise<CommitStatus> {
@@ -1221,7 +1265,7 @@ export class StatusesAsyncClient {
   }
 
   /**
-   * @throws {ServiceError} when the API returns an error response
+   * @throws {ServiceErrorRefusal} for the declared application error
    * @throws transport errors (network, timeout) raised by the transport
    */
   async list(req: ListStatusRequest): Promise<ListStatusResponse> {

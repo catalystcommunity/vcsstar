@@ -12,13 +12,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::Utc;
 use diesel::prelude::*;
+use time::OffsetDateTime;
 use vcsstar_core::App;
 use vcsstar_db::schema::{repo_segments, repos};
 
 /// A repository is looked at again this long after its last repack.
-const REPACK_EVERY: chrono::Duration = chrono::Duration::hours(6);
+const REPACK_EVERY: time::Duration = time::Duration::hours(6);
 const PASS_EVERY: Duration = Duration::from_secs(600);
 
 pub fn run(app: App, stop: Arc<AtomicBool>) -> anyhow::Result<()> {
@@ -43,7 +43,7 @@ pub fn pass(app: &App) -> anyhow::Result<usize> {
         return Ok(0);
     }
     let mut conn = app.conn()?;
-    let cutoff = Utc::now() - REPACK_EVERY;
+    let cutoff = OffsetDateTime::now_utc() - REPACK_EVERY;
     let candidates: Vec<(uuid::Uuid, i64)> = repo_segments::table
         .inner_join(repos::table)
         .filter(repo_segments::superseded_at.is_null())
@@ -68,7 +68,7 @@ pub fn pass(app: &App) -> anyhow::Result<usize> {
                 .or(repos::repacked_at.lt(cutoff)),
         ),
     )
-    .set(repos::repacked_at.eq(Utc::now()))
+    .set(repos::repacked_at.eq(OffsetDateTime::now_utc()))
     .execute(&mut conn)?;
     if claimed == 0 {
         return Ok(0);

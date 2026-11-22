@@ -3,7 +3,7 @@
 // check the server requires for cookie credentials. No JSON API exists.
 
 import { AsyncApiClient, type AsyncServiceTransport } from "./generated/client.async.gen.ts";
-import { fromServiceErrorCbor } from "./generated/codec.gen.ts";
+import { resolveRpcReply, ServiceErrorRefusal } from "./generated/codec.gen.ts";
 import type { Ctx, Identity } from "./generated/types.gen.ts";
 import { RpcRequest, RpcResponse } from "./csil/rpc.ts";
 
@@ -34,11 +34,14 @@ class FetchTransport implements AsyncServiceTransport {
       const code = reply.status === 3 ? 10 : reply.status === 4 ? 11 : 0;
       throw new ApiError(code, reply.error ?? `transport status ${reply.status}`);
     }
-    if (reply.variant === "ServiceError") {
-      const err = fromServiceErrorCbor(reply.payload);
-      throw new ApiError(Number(err.code), err.message);
+    try {
+      return resolveRpcReply(service, op, reply.variant, reply.payload);
+    } catch (error) {
+      if (error instanceof ServiceErrorRefusal) {
+        throw new ApiError(Number(error.value.code), error.value.message);
+      }
+      throw error;
     }
-    return reply.payload;
   }
 }
 

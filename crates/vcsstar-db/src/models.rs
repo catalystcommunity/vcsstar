@@ -1,7 +1,7 @@
 //! Row structs for the tables the server reads and writes directly.
 
-use chrono::{DateTime, Utc};
 use diesel::prelude::*;
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::schema::*;
@@ -16,9 +16,9 @@ pub struct Identity {
     pub display_name: Option<String>,
     pub email: Option<String>,
     pub email_verified: bool,
-    pub first_seen: DateTime<Utc>,
-    pub last_login: Option<DateTime<Utc>>,
-    pub disabled_at: Option<DateTime<Utc>>,
+    pub first_seen: OffsetDateTime,
+    pub last_login: Option<OffsetDateTime>,
+    pub disabled_at: Option<OffsetDateTime>,
     pub linkkeys_bound: bool,
 }
 
@@ -43,9 +43,9 @@ pub struct ApiToken {
     pub name: String,
     pub scopes: Vec<Option<String>>,
     pub client_label: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub expires_at: Option<DateTime<Utc>>,
-    pub revoked_at: Option<DateTime<Utc>>,
+    pub created_at: OffsetDateTime,
+    pub expires_at: Option<OffsetDateTime>,
+    pub revoked_at: Option<OffsetDateTime>,
 }
 
 #[derive(Debug, Insertable)]
@@ -57,7 +57,7 @@ pub struct NewApiToken<'a> {
     pub name: &'a str,
     pub scopes: Vec<Option<String>>,
     pub client_label: Option<&'a str>,
-    pub expires_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<OffsetDateTime>,
 }
 
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable)]
@@ -66,9 +66,9 @@ pub struct Session {
     pub id: Uuid,
     pub identity_id: Uuid,
     pub token_hash: Vec<u8>,
-    pub created_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
-    pub last_used_at: Option<DateTime<Utc>>,
+    pub created_at: OffsetDateTime,
+    pub expires_at: OffsetDateTime,
+    pub last_used_at: Option<OffsetDateTime>,
     pub user_agent: Option<String>,
 }
 
@@ -79,7 +79,7 @@ pub struct Org {
     pub name: String,
     pub display_name: Option<String>,
     pub github_owner: Option<String>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: OffsetDateTime,
 }
 
 #[derive(Debug, Insertable)]
@@ -97,7 +97,7 @@ pub struct OrgMember {
     pub org_id: Uuid,
     pub identity_id: Uuid,
     pub role: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: OffsetDateTime,
 }
 
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable)]
@@ -115,7 +115,7 @@ pub struct Repo {
     pub archived: bool,
     pub mirror_enabled: bool,
     pub refs_version: i64,
-    pub created_at: DateTime<Utc>,
+    pub created_at: OffsetDateTime,
 }
 
 #[derive(Debug, Insertable)]
@@ -137,7 +137,7 @@ pub struct RepoGrant {
     pub grantee_kind: String,
     pub grantee_id: Uuid,
     pub role: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: OffsetDateTime,
 }
 
 #[derive(Debug, Insertable)]
@@ -171,7 +171,7 @@ pub struct NewSession<'a> {
     pub id: Uuid,
     pub identity_id: Uuid,
     pub token_hash: Vec<u8>,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: OffsetDateTime,
     pub user_agent: Option<&'a str>,
 }
 
@@ -185,9 +185,9 @@ pub struct PendingLogin {
     pub idp_domain: String,
     pub return_to: Option<String>,
     pub device_login_id: Option<Uuid>,
-    pub created_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
-    pub claimed_at: Option<DateTime<Utc>>,
+    pub created_at: OffsetDateTime,
+    pub expires_at: OffsetDateTime,
+    pub claimed_at: Option<OffsetDateTime>,
 }
 
 #[derive(Debug, Insertable)]
@@ -200,7 +200,7 @@ pub struct NewPendingLogin<'a> {
     pub idp_domain: &'a str,
     pub return_to: Option<&'a str>,
     pub device_login_id: Option<Uuid>,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: OffsetDateTime,
 }
 
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable)]
@@ -214,8 +214,8 @@ pub struct DeviceLogin {
     pub state: String,
     pub identity_id: Option<Uuid>,
     pub api_token_id: Option<Uuid>,
-    pub created_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub created_at: OffsetDateTime,
+    pub expires_at: OffsetDateTime,
 }
 
 #[derive(Debug, Insertable)]
@@ -227,5 +227,5 @@ pub struct NewDeviceLogin<'a> {
     pub client_label: &'a str,
     pub scopes: Vec<Option<String>>,
     pub state: &'a str,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: OffsetDateTime,
 }

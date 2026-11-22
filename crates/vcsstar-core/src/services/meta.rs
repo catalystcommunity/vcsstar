@@ -26,7 +26,7 @@ pub fn contract_digest() -> Vec<u8> {
 
 pub fn server_info(app: &App, _ctx: &ReqCtx, _req: Empty) -> Result<ServerInfo, Error> {
     Ok(ServerInfo {
-        version: env!("CARGO_PKG_VERSION").to_string(),
+        version: vcsstar_transport::VERSION.to_string(),
         contract_version: CONTRACT_VERSION.to_string(),
         contract_digest: contract_digest(),
         features: vec!["rpc-http".into(), "rpc-tcp".into()],

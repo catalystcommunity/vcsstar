@@ -22,7 +22,7 @@ pub fn schedule(app: &App) -> Result<(), Error> {
     adopt_legacy(app, &mut conn, None)?;
     let rows:Vec<store::Connection>=diesel::sql_query("SELECT * FROM sync_connections WHERE NOT paused AND (inbound_enabled OR outbound_enabled) AND poll_after<=now() ORDER BY poll_after LIMIT 100").load(&mut conn)?;
     for c in rows {
-        let epoch = chrono::Utc::now().timestamp() / 60;
+        let epoch = time::OffsetDateTime::now_utc().unix_timestamp() / 60;
         let mut payload = vec![];
         ciborium::ser::into_writer(
             &Task {
@@ -224,7 +224,7 @@ pub fn run(app: &App, task: &Task) -> Result<bool, Error> {
     }
     if c.paused
         || (!c.inbound_enabled && !c.outbound_enabled)
-        || (task.webhook.is_none() && c.poll_after > chrono::Utc::now())
+        || (task.webhook.is_none() && c.poll_after > time::OffsetDateTime::now_utc())
     {
         return Ok(true);
     }

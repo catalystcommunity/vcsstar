@@ -10,12 +10,16 @@ use super::types::*;
 pub enum ClientError {
     Service { code: i64, message: String },
     Transport(String),
+    ApplicationServiceError(Box<ServiceError>),
+    Decode(String),
 }
 
 impl std::fmt::Display for ClientError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ClientError::Service { code, message } => write!(f, "service error {code}: {message}"),
+            Self::ApplicationServiceError(e) => write!(f, "application error: {e:?}"),
+            Self::Decode(msg) => write!(f, "invalid reply: {msg}"),
             ClientError::Transport(msg) => write!(f, "transport error: {msg}"),
         }
     }
@@ -29,6 +33,1263 @@ impl std::error::Error for ClientError {}
 /// only moves bytes, so it can be HTTP, a queue, or an in-process loop.
 pub trait Transport {
     fn call(&self, service: &str, op: &str, req: &[u8]) -> Result<Vec<u8>, ClientError>;
+}
+impl From<CsilCborError> for ClientError {
+    fn from(error: CsilCborError) -> Self {
+        Self::Decode(error.0)
+    }
+}
+
+/// Resolve a status-zero RPC reply before returning its payload to the client.
+pub fn resolve_rpc_reply(
+    service: &str,
+    op: &str,
+    variant: Option<&str>,
+    payload: Vec<u8>,
+) -> Result<Vec<u8>, ClientError> {
+    match (service, op) {
+        ("Meta", "server-info") => match variant {
+            Some("ServerInfo") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "begin-login") => match variant {
+            Some("BeginLoginResponse") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "complete-login") => match variant {
+            Some("Session") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "create-token") => match variant {
+            Some("ApiToken") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "revoke-token") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "whoami") => match variant {
+            Some("WhoAmI") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "begin-device-login") => match variant {
+            Some("DeviceCode") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "poll-device-login") => match variant {
+            Some("DevicePollResponse") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "exchange-act-as-credential") => match variant {
+            Some("ScopedBearer") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "scope-set") => match variant {
+            Some("SignedActAsScopeSet") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "approve-device-login") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "register-key") => match variant {
+            Some("SshKeyInfo") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "list-keys") => match variant {
+            Some("ListKeysResponse") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "revoke-key") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "list-tokens") => match variant {
+            Some("ListTokensResponse") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "logout") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "github-link-status") => match variant {
+            Some("GithubLink") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "set-github-token") => match variant {
+            Some("GithubLink") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "unlink-github") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "get-preferences") => match variant {
+            Some("Preferences") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "set-preferences") => match variant {
+            Some("Preferences") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "local-login") => match variant {
+            Some("Session") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "local-account") => match variant {
+            Some("LocalAccount") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Auth", "change-local-password") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Orgs", "create") => match variant {
+            Some("Org") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Orgs", "get") => match variant {
+            Some("Org") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Orgs", "list") => match variant {
+            Some("OrgPage") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Orgs", "update") => match variant {
+            Some("Org") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Orgs", "set-member") => match variant {
+            Some("OrgMember") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Orgs", "remove-member") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Orgs", "list-members") => match variant {
+            Some("OrgMemberPage") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Orgs", "create-team") => match variant {
+            Some("Team") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Orgs", "delete-team") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Orgs", "set-team-member") => match variant {
+            Some("Team") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Orgs", "list-teams") => match variant {
+            Some("ListTeamsResponse") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "create") => match variant {
+            Some("Repo") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "get") => match variant {
+            Some("Repo") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "list") => match variant {
+            Some("RepoPage") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "update") => match variant {
+            Some("Repo") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "fork") => match variant {
+            Some("Repo") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "list-refs") => match variant {
+            Some("ListRefsResponse") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "log") => match variant {
+            Some("CommitPage") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "tree") => match variant {
+            Some("TreeResponse") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "blob") => match variant {
+            Some("BlobResponse") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "diff") => match variant {
+            Some("DiffResponse") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "delete") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "update-ref") => match variant {
+            Some("RefInfo") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "get-commit") => match variant {
+            Some("Commit") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "set-grant") => match variant {
+            Some("Grant") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "remove-grant") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "list-grants") => match variant {
+            Some("ListGrantsResponse") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "set-protection") => match variant {
+            Some("BranchProtection") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "remove-protection") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "list-protections") => match variant {
+            Some("ListProtectionsResponse") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "capture-history") => match variant {
+            Some("CaptureReport") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Repos", "list-forks") => match variant {
+            Some("RepoPage") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("PullRequests", "open") => match variant {
+            Some("PullRequest") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("PullRequests", "get") => match variant {
+            Some("PullRequest") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("PullRequests", "list") => match variant {
+            Some("PrPage") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("PullRequests", "review") => match variant {
+            Some("Review") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("PullRequests", "comment") => match variant {
+            Some("Comment") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("PullRequests", "merge") => match variant {
+            Some("MergeResult") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("PullRequests", "close") => match variant {
+            Some("PullRequest") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("PullRequests", "reopen") => match variant {
+            Some("PullRequest") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("PullRequests", "retarget") => match variant {
+            Some("PullRequest") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("PullRequests", "update") => match variant {
+            Some("PullRequest") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("PullRequests", "list-reviews") => match variant {
+            Some("ListReviewsResponse") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("PullRequests", "list-comments") => match variant {
+            Some("ListCommentsResponse") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("PullRequests", "edit-comment") => match variant {
+            Some("Comment") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("PullRequests", "delete-comment") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Statuses", "set") => match variant {
+            Some("CommitStatus") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Statuses", "list") => match variant {
+            Some("ListStatusResponse") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Hooks", "create-endpoint") => match variant {
+            Some("Endpoint") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Hooks", "list-endpoints") => match variant {
+            Some("ListEndpointsResponse") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Hooks", "delete-endpoint") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Hooks", "list-deliveries") => match variant {
+            Some("DeliveryPage") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Hooks", "redeliver") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Hooks", "update-endpoint") => match variant {
+            Some("Endpoint") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "status") => match variant {
+            Some("MirrorStatus") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "list-blocked") => match variant {
+            Some("ListBlockedResponse") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "replay-blocked") => match variant {
+            Some("ReplayResult") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "set-credential") => match variant {
+            Some("Credential") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "reconcile") => match variant {
+            Some("ReconcileReport") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "pause") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "resume") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "import-repo") => match variant {
+            Some("Repo") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "configure") => match variant {
+            Some("MirrorStatus") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "list-credentials") => match variant {
+            Some("ListCredentialsResponse") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "remove-credential") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "list-github-repos") => match variant {
+            Some("GithubRepoPage") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "health") => match variant {
+            Some("GithubHealth") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "backfill") => match variant {
+            Some("MirrorStatus") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "list-github-installations") => match variant {
+            Some("GithubInstallationList") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "import-all") => match variant {
+            Some("ImportAllResult") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "set-schedule") => match variant {
+            Some("MirrorStatus") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "list-connections") => match variant {
+            Some("SyncConnections") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "connect") => match variant {
+            Some("SyncConnection") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "update-connection") => match variant {
+            Some("SyncConnection") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "sync-now") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "webhook-secret") => match variant {
+            Some("SyncWebhookSecret") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "get-policy") => match variant {
+            Some("SyncPolicy") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "set-policy") => match variant {
+            Some("SyncPolicy") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "list-conflicts") => match variant {
+            Some("SyncConflicts") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "resolve-conflict") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "link-provider") => match variant {
+            Some("ProviderLink") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "list-provider-links") => match variant {
+            Some("ProviderLinks") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "unlink-provider") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Mirror", "list-sync-records") => match variant {
+            Some("SyncRecords") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Instance", "list-roles") => match variant {
+            Some("InstanceRoleList") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Instance", "set-role") => match variant {
+            Some("InstanceRoleGrant") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Instance", "remove-role") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Instance", "create-local-account") => match variant {
+            Some("LocalAccount") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Instance", "reset-local-password") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("ServiceAccounts", "create") => match variant {
+            Some("ServiceAccount") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("ServiceAccounts", "list") => match variant {
+            Some("ListServiceAccountsResponse") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("ServiceAccounts", "disable") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("ServiceAccounts", "enable") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("ServiceAccounts", "create-token") => match variant {
+            Some("ApiToken") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("ServiceAccounts", "list-tokens") => match variant {
+            Some("ListTokensResponse") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("ServiceAccounts", "revoke-token") => match variant {
+            Some("Ok") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Federation", "handshake") => match variant {
+            Some("FedHelloAck") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Federation", "verify-head") => match variant {
+            Some("HeadInfo") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Federation", "head-info") => match variant {
+            Some("HeadInfo") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        ("Federation", "repo-info") => match variant {
+            Some("Repo") => Ok(payload),
+            Some("ServiceError") => {
+                let value = decode_service_error(&payload)?;
+                Err(ClientError::ApplicationServiceError(Box::new(value)))
+            }
+            _ => Err(ClientError::Decode(format!(
+                "invalid reply variant {variant:?}"
+            ))),
+        },
+        _ => Ok(payload),
+    }
 }
 
 /// Typed client for the Meta service.
@@ -47,7 +1308,7 @@ impl<T: Transport> MetaClient<T> {
         let csil_resp = self
             .transport
             .call("Meta", "server-info", &encode_empty(&req))?;
-        decode_server_info(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_server_info(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 }
 
@@ -67,7 +1328,7 @@ impl<T: Transport> AuthClient<T> {
         let csil_resp =
             self.transport
                 .call("Auth", "begin-login", &encode_begin_login_request(&req))?;
-        decode_begin_login_response(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_begin_login_response(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// complete-login (request/response).
@@ -77,7 +1338,7 @@ impl<T: Transport> AuthClient<T> {
             "complete-login",
             &encode_complete_login_request(&req),
         )?;
-        decode_session(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_session(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// create-token (request/response).
@@ -85,7 +1346,7 @@ impl<T: Transport> AuthClient<T> {
         let csil_resp =
             self.transport
                 .call("Auth", "create-token", &encode_create_token_request(&req))?;
-        decode_api_token(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_api_token(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// revoke-token (request/response).
@@ -93,13 +1354,13 @@ impl<T: Transport> AuthClient<T> {
         let csil_resp =
             self.transport
                 .call("Auth", "revoke-token", &encode_revoke_token_request(&req))?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// whoami (request/response).
     pub fn whoami(&self, req: Empty) -> Result<WhoAmI, ClientError> {
         let csil_resp = self.transport.call("Auth", "whoami", &encode_empty(&req))?;
-        decode_who_am_i(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_who_am_i(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// begin-device-login (request/response).
@@ -109,7 +1370,7 @@ impl<T: Transport> AuthClient<T> {
             "begin-device-login",
             &encode_begin_device_request(&req),
         )?;
-        decode_device_code(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_device_code(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// poll-device-login (request/response).
@@ -122,7 +1383,7 @@ impl<T: Transport> AuthClient<T> {
             "poll-device-login",
             &encode_device_poll_request(&req),
         )?;
-        decode_device_poll_response(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_device_poll_response(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// exchange-act-as-credential (request/response).
@@ -135,7 +1396,7 @@ impl<T: Transport> AuthClient<T> {
             "exchange-act-as-credential",
             &encode_act_as_exchange_request(&req),
         )?;
-        decode_scoped_bearer(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_scoped_bearer(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// scope-set (request/response).
@@ -143,8 +1404,7 @@ impl<T: Transport> AuthClient<T> {
         let csil_resp =
             self.transport
                 .call("Auth", "scope-set", &encode_scope_set_request(&req))?;
-        decode_signed_act_as_scope_set(&csil_resp)
-            .map_err(|e| ClientError::Transport(e.to_string()))
+        decode_signed_act_as_scope_set(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// Browser side of the device flow. Needs a web session.
@@ -154,7 +1414,7 @@ impl<T: Transport> AuthClient<T> {
             "approve-device-login",
             &encode_device_approve_request(&req),
         )?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// register-key (request/response).
@@ -162,7 +1422,7 @@ impl<T: Transport> AuthClient<T> {
         let csil_resp =
             self.transport
                 .call("Auth", "register-key", &encode_register_key_request(&req))?;
-        decode_ssh_key_info(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ssh_key_info(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list-keys (request/response).
@@ -170,7 +1430,7 @@ impl<T: Transport> AuthClient<T> {
         let csil_resp = self
             .transport
             .call("Auth", "list-keys", &encode_empty(&req))?;
-        decode_list_keys_response(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_list_keys_response(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// revoke-key (request/response).
@@ -178,7 +1438,7 @@ impl<T: Transport> AuthClient<T> {
         let csil_resp = self
             .transport
             .call("Auth", "revoke-key", &encode_key_ref(&req))?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list-tokens (request/response).
@@ -186,13 +1446,13 @@ impl<T: Transport> AuthClient<T> {
         let csil_resp = self
             .transport
             .call("Auth", "list-tokens", &encode_empty(&req))?;
-        decode_list_tokens_response(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_list_tokens_response(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// logout (request/response).
     pub fn logout(&self, req: Empty) -> Result<Ok, ClientError> {
         let csil_resp = self.transport.call("Auth", "logout", &encode_empty(&req))?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// GitHub account link of the caller (see GithubLink).
@@ -200,7 +1460,7 @@ impl<T: Transport> AuthClient<T> {
         let csil_resp = self
             .transport
             .call("Auth", "github-link-status", &encode_empty(&req))?;
-        decode_github_link(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_github_link(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// set-github-token (request/response).
@@ -210,7 +1470,7 @@ impl<T: Transport> AuthClient<T> {
             "set-github-token",
             &encode_set_github_token_request(&req),
         )?;
-        decode_github_link(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_github_link(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// unlink-github (request/response).
@@ -218,7 +1478,7 @@ impl<T: Transport> AuthClient<T> {
         let csil_resp = self
             .transport
             .call("Auth", "unlink-github", &encode_empty(&req))?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// The caller's display preferences (defaults when none are saved).
@@ -226,7 +1486,7 @@ impl<T: Transport> AuthClient<T> {
         let csil_resp = self
             .transport
             .call("Auth", "get-preferences", &encode_empty(&req))?;
-        decode_preferences(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_preferences(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// Save the given fields; absent fields keep their value.
@@ -236,7 +1496,7 @@ impl<T: Transport> AuthClient<T> {
             "set-preferences",
             &encode_set_preferences_request(&req),
         )?;
-        decode_preferences(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_preferences(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// local-login (request/response).
@@ -244,7 +1504,7 @@ impl<T: Transport> AuthClient<T> {
         let csil_resp =
             self.transport
                 .call("Auth", "local-login", &encode_local_login_request(&req))?;
-        decode_session(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_session(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// local-account (request/response).
@@ -252,7 +1512,7 @@ impl<T: Transport> AuthClient<T> {
         let csil_resp = self
             .transport
             .call("Auth", "local-account", &encode_empty(&req))?;
-        decode_local_account(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_local_account(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// change-local-password (request/response).
@@ -265,7 +1525,7 @@ impl<T: Transport> AuthClient<T> {
             "change-local-password",
             &encode_change_local_password_request(&req),
         )?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 }
 
@@ -285,7 +1545,7 @@ impl<T: Transport> OrgsClient<T> {
         let csil_resp = self
             .transport
             .call("Orgs", "create", &encode_create_org_request(&req))?;
-        decode_org(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_org(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// get (request/response).
@@ -293,7 +1553,7 @@ impl<T: Transport> OrgsClient<T> {
         let csil_resp = self
             .transport
             .call("Orgs", "get", &encode_get_org_request(&req))?;
-        decode_org(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_org(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list (request/response).
@@ -301,7 +1561,7 @@ impl<T: Transport> OrgsClient<T> {
         let csil_resp = self
             .transport
             .call("Orgs", "list", &encode_list_orgs_request(&req))?;
-        decode_org_page(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_org_page(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// update (request/response).
@@ -309,7 +1569,7 @@ impl<T: Transport> OrgsClient<T> {
         let csil_resp = self
             .transport
             .call("Orgs", "update", &encode_update_org_request(&req))?;
-        decode_org(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_org(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// set-member (request/response).
@@ -317,7 +1577,7 @@ impl<T: Transport> OrgsClient<T> {
         let csil_resp =
             self.transport
                 .call("Orgs", "set-member", &encode_set_org_member_request(&req))?;
-        decode_org_member(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_org_member(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// remove-member (request/response).
@@ -327,7 +1587,7 @@ impl<T: Transport> OrgsClient<T> {
             "remove-member",
             &encode_remove_org_member_request(&req),
         )?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list-members (request/response).
@@ -337,7 +1597,7 @@ impl<T: Transport> OrgsClient<T> {
             "list-members",
             &encode_list_org_members_request(&req),
         )?;
-        decode_org_member_page(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_org_member_page(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// create-team (request/response).
@@ -345,7 +1605,7 @@ impl<T: Transport> OrgsClient<T> {
         let csil_resp =
             self.transport
                 .call("Orgs", "create-team", &encode_create_team_request(&req))?;
-        decode_team(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_team(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// delete-team (request/response).
@@ -353,7 +1613,7 @@ impl<T: Transport> OrgsClient<T> {
         let csil_resp = self
             .transport
             .call("Orgs", "delete-team", &encode_team_ref(&req))?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// set-team-member (request/response).
@@ -363,7 +1623,7 @@ impl<T: Transport> OrgsClient<T> {
             "set-team-member",
             &encode_set_team_member_request(&req),
         )?;
-        decode_team(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_team(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list-teams (request/response).
@@ -371,7 +1631,7 @@ impl<T: Transport> OrgsClient<T> {
         let csil_resp = self
             .transport
             .call("Orgs", "list-teams", &encode_get_org_request(&req))?;
-        decode_list_teams_response(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_list_teams_response(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 }
 
@@ -391,7 +1651,7 @@ impl<T: Transport> ReposClient<T> {
         let csil_resp =
             self.transport
                 .call("Repos", "create", &encode_create_repo_request(&req))?;
-        decode_repo(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_repo(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// get (request/response).
@@ -399,7 +1659,7 @@ impl<T: Transport> ReposClient<T> {
         let csil_resp = self
             .transport
             .call("Repos", "get", &encode_get_repo_request(&req))?;
-        decode_repo(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_repo(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list (request/response).
@@ -407,7 +1667,7 @@ impl<T: Transport> ReposClient<T> {
         let csil_resp = self
             .transport
             .call("Repos", "list", &encode_list_repos_request(&req))?;
-        decode_repo_page(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_repo_page(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// update (request/response).
@@ -415,7 +1675,7 @@ impl<T: Transport> ReposClient<T> {
         let csil_resp =
             self.transport
                 .call("Repos", "update", &encode_update_repo_request(&req))?;
-        decode_repo(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_repo(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// fork (request/response).
@@ -423,7 +1683,7 @@ impl<T: Transport> ReposClient<T> {
         let csil_resp = self
             .transport
             .call("Repos", "fork", &encode_fork_request(&req))?;
-        decode_repo(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_repo(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list-refs (request/response).
@@ -431,7 +1691,7 @@ impl<T: Transport> ReposClient<T> {
         let csil_resp =
             self.transport
                 .call("Repos", "list-refs", &encode_list_refs_request(&req))?;
-        decode_list_refs_response(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_list_refs_response(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// log (request/response).
@@ -439,7 +1699,7 @@ impl<T: Transport> ReposClient<T> {
         let csil_resp = self
             .transport
             .call("Repos", "log", &encode_log_request(&req))?;
-        decode_commit_page(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_commit_page(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// tree (request/response).
@@ -447,7 +1707,7 @@ impl<T: Transport> ReposClient<T> {
         let csil_resp = self
             .transport
             .call("Repos", "tree", &encode_tree_request(&req))?;
-        decode_tree_response(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_tree_response(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// blob (request/response).
@@ -455,7 +1715,7 @@ impl<T: Transport> ReposClient<T> {
         let csil_resp = self
             .transport
             .call("Repos", "blob", &encode_blob_request(&req))?;
-        decode_blob_response(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_blob_response(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// diff (request/response).
@@ -463,7 +1723,7 @@ impl<T: Transport> ReposClient<T> {
         let csil_resp = self
             .transport
             .call("Repos", "diff", &encode_diff_request(&req))?;
-        decode_diff_response(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_diff_response(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// delete (request/response).
@@ -471,7 +1731,7 @@ impl<T: Transport> ReposClient<T> {
         let csil_resp =
             self.transport
                 .call("Repos", "delete", &encode_delete_repo_request(&req))?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// update-ref (request/response).
@@ -479,7 +1739,7 @@ impl<T: Transport> ReposClient<T> {
         let csil_resp =
             self.transport
                 .call("Repos", "update-ref", &encode_update_ref_request(&req))?;
-        decode_ref_info(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ref_info(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// get-commit (request/response).
@@ -487,7 +1747,7 @@ impl<T: Transport> ReposClient<T> {
         let csil_resp =
             self.transport
                 .call("Repos", "get-commit", &encode_get_commit_request(&req))?;
-        decode_commit(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_commit(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// set-grant (request/response).
@@ -495,7 +1755,7 @@ impl<T: Transport> ReposClient<T> {
         let csil_resp =
             self.transport
                 .call("Repos", "set-grant", &encode_set_grant_request(&req))?;
-        decode_grant(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_grant(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// remove-grant (request/response).
@@ -503,7 +1763,7 @@ impl<T: Transport> ReposClient<T> {
         let csil_resp =
             self.transport
                 .call("Repos", "remove-grant", &encode_remove_grant_request(&req))?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list-grants (request/response).
@@ -511,7 +1771,7 @@ impl<T: Transport> ReposClient<T> {
         let csil_resp =
             self.transport
                 .call("Repos", "list-grants", &encode_get_repo_request(&req))?;
-        decode_list_grants_response(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_list_grants_response(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// set-protection (request/response).
@@ -524,7 +1784,7 @@ impl<T: Transport> ReposClient<T> {
             "set-protection",
             &encode_set_protection_request(&req),
         )?;
-        decode_branch_protection(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_branch_protection(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// remove-protection (request/response).
@@ -534,7 +1794,7 @@ impl<T: Transport> ReposClient<T> {
             "remove-protection",
             &encode_remove_protection_request(&req),
         )?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list-protections (request/response).
@@ -545,8 +1805,7 @@ impl<T: Transport> ReposClient<T> {
         let csil_resp =
             self.transport
                 .call("Repos", "list-protections", &encode_get_repo_request(&req))?;
-        decode_list_protections_response(&csil_resp)
-            .map_err(|e| ClientError::Transport(e.to_string()))
+        decode_list_protections_response(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// Pack every object reachable from the current refs that no live segment
@@ -556,7 +1815,7 @@ impl<T: Transport> ReposClient<T> {
         let csil_resp =
             self.transport
                 .call("Repos", "capture-history", &encode_get_repo_request(&req))?;
-        decode_capture_report(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_capture_report(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// Direct forks of the repository that the caller can see, on this
@@ -565,7 +1824,7 @@ impl<T: Transport> ReposClient<T> {
         let csil_resp =
             self.transport
                 .call("Repos", "list-forks", &encode_get_repo_request(&req))?;
-        decode_repo_page(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_repo_page(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 }
 
@@ -585,7 +1844,7 @@ impl<T: Transport> PullRequestsClient<T> {
         let csil_resp =
             self.transport
                 .call("PullRequests", "open", &encode_open_pr_request(&req))?;
-        decode_pull_request(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_pull_request(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// get (request/response).
@@ -593,7 +1852,7 @@ impl<T: Transport> PullRequestsClient<T> {
         let csil_resp = self
             .transport
             .call("PullRequests", "get", &encode_pr_ref(&req))?;
-        decode_pull_request(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_pull_request(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list (request/response).
@@ -601,7 +1860,7 @@ impl<T: Transport> PullRequestsClient<T> {
         let csil_resp =
             self.transport
                 .call("PullRequests", "list", &encode_list_pr_request(&req))?;
-        decode_pr_page(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_pr_page(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// review (request/response).
@@ -609,7 +1868,7 @@ impl<T: Transport> PullRequestsClient<T> {
         let csil_resp =
             self.transport
                 .call("PullRequests", "review", &encode_review_request(&req))?;
-        decode_review(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_review(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// comment (request/response).
@@ -617,7 +1876,7 @@ impl<T: Transport> PullRequestsClient<T> {
         let csil_resp =
             self.transport
                 .call("PullRequests", "comment", &encode_comment_request(&req))?;
-        decode_comment(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_comment(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// merge (request/response).
@@ -625,7 +1884,7 @@ impl<T: Transport> PullRequestsClient<T> {
         let csil_resp =
             self.transport
                 .call("PullRequests", "merge", &encode_merge_request(&req))?;
-        decode_merge_result(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_merge_result(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// close (request/response).
@@ -633,7 +1892,7 @@ impl<T: Transport> PullRequestsClient<T> {
         let csil_resp = self
             .transport
             .call("PullRequests", "close", &encode_pr_ref(&req))?;
-        decode_pull_request(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_pull_request(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// reopen (request/response).
@@ -641,7 +1900,7 @@ impl<T: Transport> PullRequestsClient<T> {
         let csil_resp = self
             .transport
             .call("PullRequests", "reopen", &encode_pr_ref(&req))?;
-        decode_pull_request(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_pull_request(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// retarget (request/response).
@@ -649,7 +1908,7 @@ impl<T: Transport> PullRequestsClient<T> {
         let csil_resp =
             self.transport
                 .call("PullRequests", "retarget", &encode_retarget_request(&req))?;
-        decode_pull_request(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_pull_request(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// update (request/response).
@@ -657,7 +1916,7 @@ impl<T: Transport> PullRequestsClient<T> {
         let csil_resp =
             self.transport
                 .call("PullRequests", "update", &encode_update_pr_request(&req))?;
-        decode_pull_request(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_pull_request(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list-reviews (request/response).
@@ -665,7 +1924,7 @@ impl<T: Transport> PullRequestsClient<T> {
         let csil_resp =
             self.transport
                 .call("PullRequests", "list-reviews", &encode_pr_ref(&req))?;
-        decode_list_reviews_response(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_list_reviews_response(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list-comments (request/response).
@@ -673,7 +1932,7 @@ impl<T: Transport> PullRequestsClient<T> {
         let csil_resp =
             self.transport
                 .call("PullRequests", "list-comments", &encode_pr_ref(&req))?;
-        decode_list_comments_response(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_list_comments_response(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// edit-comment (request/response).
@@ -683,7 +1942,7 @@ impl<T: Transport> PullRequestsClient<T> {
             "edit-comment",
             &encode_edit_comment_request(&req),
         )?;
-        decode_comment(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_comment(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// delete-comment (request/response).
@@ -693,7 +1952,7 @@ impl<T: Transport> PullRequestsClient<T> {
             "delete-comment",
             &encode_delete_comment_request(&req),
         )?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 }
 
@@ -713,7 +1972,7 @@ impl<T: Transport> StatusesClient<T> {
         let csil_resp = self
             .transport
             .call("Statuses", "set", &encode_set_status_request(&req))?;
-        decode_commit_status(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_commit_status(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list (request/response).
@@ -721,7 +1980,7 @@ impl<T: Transport> StatusesClient<T> {
         let csil_resp =
             self.transport
                 .call("Statuses", "list", &encode_list_status_request(&req))?;
-        decode_list_status_response(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_list_status_response(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 }
 
@@ -743,7 +2002,7 @@ impl<T: Transport> HooksClient<T> {
             "create-endpoint",
             &encode_create_endpoint_request(&req),
         )?;
-        decode_endpoint(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_endpoint(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list-endpoints (request/response).
@@ -756,8 +2015,7 @@ impl<T: Transport> HooksClient<T> {
             "list-endpoints",
             &encode_list_endpoints_request(&req),
         )?;
-        decode_list_endpoints_response(&csil_resp)
-            .map_err(|e| ClientError::Transport(e.to_string()))
+        decode_list_endpoints_response(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// delete-endpoint (request/response).
@@ -765,7 +2023,7 @@ impl<T: Transport> HooksClient<T> {
         let csil_resp =
             self.transport
                 .call("Hooks", "delete-endpoint", &encode_endpoint_ref(&req))?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list-deliveries (request/response).
@@ -773,7 +2031,7 @@ impl<T: Transport> HooksClient<T> {
         let csil_resp =
             self.transport
                 .call("Hooks", "list-deliveries", &encode_delivery_query(&req))?;
-        decode_delivery_page(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_delivery_page(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// redeliver (request/response).
@@ -781,7 +2039,7 @@ impl<T: Transport> HooksClient<T> {
         let csil_resp = self
             .transport
             .call("Hooks", "redeliver", &encode_delivery_ref(&req))?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// update-endpoint (request/response).
@@ -791,7 +2049,7 @@ impl<T: Transport> HooksClient<T> {
             "update-endpoint",
             &encode_update_endpoint_request(&req),
         )?;
-        decode_endpoint(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_endpoint(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 }
 
@@ -811,7 +2069,7 @@ impl<T: Transport> MirrorClient<T> {
         let csil_resp = self
             .transport
             .call("Mirror", "status", &encode_get_repo_request(&req))?;
-        decode_mirror_status(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_mirror_status(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list-blocked (request/response).
@@ -819,7 +2077,7 @@ impl<T: Transport> MirrorClient<T> {
         let csil_resp =
             self.transport
                 .call("Mirror", "list-blocked", &encode_get_repo_request(&req))?;
-        decode_list_blocked_response(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_list_blocked_response(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// replay-blocked (request/response).
@@ -827,7 +2085,7 @@ impl<T: Transport> MirrorClient<T> {
         let csil_resp =
             self.transport
                 .call("Mirror", "replay-blocked", &encode_replay_request(&req))?;
-        decode_replay_result(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_replay_result(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// set-credential (request/response).
@@ -837,7 +2095,7 @@ impl<T: Transport> MirrorClient<T> {
             "set-credential",
             &encode_set_credential_request(&req),
         )?;
-        decode_credential(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_credential(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// reconcile (request/response).
@@ -845,7 +2103,7 @@ impl<T: Transport> MirrorClient<T> {
         let csil_resp =
             self.transport
                 .call("Mirror", "reconcile", &encode_get_repo_request(&req))?;
-        decode_reconcile_report(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_reconcile_report(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// pause (request/response).
@@ -853,7 +2111,7 @@ impl<T: Transport> MirrorClient<T> {
         let csil_resp = self
             .transport
             .call("Mirror", "pause", &encode_get_repo_request(&req))?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// resume (request/response).
@@ -861,7 +2119,7 @@ impl<T: Transport> MirrorClient<T> {
         let csil_resp = self
             .transport
             .call("Mirror", "resume", &encode_get_repo_request(&req))?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// Make the repository and queue its import. The answer comes before
@@ -870,7 +2128,7 @@ impl<T: Transport> MirrorClient<T> {
         let csil_resp =
             self.transport
                 .call("Mirror", "import-repo", &encode_import_request(&req))?;
-        decode_repo(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_repo(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// configure (request/response).
@@ -880,7 +2138,7 @@ impl<T: Transport> MirrorClient<T> {
             "configure",
             &encode_configure_mirror_request(&req),
         )?;
-        decode_mirror_status(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_mirror_status(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list-credentials (request/response).
@@ -893,8 +2151,7 @@ impl<T: Transport> MirrorClient<T> {
             "list-credentials",
             &encode_list_credentials_request(&req),
         )?;
-        decode_list_credentials_response(&csil_resp)
-            .map_err(|e| ClientError::Transport(e.to_string()))
+        decode_list_credentials_response(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// remove-credential (request/response).
@@ -902,7 +2159,7 @@ impl<T: Transport> MirrorClient<T> {
         let csil_resp =
             self.transport
                 .call("Mirror", "remove-credential", &encode_credential_ref(&req))?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// Repositories visible under the organization's `github_owner`, with
@@ -917,7 +2174,7 @@ impl<T: Transport> MirrorClient<T> {
             "list-github-repos",
             &encode_list_github_repos_request(&req),
         )?;
-        decode_github_repo_page(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_github_repo_page(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// This node's view of GitHub availability and rate limits.
@@ -925,7 +2182,7 @@ impl<T: Transport> MirrorClient<T> {
         let csil_resp = self
             .transport
             .call("Mirror", "health", &encode_empty(&req))?;
-        decode_github_health(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_github_health(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// Start the history import of the repository's GitHub pull requests
@@ -935,7 +2192,7 @@ impl<T: Transport> MirrorClient<T> {
         let csil_resp =
             self.transport
                 .call("Mirror", "backfill", &encode_get_repo_request(&req))?;
-        decode_mirror_status(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_mirror_status(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// Where the instance's GitHub Apps are installed, with the vcsstar
@@ -947,8 +2204,7 @@ impl<T: Transport> MirrorClient<T> {
         let csil_resp =
             self.transport
                 .call("Mirror", "list-github-installations", &encode_empty(&req))?;
-        decode_github_installation_list(&csil_resp)
-            .map_err(|e| ClientError::Transport(e.to_string()))
+        decode_github_installation_list(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// import-all (request/response).
@@ -956,7 +2212,7 @@ impl<T: Transport> MirrorClient<T> {
         let csil_resp =
             self.transport
                 .call("Mirror", "import-all", &encode_import_all_request(&req))?;
-        decode_import_all_result(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_import_all_result(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// set-schedule (request/response).
@@ -966,7 +2222,7 @@ impl<T: Transport> MirrorClient<T> {
             "set-schedule",
             &encode_set_mirror_schedule_request(&req),
         )?;
-        decode_mirror_status(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_mirror_status(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list-connections (request/response).
@@ -974,7 +2230,7 @@ impl<T: Transport> MirrorClient<T> {
         let csil_resp =
             self.transport
                 .call("Mirror", "list-connections", &encode_get_repo_request(&req))?;
-        decode_sync_connections(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_sync_connections(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// connect (request/response).
@@ -982,7 +2238,7 @@ impl<T: Transport> MirrorClient<T> {
         let csil_resp =
             self.transport
                 .call("Mirror", "connect", &encode_connect_remote_request(&req))?;
-        decode_sync_connection(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_sync_connection(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// update-connection (request/response).
@@ -995,7 +2251,7 @@ impl<T: Transport> MirrorClient<T> {
             "update-connection",
             &encode_update_connection_request(&req),
         )?;
-        decode_sync_connection(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_sync_connection(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// sync-now (request/response).
@@ -1003,7 +2259,7 @@ impl<T: Transport> MirrorClient<T> {
         let csil_resp =
             self.transport
                 .call("Mirror", "sync-now", &encode_sync_connection_ref(&req))?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// webhook-secret (request/response).
@@ -1013,7 +2269,7 @@ impl<T: Transport> MirrorClient<T> {
             "webhook-secret",
             &encode_sync_connection_ref(&req),
         )?;
-        decode_sync_webhook_secret(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_sync_webhook_secret(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// get-policy (request/response).
@@ -1021,7 +2277,7 @@ impl<T: Transport> MirrorClient<T> {
         let csil_resp =
             self.transport
                 .call("Mirror", "get-policy", &encode_get_repo_request(&req))?;
-        decode_sync_policy(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_sync_policy(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// set-policy (request/response).
@@ -1031,7 +2287,7 @@ impl<T: Transport> MirrorClient<T> {
             "set-policy",
             &encode_set_sync_policy_request(&req),
         )?;
-        decode_sync_policy(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_sync_policy(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list-conflicts (request/response).
@@ -1039,7 +2295,7 @@ impl<T: Transport> MirrorClient<T> {
         let csil_resp =
             self.transport
                 .call("Mirror", "list-conflicts", &encode_get_repo_request(&req))?;
-        decode_sync_conflicts(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_sync_conflicts(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// resolve-conflict (request/response).
@@ -1049,7 +2305,7 @@ impl<T: Transport> MirrorClient<T> {
             "resolve-conflict",
             &encode_resolve_sync_conflict_request(&req),
         )?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// link-provider (request/response).
@@ -1059,7 +2315,7 @@ impl<T: Transport> MirrorClient<T> {
             "link-provider",
             &encode_link_provider_request(&req),
         )?;
-        decode_provider_link(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_provider_link(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list-provider-links (request/response).
@@ -1067,7 +2323,7 @@ impl<T: Transport> MirrorClient<T> {
         let csil_resp =
             self.transport
                 .call("Mirror", "list-provider-links", &encode_empty(&req))?;
-        decode_provider_links(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_provider_links(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// unlink-provider (request/response).
@@ -1077,7 +2333,7 @@ impl<T: Transport> MirrorClient<T> {
             "unlink-provider",
             &encode_unlink_provider_request(&req),
         )?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list-sync-records (request/response).
@@ -1087,7 +2343,7 @@ impl<T: Transport> MirrorClient<T> {
             "list-sync-records",
             &encode_sync_records_request(&req),
         )?;
-        decode_sync_records(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_sync_records(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 }
 
@@ -1107,7 +2363,7 @@ impl<T: Transport> InstanceClient<T> {
         let csil_resp = self
             .transport
             .call("Instance", "list-roles", &encode_empty(&req))?;
-        decode_instance_role_list(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_instance_role_list(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// set-role (request/response).
@@ -1117,7 +2373,7 @@ impl<T: Transport> InstanceClient<T> {
             "set-role",
             &encode_set_instance_role_request(&req),
         )?;
-        decode_instance_role_grant(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_instance_role_grant(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// remove-role (request/response).
@@ -1127,7 +2383,7 @@ impl<T: Transport> InstanceClient<T> {
             "remove-role",
             &encode_remove_instance_role_request(&req),
         )?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// create-local-account (request/response).
@@ -1140,7 +2396,7 @@ impl<T: Transport> InstanceClient<T> {
             "create-local-account",
             &encode_create_local_account_request(&req),
         )?;
-        decode_local_account(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_local_account(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// reset-local-password (request/response).
@@ -1150,7 +2406,7 @@ impl<T: Transport> InstanceClient<T> {
             "reset-local-password",
             &encode_reset_local_password_request(&req),
         )?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 }
 
@@ -1172,7 +2428,7 @@ impl<T: Transport> ServiceAccountsClient<T> {
             "create",
             &encode_create_service_account_request(&req),
         )?;
-        decode_service_account(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_service_account(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list (request/response).
@@ -1181,7 +2437,7 @@ impl<T: Transport> ServiceAccountsClient<T> {
             self.transport
                 .call("ServiceAccounts", "list", &encode_get_org_request(&req))?;
         decode_list_service_accounts_response(&csil_resp)
-            .map_err(|e| ClientError::Transport(e.to_string()))
+            .map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// Disabling refuses every token of the account; enabling lets the
@@ -1192,7 +2448,7 @@ impl<T: Transport> ServiceAccountsClient<T> {
             "disable",
             &encode_service_account_ref(&req),
         )?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// enable (request/response).
@@ -1202,7 +2458,7 @@ impl<T: Transport> ServiceAccountsClient<T> {
             "enable",
             &encode_service_account_ref(&req),
         )?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// create-token (request/response).
@@ -1215,7 +2471,7 @@ impl<T: Transport> ServiceAccountsClient<T> {
             "create-token",
             &encode_create_service_account_token_request(&req),
         )?;
-        decode_api_token(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_api_token(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// list-tokens (request/response).
@@ -1225,7 +2481,7 @@ impl<T: Transport> ServiceAccountsClient<T> {
             "list-tokens",
             &encode_service_account_ref(&req),
         )?;
-        decode_list_tokens_response(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_list_tokens_response(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// revoke-token (request/response).
@@ -1235,7 +2491,7 @@ impl<T: Transport> ServiceAccountsClient<T> {
             "revoke-token",
             &encode_revoke_service_account_token_request(&req),
         )?;
-        decode_ok(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_ok(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 }
 
@@ -1255,7 +2511,7 @@ impl<T: Transport> FederationClient<T> {
         let csil_resp = self
             .transport
             .call("Federation", "handshake", &encode_fed_hello(&req))?;
-        decode_fed_hello_ack(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_fed_hello_ack(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// verify-head (request/response).
@@ -1265,7 +2521,7 @@ impl<T: Transport> FederationClient<T> {
             "verify-head",
             &encode_verify_head_request(&req),
         )?;
-        decode_head_info(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_head_info(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// head-info (request/response).
@@ -1273,7 +2529,7 @@ impl<T: Transport> FederationClient<T> {
         let csil_resp = self
             .transport
             .call("Federation", "head-info", &encode_head_query(&req))?;
-        decode_head_info(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_head_info(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     /// repo-info (request/response).
@@ -1281,7 +2537,7 @@ impl<T: Transport> FederationClient<T> {
         let csil_resp =
             self.transport
                 .call("Federation", "repo-info", &encode_get_repo_request(&req))?;
-        decode_repo(&csil_resp).map_err(|e| ClientError::Transport(e.to_string()))
+        decode_repo(&csil_resp).map_err(|e| ClientError::Decode(e.to_string()))
     }
 }
 

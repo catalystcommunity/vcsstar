@@ -27,8 +27,8 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
 use diesel::prelude::*;
+use time::OffsetDateTime;
 use vcsstar_db::schema::{github_lanes, github_rate_limits};
 use vcsstar_db::DbPool;
 use vcsstar_types::{LaneHealth, RateLimitInfo};
@@ -52,10 +52,10 @@ impl Lane {
 
 /// Transient failures in a row that open a lane.
 const OPEN_AFTER: i32 = 3;
-const OPEN_BASE: chrono::Duration = chrono::Duration::seconds(30);
-const OPEN_MAX: chrono::Duration = chrono::Duration::minutes(10);
+const OPEN_BASE: time::Duration = time::Duration::seconds(30);
+const OPEN_MAX: time::Duration = time::Duration::minutes(10);
 /// A probe that reports nothing for this long frees the slot for another.
-const PROBE_TIMEOUT: chrono::Duration = chrono::Duration::seconds(90);
+const PROBE_TIMEOUT: time::Duration = time::Duration::seconds(90);
 /// Calls per token kept in reserve for interactive use; a token below it
 /// is held until its window resets.
 const RESERVE_FLOOR: i64 = 50;
@@ -63,7 +63,7 @@ const RESERVE_FLOOR: i64 = 50;
 const BULK_RESERVE_FLOOR: i64 = 250;
 /// A healthy lane's `last_success_at` is refreshed at most this often, so
 /// a busy mirror does not write a row per GitHub call.
-const SUCCESS_STAMP_EVERY: chrono::Duration = chrono::Duration::seconds(60);
+const SUCCESS_STAMP_EVERY: time::Duration = time::Duration::seconds(60);
 
 #[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable, Insertable, AsChangeset)]
 #[diesel(table_name = github_lanes, treat_none_as_null = true)]
@@ -72,12 +72,12 @@ struct LaneRow {
     consecutive_failures: i32,
     /// Times the lane opened without a success in between (backoff step).
     opens: i32,
-    open_until: Option<DateTime<Utc>>,
-    probing_since: Option<DateTime<Utc>>,
+    open_until: Option<OffsetDateTime>,
+    probing_since: Option<OffsetDateTime>,
     last_error: Option<String>,
-    last_failure_at: Option<DateTime<Utc>>,
-    last_success_at: Option<DateTime<Utc>>,
-    recovered_at: Option<DateTime<Utc>>,
+    last_failure_at: Option<OffsetDateTime>,
+    last_success_at: Option<OffsetDateTime>,
+    recovered_at: Option<OffsetDateTime>,
 }
 
 impl LaneRow {
@@ -95,11 +95,11 @@ impl LaneRow {
         }
     }
 
-    fn is_open(&self, now: DateTime<Utc>) -> bool {
+    fn is_open(&self, now: OffsetDateTime) -> bool {
         self.open_until.is_some_and(|t| t > now)
     }
 
-    fn state_name(&self, now: DateTime<Utc>) -> &'static str {
+    fn state_name(&self, now: OffsetDateTime) -> &'static str {
         if self.is_open(now) {
             "open"
         } else if self.open_until.is_some() {
@@ -110,7 +110,7 @@ impl LaneRow {
     }
 
     /// A call succeeded. Returns true when the lane was down before.
-    fn on_success(&mut self, now: DateTime<Utc>) -> bool {
+    fn on_success(&mut self, now: OffsetDateTime) -> bool {
         let was_down = self.open_until.is_some() || self.probing_since.is_some();
         if was_down {
             self.recovered_at = Some(now);
@@ -129,7 +129,7 @@ impl LaneRow {
     }
 
     /// A transient failure. Returns the hold when the lane (re)opened.
-    fn on_failure(&mut self, message: &str, now: DateTime<Utc>) -> Option<chrono::Duration> {
+    fn on_failure(&mut self, message: &str, now: OffsetDateTime) -> Option<time::Duration> {
         self.consecutive_failures += 1;
         self.last_failure_at = Some(now);
         self.last_error = Some(message.chars().take(300).collect());
@@ -147,7 +147,7 @@ impl LaneRow {
 
     /// Whether a call must wait now; the first caller after the open
     /// period becomes the probe.
-    fn hold(&mut self, now: DateTime<Utc>) -> Option<Duration> {
+    fn hold(&mut self, now: OffsetDateTime) -> Option<Duration> {
         match self.open_until {
             None => None,
             Some(t) if t > now => Some(to_std(t - now)),
@@ -168,14 +168,14 @@ struct RateRow {
     token_label: String,
     remaining: i64,
     limit: i64,
-    reset_at: DateTime<Utc>,
+    reset_at: OffsetDateTime,
     /// Set by a `Retry-After` or an exhausted window.
-    hold_until: Option<DateTime<Utc>>,
-    seen_at: DateTime<Utc>,
+    hold_until: Option<OffsetDateTime>,
+    seen_at: OffsetDateTime,
 }
 
 impl RateRow {
-    fn hold(&self, now: DateTime<Utc>) -> Option<Duration> {
+    fn hold(&self, now: OffsetDateTime) -> Option<Duration> {
         if let Some(t) = self.hold_until {
             if t > now {
                 return Some(to_std(t - now));
@@ -192,8 +192,8 @@ fn reserve(limit: i64) -> i64 {
     std::cmp::max(RESERVE_FLOOR, limit / 50)
 }
 
-fn to_std(d: chrono::Duration) -> Duration {
-    d.to_std().unwrap_or(Duration::ZERO)
+fn to_std(d: time::Duration) -> Duration {
+    Duration::try_from(d).unwrap_or(Duration::ZERO)
 }
 
 // ---------------------------------------------------------------------
@@ -221,12 +221,12 @@ pub fn attach(db: DbPool) {
     let _ = DB.set(db);
 }
 
-type LaneFn<'a, R> = Box<dyn FnOnce(&mut LaneRow, DateTime<Utc>) -> R + 'a>;
+type LaneFn<'a, R> = Box<dyn FnOnce(&mut LaneRow, OffsetDateTime) -> R + 'a>;
 
 /// Load the lane row, let `f` change it, and store it back, all under the
 /// row lock so two nodes never race on a transition.
-fn with_lane<R>(lane: Lane, f: impl FnOnce(&mut LaneRow, DateTime<Utc>) -> R) -> R {
-    let now = Utc::now();
+fn with_lane<R>(lane: Lane, f: impl FnOnce(&mut LaneRow, OffsetDateTime) -> R) -> R {
+    let now = OffsetDateTime::now_utc();
     let Some(db) = DB.get() else {
         let mut m = mem();
         let row = m
@@ -372,7 +372,7 @@ pub fn record_failure(lane: Lane, message: &str) {
         (st.on_failure(message, now), st.consecutive_failures)
     });
     if let Some(dur) = opened {
-        tracing::warn!(lane = lane.as_str(), failures, hold_s = dur.num_seconds(), error = %message.chars().take(300).collect::<String>(), "GitHub lane opened; holding calls");
+        tracing::warn!(lane = lane.as_str(), failures, hold_s = dur.whole_seconds(), error = %message.chars().take(300).collect::<String>(), "GitHub lane opened; holding calls");
         crate::metrics::github_lane(lane.as_str(), true);
         crate::metrics::github_lane_transition(lane.as_str(), "open");
     }
@@ -387,11 +387,11 @@ pub fn hold(lane: Lane) -> Option<Duration> {
 
 /// True while the lane is open (a plain read; for schedulers).
 pub fn is_open(lane: Lane) -> bool {
-    lane_row(lane).is_open(Utc::now())
+    lane_row(lane).is_open(OffsetDateTime::now_utc())
 }
 
 /// When the lane last came back after being open.
-pub fn recovered_at(lane: Lane) -> Option<DateTime<Utc>> {
+pub fn recovered_at(lane: Lane) -> Option<OffsetDateTime> {
     lane_row(lane).recovered_at
 }
 
@@ -401,8 +401,8 @@ pub fn recovered_at(lane: Lane) -> Option<DateTime<Utc>> {
 
 /// Rate limit headers of one response for `token` (a label, never the
 /// secret). `reset_at` is the window end GitHub reported.
-pub fn note_rate_limit(token: &str, remaining: u64, limit: u64, reset_at: DateTime<Utc>) {
-    let now = Utc::now();
+pub fn note_rate_limit(token: &str, remaining: u64, limit: u64, reset_at: OffsetDateTime) {
+    let now = OffsetDateTime::now_utc();
     let mut row = rate_row(token).unwrap_or(RateRow {
         token_label: token.to_string(),
         remaining: 0,
@@ -423,8 +423,8 @@ pub fn note_rate_limit(token: &str, remaining: u64, limit: u64, reset_at: DateTi
 
 /// GitHub asked for a pause on this token (`Retry-After`, secondary limit).
 pub fn note_retry_after(token: &str, wait: Duration) {
-    let now = Utc::now();
-    let until = now + chrono::Duration::from_std(wait).unwrap_or(chrono::Duration::seconds(60));
+    let now = OffsetDateTime::now_utc();
+    let until = now + time::Duration::try_from(wait).unwrap_or(time::Duration::seconds(60));
     let mut row = rate_row(token).unwrap_or(RateRow {
         token_label: token.to_string(),
         remaining: 0,
@@ -445,14 +445,14 @@ pub fn note_retry_after(token: &str, wait: Duration) {
 /// `Retry-After` holds or the remaining budget is below the reserve and
 /// the window has not reset.
 pub fn rate_hold(token: &str) -> Option<Duration> {
-    rate_row(token)?.hold(Utc::now())
+    rate_row(token)?.hold(OffsetDateTime::now_utc())
 }
 
 /// Calls left on `token` in its current window, when GitHub reported one
 /// that has not reset yet (`None`: unknown, or the window is over).
 pub fn rate_remaining(token: &str) -> Option<i64> {
     rate_row(token)
-        .filter(|r| r.limit > 0 && r.reset_at > Utc::now())
+        .filter(|r| r.limit > 0 && r.reset_at > OffsetDateTime::now_utc())
         .map(|r| r.remaining)
 }
 
@@ -462,7 +462,7 @@ pub fn rate_remaining(token: &str) -> Option<i64> {
 /// comments made while an import runs still go through at once.
 pub fn bulk_hold(token: &str) -> Option<Duration> {
     let row = rate_row(token)?;
-    let now = Utc::now();
+    let now = OffsetDateTime::now_utc();
     if let Some(d) = row.hold(now) {
         return Some(d);
     }
@@ -476,7 +476,7 @@ pub fn bulk_hold(token: &str) -> Option<Duration> {
 /// The longest hold in force on any lane or token, for a worker that
 /// parks a task after a transient failure.
 pub fn longest_hold() -> Option<Duration> {
-    let now = Utc::now();
+    let now = OffsetDateTime::now_utc();
     let mut best: Option<Duration> = None;
     for lane in [Lane::Api, Lane::Git] {
         if let Some(t) = lane_row(lane).open_until {
@@ -496,7 +496,7 @@ pub fn longest_hold() -> Option<Duration> {
 
 /// Lane and rate limit state for the `Mirror/health` op.
 pub fn snapshot() -> (Vec<LaneHealth>, Vec<RateLimitInfo>) {
-    let now = Utc::now();
+    let now = OffsetDateTime::now_utc();
     let lanes_wire: Vec<LaneHealth> = [Lane::Api, Lane::Git]
         .iter()
         .map(|lane| {
@@ -515,7 +515,7 @@ pub fn snapshot() -> (Vec<LaneHealth>, Vec<RateLimitInfo>) {
         .collect();
     let mut rate_wire: Vec<RateLimitInfo> = rate_rows()
         .into_iter()
-        .filter(|r| now - r.seen_at < chrono::Duration::hours(2))
+        .filter(|r| now - r.seen_at < time::Duration::hours(2))
         .map(|r| RateLimitInfo {
             token: r.token_label.clone(),
             remaining: r.remaining.max(0) as u64,
@@ -542,7 +542,7 @@ mod tests {
     // The state machine, driven with explicit clocks on plain rows.
     #[test]
     fn three_failures_open_the_lane_and_a_probe_closes_it() {
-        let t0 = Utc::now();
+        let t0 = OffsetDateTime::now_utc();
         let mut st = LaneRow::new(Lane::Git);
         assert!(st.hold(t0).is_none());
         assert!(st.on_failure("502", t0).is_none());
@@ -551,20 +551,20 @@ mod tests {
             "two failures keep it closed"
         );
         let opened = st.on_failure("502", t0).expect("third opens");
-        assert_eq!(opened, chrono::Duration::seconds(30));
+        assert_eq!(opened, time::Duration::seconds(30));
         let wait = st.hold(t0).expect("open");
         assert!(wait >= Duration::from_secs(29) && wait <= Duration::from_secs(30));
         assert!(st.is_open(t0));
         assert_eq!(st.state_name(t0), "open");
         // After the window one probe goes; a second caller waits briefly.
-        let t1 = t0 + chrono::Duration::seconds(31);
+        let t1 = t0 + time::Duration::seconds(31);
         assert_eq!(st.state_name(t1), "half_open");
         assert!(st.hold(t1).is_none(), "the probe");
         assert_eq!(st.hold(t1), Some(Duration::from_secs(5)));
         // The probe fails: open twice as long.
         let reopened = st.on_failure("502", t1).expect("reopened");
-        assert_eq!(reopened, chrono::Duration::seconds(60));
-        let t2 = t1 + chrono::Duration::seconds(61);
+        assert_eq!(reopened, time::Duration::seconds(60));
+        let t2 = t1 + time::Duration::seconds(61);
         assert!(st.hold(t2).is_none());
         assert!(st.on_success(t2), "was down");
         assert!(st.hold(t2).is_none());
@@ -576,35 +576,35 @@ mod tests {
 
     #[test]
     fn a_stuck_probe_frees_its_slot() {
-        let t0 = Utc::now();
+        let t0 = OffsetDateTime::now_utc();
         let mut st = LaneRow::new(Lane::Api);
         for _ in 0..3 {
             st.on_failure("503", t0);
         }
-        let t1 = t0 + chrono::Duration::seconds(31);
+        let t1 = t0 + time::Duration::seconds(31);
         assert!(st.hold(t1).is_none());
         assert!(st.hold(t1).is_some());
-        let t2 = t1 + PROBE_TIMEOUT + chrono::Duration::seconds(1);
+        let t2 = t1 + PROBE_TIMEOUT + time::Duration::seconds(1);
         assert!(st.hold(t2).is_none(), "a new probe after the timeout");
     }
 
     #[test]
     fn open_period_caps_at_ten_minutes_and_success_stamps_are_sparse() {
-        let t0 = Utc::now();
+        let t0 = OffsetDateTime::now_utc();
         let mut st = LaneRow::new(Lane::Api);
-        let mut last = chrono::Duration::zero();
+        let mut last = time::Duration::ZERO;
         for i in 0..12 {
-            let t = t0 + chrono::Duration::minutes(i * 20);
+            let t = t0 + time::Duration::minutes(i * 20);
             if let Some(d) = st.on_failure("x", t) {
                 last = d;
             }
-            st.hold(t + chrono::Duration::minutes(11));
+            st.hold(t + time::Duration::minutes(11));
         }
         assert_eq!(last, OPEN_MAX);
         let mut up = LaneRow::new(Lane::Git);
         up.on_success(t0);
         let before = up.clone();
-        up.on_success(t0 + chrono::Duration::seconds(10));
+        up.on_success(t0 + time::Duration::seconds(10));
         assert_eq!(up, before, "no write within a minute of the last stamp");
     }
 
@@ -612,7 +612,7 @@ mod tests {
     fn rate_limits_hold_below_the_reserve_and_on_retry_after() {
         // Process memory: no database is attached in unit tests.
         let token = format!("user:{}", uuid::Uuid::now_v7().simple());
-        let reset = Utc::now() + chrono::Duration::minutes(10);
+        let reset = OffsetDateTime::now_utc() + time::Duration::minutes(10);
         note_rate_limit(&token, 4000, 5000, reset);
         assert!(rate_hold(&token).is_none());
         note_rate_limit(&token, 99, 5000, reset);

@@ -1,0 +1,22 @@
+FROM ghcr.io/rust-cross/cargo-zigbuild@sha256:b8364c2c60cdcc9b95c402d17654bff517410926a35678bd89dd924b8158d6ae AS build
+WORKDIR /src
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY crates ./crates
+ARG TARGET
+ARG VCSSTAR_VERSION
+# Rust 1.100 on Windows ARM64 uses LLVM's unwind runtime. Zig links it with -lunwind.
+ENV CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_RUSTFLAGS="-C link-arg=-lunwind"
+RUN set -eu; \
+    case "$TARGET" in \
+        *-unknown-linux-gnu) build_target="$TARGET.2.28" ;; \
+        *) build_target="$TARGET" ;; \
+    esac; \
+    rustup toolchain install --no-self-update; \
+    rustup target add "$TARGET"; \
+    cargo zigbuild --locked --release -p vcsstar-cli --target "$build_target"; \
+    mkdir /out; \
+    case "$TARGET" in *-windows-*) exe=vcsstar.exe ;; *) exe=vcsstar ;; esac; \
+    cp "target/$TARGET/release/$exe" /out/
+
+FROM scratch AS archive
+COPY --from=build /out/ /

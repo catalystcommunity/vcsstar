@@ -1,8 +1,8 @@
 //! Mirror service: status, blocked list and replay, credentials, pause and
 //! resume, configure, reconcile, import. The engine is `crate::mirror`.
 
-use chrono::Utc;
 use diesel::prelude::*;
+use time::OffsetDateTime;
 use vcsstar_db::models::{NewRepo, Org as OrgRow, Repo as RepoRow};
 use vcsstar_db::schema::{credentials, mirror_actions, mirror_state, repos};
 use vcsstar_store::refs;
@@ -67,8 +67,8 @@ fn status_wire(
         backfill_started_at: s.backfill_started_at.map(to_ms),
         backfill_done_at: s.backfill_done_at.map(to_ms),
         import_state: mirror_import::state(repo, s).map(str::to_string),
-        pull_sync_interval_s: mirror::pull_sync_interval(s).num_seconds() as u64,
-        ref_reconcile_interval_s: mirror::ref_reconcile_interval(s).num_seconds() as u64,
+        pull_sync_interval_s: mirror::pull_sync_interval(s).whole_seconds() as u64,
+        ref_reconcile_interval_s: mirror::ref_reconcile_interval(s).whole_seconds() as u64,
     })
 }
 
@@ -332,7 +332,7 @@ pub fn replay_blocked(app: &App, ctx: &ReqCtx, req: ReplayRequest) -> Result<Rep
                 diesel::update(mirror_actions::table.find(a.id))
                     .set((
                         mirror_actions::state.eq("skipped"),
-                        mirror_actions::updated_at.eq(Utc::now()),
+                        mirror_actions::updated_at.eq(OffsetDateTime::now_utc()),
                     ))
                     .execute(&mut conn)?;
                 (id, a.event_seq)
@@ -342,8 +342,8 @@ pub fn replay_blocked(app: &App, ctx: &ReqCtx, req: ReplayRequest) -> Result<Rep
                     .set((
                         mirror_actions::state.eq("pending"),
                         mirror_actions::blocked_reason.eq::<Option<String>>(None),
-                        mirror_actions::blocked_at.eq::<Option<chrono::DateTime<Utc>>>(None),
-                        mirror_actions::updated_at.eq(Utc::now()),
+                        mirror_actions::blocked_at.eq::<Option<OffsetDateTime>>(None),
+                        mirror_actions::updated_at.eq(OffsetDateTime::now_utc()),
                     ))
                     .execute(&mut conn)?;
                 (a.id, a.event_seq)
@@ -715,7 +715,7 @@ pub fn health(app: &App, ctx: &ReqCtx, _req: vcsstar_types::Empty) -> Result<Git
         .filter(mirror_actions::state.eq("blocked"))
         .count()
         .get_result(&mut conn)?;
-    let oldest: Option<chrono::DateTime<Utc>> = mirror_actions::table
+    let oldest: Option<OffsetDateTime> = mirror_actions::table
         .filter(mirror_actions::state.eq("pending"))
         .select(diesel::dsl::min(mirror_actions::created_at))
         .first(&mut conn)?;
@@ -831,8 +831,8 @@ pub fn list_github_repos(
             default_branch: t("default_branch").unwrap_or_else(|| "main".into()),
             html_url: t("html_url").unwrap_or_default(),
             pushed_at: t("pushed_at")
-                .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
-                .map(|d| to_ms(d.with_timezone(&Utc))),
+                .and_then(|s| liblinkkeys::timestamp::parse_rfc3339(&s).ok())
+                .map(to_ms),
         });
     }
     Ok(GithubRepoPage {
@@ -1063,7 +1063,7 @@ fn queue_import(
     p: &crate::principal::Principal,
     row: &ImportRow<'_>,
 ) -> Result<RepoRow, Error> {
-    let now = Utc::now();
+    let now = OffsetDateTime::now_utc();
     // An import that did not finish (stopped, failed, or still queued)
     // keeps its row: queue it again for this requester.
     let stub: Option<RepoRow> = repos::table
@@ -1097,7 +1097,7 @@ fn queue_import(
                     mirror_state::import_requested_by.eq(p.identity.id),
                     mirror_state::import_requested_at.eq(now),
                     mirror_state::import_attempts.eq(0),
-                    mirror_state::import_claimed_at.eq(None::<chrono::DateTime<Utc>>),
+                    mirror_state::import_claimed_at.eq(None::<OffsetDateTime>),
                 ))
                 .execute(conn)?;
             tracing::info!(repo = %row.github_repo, "import queued again");
@@ -1117,7 +1117,7 @@ fn create_import_row(
     conn: &mut vcsstar_db::DbConn,
     p: &crate::principal::Principal,
     row: &ImportRow<'_>,
-    now: chrono::DateTime<Utc>,
+    now: OffsetDateTime,
 ) -> Result<RepoRow, Error> {
     let repo_id = vcsstar_db::new_id();
     // The row mirrors what GitHub has: the event carries origin `github`,
