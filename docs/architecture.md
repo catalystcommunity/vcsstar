@@ -235,10 +235,10 @@ flowchart LR
     gh -.->|"acts as the person on GitHub<br/>GitHub activity attributed back"| api
 ```
 
-Identity keys are `user_id@domain` and never a handle. Standing consent at
-the home domain is per application: vcsstar signs people in as the
-application `vcsstar` of its LinkKeys account, the same application its
-instance keys and act-as grants use. A linked GitHub
+Identity keys use `user_id@domain`. The home domain records consent for each
+application. In LinkKeys 0.16.11, set the application ID on the account
+that owns the RP API key to `vcsstar`. Login, instance keys, and act-as
+grants use this ID. A linked GitHub
 account makes vcsstar act on GitHub as that person; an unlinked actor's
 work goes through one of the instance's GitHub Apps, then the
 organization's credential. GitHub accounts without a link appear as shadow identities.

@@ -10,7 +10,7 @@ use liblinkkeys::application_keys as ak;
 use liblinkkeys::crypto::SigningAlgorithm;
 use liblinkkeys::generated::types as lk;
 use liblinkkeys::generated::{self as g};
-use liblinkkeys::timestamp::Rfc3339 as _;
+
 use time::{Duration, OffsetDateTime};
 use vcsstar_db::schema::instance_keys;
 use vcsstar_db::DbConn;
@@ -95,12 +95,9 @@ fn home(app: &App) -> Result<crate::linkkeys::Rp<'_>, Error> {
     app.rp()
 }
 
-fn now_window() -> (String, String) {
-    let now = OffsetDateTime::now_utc();
-    (
-        (now - Duration::seconds(30)).to_rfc3339_secs_z(),
-        (now + Duration::seconds(120)).to_rfc3339_secs_z(),
-    )
+fn now_window() -> (OffsetDateTime, OffsetDateTime) {
+    let now = liblinkkeys::timestamp::now_whole_seconds();
+    (now - Duration::seconds(30), now + Duration::seconds(120))
 }
 
 /// Enroll three signing keys when none exist. Needs the credential key (to
@@ -129,22 +126,25 @@ pub fn ensure_enrolled(app: &App, conn: &mut DbConn) -> Result<usize, Error> {
             "{role}-{}",
             &uuid::Uuid::now_v7().simple().to_string()[..10]
         );
-        let ch = g::decode_start_application_key_challenge_response(&rp.caller.call_service(
-            "ApplicationKeys",
-            "start-key-challenge",
-            g::encode_start_application_key_challenge_request(
-                &lk::StartApplicationKeyChallengeRequest {
-                    subject_user_id: user_id.clone(),
-                    application_id: APPLICATION_ID.into(),
-                    instance_id: instance.clone(),
-                    purpose: ak::PURPOSE_ADD.into(),
-                    key_usage: ak::KEY_USAGE_SIGN.into(),
-                    algorithm: "ed25519".into(),
-                    public_key: public.clone(),
-                },
-            ),
-            false,
-        )?)
+        let ch = g::decode_start_application_key_challenge_response(
+            &rp.caller.call_service(
+                "ApplicationKeys",
+                "start-key-challenge",
+                g::encode_start_application_key_challenge_request(
+                    &lk::StartApplicationKeyChallengeRequest {
+                        subject_user_id: user_id.clone(),
+                        application_id: APPLICATION_ID.into(),
+                        instance_id: instance.clone(),
+                        purpose: ak::PURPOSE_ADD,
+                        key_usage: ak::KEY_USAGE_SIGN,
+                        algorithm: lk::KeyAlgorithm::Ed25519,
+                        public_key: public.clone(),
+                    },
+                )
+                .map_err(Error::internal)?,
+                false,
+            )?,
+        )
         .map_err(|e| Error::new(Code::Unavailable, format!("start-key-challenge: {e}")))?;
         let (requested_at, expires_at) = now_window();
         let addition = lk::ApplicationKeyAddition {
@@ -153,8 +153,8 @@ pub fn ensure_enrolled(app: &App, conn: &mut DbConn) -> Result<usize, Error> {
             application_id: APPLICATION_ID.into(),
             instance_id: instance.clone(),
             key_id: key_id.clone(),
-            key_usage: ak::KEY_USAGE_SIGN.into(),
-            algorithm: "ed25519".into(),
+            key_usage: ak::KEY_USAGE_SIGN,
+            algorithm: lk::KeyAlgorithm::Ed25519,
             public_key: public.clone(),
             fingerprint: liblinkkeys::crypto::fingerprint(&public),
             requested_key_lifetime_seconds: KEY_LIFETIME_SECONDS,
@@ -176,16 +176,19 @@ pub fn ensure_enrolled(app: &App, conn: &mut DbConn) -> Result<usize, Error> {
         );
         rows.push((key_id, role.to_string(), public, seed));
     }
-    let resp = g::decode_enroll_application_instance_response(&rp.caller.call_service(
-        "Account",
-        "enroll-application-instance",
-        g::encode_enroll_application_instance_request(&lk::EnrollApplicationInstanceRequest {
-            application_id: APPLICATION_ID.into(),
-            instance_id: instance.clone(),
-            keys: signed,
-        }),
-        true,
-    )?)
+    let resp = g::decode_enroll_application_instance_response(
+        &rp.caller.call_service(
+            "Account",
+            "enroll-application-instance",
+            g::encode_enroll_application_instance_request(&lk::EnrollApplicationInstanceRequest {
+                application_id: APPLICATION_ID.into(),
+                instance_id: instance.clone(),
+                keys: signed,
+            })
+            .map_err(Error::internal)?,
+            true,
+        )?,
+    )
     .map_err(|e| {
         Error::new(
             Code::Unavailable,
@@ -206,20 +209,14 @@ pub fn ensure_enrolled(app: &App, conn: &mut DbConn) -> Result<usize, Error> {
                 instance_keys::role.eq(&role),
                 instance_keys::public_key.eq(&public),
                 instance_keys::private_sealed.eq(&sealed),
-                instance_keys::attested_at
-                    .eq(att.as_ref().and_then(|a| parse_time(&a.attested_at))),
-                instance_keys::attestation_expires_at.eq(att
-                    .as_ref()
-                    .and_then(|a| parse_time(&a.attestation_expires_at))),
+                instance_keys::attested_at.eq(att.as_ref().map(|a| a.attested_at)),
+                instance_keys::attestation_expires_at
+                    .eq(att.as_ref().map(|a| a.attestation_expires_at)),
             ))
             .execute(conn)?;
     }
     tracing::info!(instance = %instance, "instance application keys enrolled");
     Ok(3)
-}
-
-fn parse_time(s: &str) -> Option<OffsetDateTime> {
-    liblinkkeys::timestamp::parse_rfc3339(s).ok()
 }
 
 /// Renew attestations below half-life. Call every few hours.
@@ -234,31 +231,32 @@ pub fn renew(app: &App, conn: &mut DbConn) -> Result<usize, Error> {
     let mut renewed = 0;
     for row in &rows {
         let due = match (row.attested_at, row.attestation_expires_at) {
-            (Some(a), Some(x)) => {
-                ak::needs_new_attestation(&a.to_rfc3339(), &x.to_rfc3339(), now).unwrap_or(true)
-            }
+            (Some(a), Some(x)) => ak::needs_new_attestation(&a, &x, now).unwrap_or(true),
             _ => true,
         };
         if !due {
             continue;
         }
         let key = unseal(app, row)?;
-        let ch = g::decode_start_application_key_challenge_response(&rp.caller.call_service(
-            "ApplicationKeys",
-            "start-key-challenge",
-            g::encode_start_application_key_challenge_request(
-                &lk::StartApplicationKeyChallengeRequest {
-                    subject_user_id: user_id.clone(),
-                    application_id: APPLICATION_ID.into(),
-                    instance_id: row.instance_id.clone(),
-                    purpose: ak::PURPOSE_RENEW.into(),
-                    key_usage: ak::KEY_USAGE_SIGN.into(),
-                    algorithm: "ed25519".into(),
-                    public_key: key.public.clone(),
-                },
-            ),
-            false,
-        )?)
+        let ch = g::decode_start_application_key_challenge_response(
+            &rp.caller.call_service(
+                "ApplicationKeys",
+                "start-key-challenge",
+                g::encode_start_application_key_challenge_request(
+                    &lk::StartApplicationKeyChallengeRequest {
+                        subject_user_id: user_id.clone(),
+                        application_id: APPLICATION_ID.into(),
+                        instance_id: row.instance_id.clone(),
+                        purpose: ak::PURPOSE_RENEW,
+                        key_usage: ak::KEY_USAGE_SIGN,
+                        algorithm: lk::KeyAlgorithm::Ed25519,
+                        public_key: key.public.clone(),
+                    },
+                )
+                .map_err(Error::internal)?,
+                false,
+            )?,
+        )
         .map_err(|e| Error::new(Code::Unavailable, format!("start-key-challenge: {e}")))?;
         let (requested_at, expires_at) = now_window();
         let renewal = lk::ApplicationKeyRenewal {
@@ -281,20 +279,23 @@ pub fn renew(app: &App, conn: &mut DbConn) -> Result<usize, Error> {
         };
         let signed = ak::sign_renewal(&renewal, &[], Some(&signer))
             .map_err(|e| Error::internal(e.to_string()))?;
-        let resp = g::decode_renew_application_key_attestation_response(&rp.caller.call_service(
-            "ApplicationKeys",
-            "renew-attestation",
-            g::encode_renew_application_key_attestation_request(
-                &lk::RenewApplicationKeyAttestationRequest { request: signed },
-            ),
-            false,
-        )?)
+        let resp = g::decode_renew_application_key_attestation_response(
+            &rp.caller.call_service(
+                "ApplicationKeys",
+                "renew-attestation",
+                g::encode_renew_application_key_attestation_request(
+                    &lk::RenewApplicationKeyAttestationRequest { request: signed },
+                )
+                .map_err(Error::internal)?,
+                false,
+            )?,
+        )
         .map_err(|e| Error::new(Code::Unavailable, format!("renew-attestation: {e}")))?;
         if let Ok(a) = g::decode_application_key_attestation(&resp.attestation.attestation) {
             diesel::update(instance_keys::table.find(&row.key_id))
                 .set((
-                    instance_keys::attested_at.eq(parse_time(&a.attested_at)),
-                    instance_keys::attestation_expires_at.eq(parse_time(&a.attestation_expires_at)),
+                    instance_keys::attested_at.eq(a.attested_at),
+                    instance_keys::attestation_expires_at.eq(a.attestation_expires_at),
                 ))
                 .execute(conn)?;
         }

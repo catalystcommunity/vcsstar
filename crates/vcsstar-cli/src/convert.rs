@@ -422,7 +422,7 @@ mod tests {
         let back = cbor_to_json(
             &schema,
             &op.input,
-            &decode(&vcsstar_types::encode_create_repo_request(&typed)).unwrap(),
+            &decode(&vcsstar_types::encode_create_repo_request(&typed).unwrap()).unwrap(),
             "$",
         )
         .unwrap();

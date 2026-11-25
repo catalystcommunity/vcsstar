@@ -421,6 +421,9 @@ fn map_client_error(e: vcsstar_types::ClientError) -> CliError {
                 CliError::Service(serde_json::json!({"code": err.code, "message": err.message}))
             }
         }
+        vcsstar_types::ClientError::Encode(message) => {
+            CliError::Usage(format!("invalid request: {message}"))
+        }
         vcsstar_types::ClientError::Decode(message) => {
             CliError::Transport(format!("invalid reply: {message}"))
         }

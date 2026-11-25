@@ -33,7 +33,7 @@ fn run<Req, Resp>(
     payload: &[u8],
     decode: fn(&[u8]) -> Result<Req, t::CsilCborError>,
     ctx_of: fn(&Req) -> &t::Ctx,
-    encode: fn(&Resp) -> Vec<u8>,
+    encode: fn(&Resp) -> Result<Vec<u8>, t::CsilCborError>,
     variant: &str,
     handler: fn(&App, &ReqCtx, Req) -> Result<Resp, Error>,
 ) -> HandlerOutcome {
@@ -57,19 +57,26 @@ fn run<Req, Resp>(
         peer: peer.clone(),
     };
     match handler(app, &ctx, req) {
-        Ok(resp) => HandlerOutcome::Reply {
-            variant: variant.to_string(),
-            payload: encode(&resp),
-        },
+        Ok(resp) => reply(variant, encode(&resp)),
         Err(e) => error_reply(e),
     }
 }
 
 fn error_reply(e: Error) -> HandlerOutcome {
     let wire: t::ServiceError = e.into();
-    HandlerOutcome::Reply {
-        variant: "ServiceError".to_string(),
-        payload: t::encode_service_error(&wire),
+    reply("ServiceError", t::encode_service_error(&wire))
+}
+
+fn reply(variant: &str, encoded: Result<Vec<u8>, t::CsilCborError>) -> HandlerOutcome {
+    match encoded {
+        Ok(payload) => HandlerOutcome::Reply {
+            variant: variant.to_owned(),
+            payload,
+        },
+        Err(error) => {
+            tracing::error!(%variant, %error, "failed to encode RPC reply");
+            HandlerOutcome::Transport(Status::Internal, "response encoding failed".into())
+        }
     }
 }
 

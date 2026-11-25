@@ -153,6 +153,15 @@ impl RpCaller for TcpRpCaller {
                 ),
             ));
         }
+        if reply.variant.as_deref() == Some("RpError") {
+            let error = liblinkkeys::generated::decode_rp_error(&reply.payload).map_err(|e| {
+                Error::new(Code::Unavailable, format!("rp {op}: invalid RpError: {e}"))
+            })?;
+            return Err(Error::new(
+                Code::Unavailable,
+                format!("rp {op}: {}: {}", error.code.as_str(), error.message),
+            ));
+        }
         if reply.variant.as_deref() == Some("ServiceError")
             || reply
                 .variant
@@ -174,16 +183,16 @@ pub fn requested_claims() -> lk::ClaimRequest {
     lk::ClaimRequest {
         required: vec![lk::RequestedClaim {
             claim_type: "handle".into(),
-            datatype: "text".into(),
+            datatype: lk::ClaimValueType::Text,
         }],
         optional: vec![
             lk::RequestedClaim {
                 claim_type: "display_name".into(),
-                datatype: "text".into(),
+                datatype: lk::ClaimValueType::Text,
             },
             lk::RequestedClaim {
                 claim_type: "email".into(),
-                datatype: "text".into(),
+                datatype: lk::ClaimValueType::Text,
             },
         ],
     }
@@ -198,16 +207,14 @@ impl Rp<'_> {
         let req = lk::RpSignRequest {
             callback_url: callback_url.to_string(),
             nonce: nonce.to_string(),
-            // Standing consent is per application (LinkKeys 0.16.7): name
-            // the same application the instance keys and act-as use.
-            application_id: Some(crate::instance_keys::APPLICATION_ID.to_string()),
             requested_claims: Some(requested_claims()),
             authentication_requirements: None,
             flow_context: None,
         };
-        let bytes = self
-            .caller
-            .call("sign-request", encode_rp_sign_request(&req))?;
+        let bytes = self.caller.call(
+            "sign-request",
+            encode_rp_sign_request(&req).map_err(Error::internal)?,
+        )?;
         Ok(decode_rp_sign_response(&bytes)
             .map_err(|e| Error::internal(format!("sign-request decode: {e:?}")))?
             .signed_request)
@@ -217,9 +224,10 @@ impl Rp<'_> {
         let req = lk::RpDecryptRequest {
             encrypted_token: encrypted_token.to_string(),
         };
-        let bytes = self
-            .caller
-            .call("decrypt-token", encode_rp_decrypt_request(&req))?;
+        let bytes = self.caller.call(
+            "decrypt-token",
+            encode_rp_decrypt_request(&req).map_err(Error::internal)?,
+        )?;
         Ok(decode_rp_decrypt_response(&bytes)
             .map_err(|e| Error::internal(format!("decrypt-token decode: {e:?}")))?
             .signed_assertion)
@@ -234,9 +242,10 @@ impl Rp<'_> {
             signed_assertion: signed_assertion.to_string(),
             expected_domain: expected_domain.to_string(),
         };
-        let bytes = self
-            .caller
-            .call("verify-assertion", encode_rp_verify_request(&req))?;
+        let bytes = self.caller.call(
+            "verify-assertion",
+            encode_rp_verify_request(&req).map_err(Error::internal)?,
+        )?;
         decode_rp_verify_response(&bytes)
             .map_err(|e| Error::internal(format!("verify-assertion decode: {e:?}")))
     }
@@ -252,9 +261,10 @@ impl Rp<'_> {
             api_base: api_base.to_string(),
             domain: domain.to_string(),
         };
-        let bytes = self
-            .caller
-            .call("userinfo-fetch", encode_rp_user_info_request(&req))?;
+        let bytes = self.caller.call(
+            "userinfo-fetch",
+            encode_rp_user_info_request(&req).map_err(Error::internal)?,
+        )?;
         decode_user_info(&bytes).map_err(|e| Error::internal(format!("userinfo decode: {e:?}")))
     }
 
@@ -271,11 +281,11 @@ impl Rp<'_> {
         };
         let bytes = self.caller.call(
             "resolve-domain-keys",
-            encode_rp_resolve_domain_keys_request(&req),
+            encode_rp_resolve_domain_keys_request(&req).map_err(Error::internal)?,
         )?;
         let resp = decode_rp_resolve_domain_keys_response(&bytes)
             .map_err(|e| Error::internal(format!("resolve-domain-keys decode: {e:?}")))?;
-        if resp.cache_status == "stale" {
+        if resp.cache_status == lk::RpCacheStatus::Stale {
             return Err(Error::new(
                 Code::Unavailable,
                 "home domain unreachable; its signing keys could not be refreshed",
@@ -304,6 +314,12 @@ pub fn check_assertion(
             "assertion audience is not this RP",
         ));
     }
+    if a.application.application_id != crate::instance_keys::APPLICATION_ID {
+        return Err(Error::new(
+            Code::Unauthenticated,
+            "assertion application does not match this instance",
+        ));
+    }
     if a.nonce != nonce {
         return Err(Error::new(
             Code::Unauthenticated,
@@ -311,14 +327,8 @@ pub fn check_assertion(
         ));
     }
     let now = time::OffsetDateTime::now_utc();
-    let issued = liblinkkeys::timestamp::parse_rfc3339(&a.issued_at)
-        .map_err(|_| Error::new(Code::Unauthenticated, "assertion issued_at is not RFC 3339"))?;
-    let expires = liblinkkeys::timestamp::parse_rfc3339(&a.expires_at).map_err(|_| {
-        Error::new(
-            Code::Unauthenticated,
-            "assertion expires_at is not RFC 3339",
-        )
-    })?;
+    let issued = a.issued_at;
+    let expires = a.expires_at;
     if issued > now + time::Duration::minutes(5) {
         return Err(Error::new(
             Code::Unauthenticated,
@@ -442,11 +452,11 @@ pub fn resolve_application_key(
     };
     let raw = rp.caller.call(
         "resolve-application-keys",
-        encode_rp_resolve_application_keys_request(&req),
+        encode_rp_resolve_application_keys_request(&req).map_err(Error::internal)?,
     )?;
     let resp = decode_rp_resolve_application_keys_response(&raw)
         .map_err(|e| Error::new(Code::Unavailable, format!("rp response: {e}")))?;
-    if resp.cache_status == "stale" {
+    if resp.cache_status == lk::RpCacheStatus::Stale {
         return Err(Error::new(
             Code::Unavailable,
             "home domain unreachable; attestation could not be refreshed",
@@ -484,24 +494,23 @@ pub fn resolve_application_key(
             ))
         }
     }
-    if key.attestation.key_usage != "sign" || key.attestation.algorithm != "ed25519" {
+    if key.attestation.key_usage != lk::KeyUsage::Sign
+        || key.attestation.algorithm != lk::KeyAlgorithm::Ed25519
+    {
         return Err(Error::new(
             Code::PreconditionFailed,
             "key is not an Ed25519 signing key",
         ));
     }
-    let until = liblinkkeys::timestamp::parse_rfc3339(&key.attestation.attestation_expires_at)
-        .map_err(|e| Error::internal(format!("attestation time: {e}")))?;
     Ok(ResolvedKey {
         public_key: key.attestation.public_key.clone(),
-        attestation_expires_at: until,
+        attestation_expires_at: key.attestation.attestation_expires_at,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use liblinkkeys::timestamp::Rfc3339 as _;
 
     fn assertion(nonce: &str) -> lk::IdentityAssertion {
         let now = time::OffsetDateTime::now_utc();
@@ -509,9 +518,14 @@ mod tests {
             user_id: "u".into(),
             domain: "Example.com".into(),
             audience: "rp.example".into(),
+            application: lk::ApplicationRef {
+                subject_user_id: "rp-account".into(),
+                subject_domain: "rp.example".into(),
+                application_id: "vcsstar".into(),
+            },
             nonce: nonce.into(),
-            issued_at: now.to_rfc3339(),
-            expires_at: (now + time::Duration::minutes(4)).to_rfc3339(),
+            issued_at: now,
+            expires_at: now + time::Duration::minutes(4),
             authorized_claims: vec![],
             display_name: None,
         }
@@ -524,9 +538,11 @@ mod tests {
         assert!(check_assertion(&a, "other.com", "rp.example", "n1").is_err());
         assert!(check_assertion(&a, "example.com", "wrong", "n1").is_err());
         assert!(check_assertion(&a, "example.com", "rp.example", "n2").is_err());
+        let mut other_app = assertion("n1");
+        other_app.application.application_id = "other".into();
+        assert!(check_assertion(&other_app, "example.com", "rp.example", "n1").is_err());
         let mut expired = assertion("n1");
-        expired.expires_at =
-            (time::OffsetDateTime::now_utc() - time::Duration::minutes(1)).to_rfc3339();
+        expired.expires_at = time::OffsetDateTime::now_utc() - time::Duration::minutes(1);
         assert!(check_assertion(&expired, "example.com", "rp.example", "n1").is_err());
     }
 

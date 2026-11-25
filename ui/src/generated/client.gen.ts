@@ -3,10 +3,16 @@
 // Target: typescript-client
 
 import type { ActAsExchangeRequest, ApiToken, BeginDeviceRequest, BeginLoginRequest, BeginLoginResponse, BlobRequest, BlobResponse, BranchProtection, CaptureReport, ChangeLocalPasswordRequest, Comment, CommentRequest, Commit, CommitPage, CommitStatus, CompleteLoginRequest, ConfigureMirrorRequest, ConnectRemoteRequest, CreateEndpointRequest, CreateLocalAccountRequest, CreateOrgRequest, CreateRepoRequest, CreateServiceAccountRequest, CreateServiceAccountTokenRequest, CreateTeamRequest, CreateTokenRequest, Credential, CredentialRef, DeleteCommentRequest, DeleteRepoRequest, DeliveryPage, DeliveryQuery, DeliveryRef, DeviceApproveRequest, DeviceCode, DevicePollRequest, DevicePollResponse, DiffRequest, DiffResponse, EditCommentRequest, Empty, Endpoint, EndpointRef, FedHello, FedHelloAck, ForkRequest, GetCommitRequest, GetOrgRequest, GetRepoRequest, GithubHealth, GithubInstallationList, GithubLink, GithubRepoPage, Grant, HeadInfo, HeadQuery, ImportAllRequest, ImportAllResult, ImportRequest, InstanceRoleGrant, InstanceRoleList, KeyRef, LinkProviderRequest, ListBlockedResponse, ListCommentsResponse, ListCredentialsRequest, ListCredentialsResponse, ListEndpointsRequest, ListEndpointsResponse, ListGithubReposRequest, ListGrantsResponse, ListKeysResponse, ListOrgMembersRequest, ListOrgsRequest, ListPrRequest, ListProtectionsResponse, ListRefsRequest, ListRefsResponse, ListReposRequest, ListReviewsResponse, ListServiceAccountsResponse, ListStatusRequest, ListStatusResponse, ListTeamsResponse, ListTokensResponse, LocalAccount, LocalLoginRequest, LogRequest, MergeRequest, MergeResult, MirrorStatus, Ok, OpenPrRequest, Org, OrgMember, OrgMemberPage, OrgPage, PrPage, PrRef, Preferences, ProviderLink, ProviderLinks, PullRequest, ReconcileReport, RefInfo, RegisterKeyRequest, RemoveGrantRequest, RemoveInstanceRoleRequest, RemoveOrgMemberRequest, RemoveProtectionRequest, ReplayRequest, ReplayResult, Repo, RepoPage, ResetLocalPasswordRequest, ResolveSyncConflictRequest, RetargetRequest, Review, ReviewRequest, RevokeServiceAccountTokenRequest, RevokeTokenRequest, ScopeSetRequest, ScopedBearer, ServerInfo, ServiceAccount, ServiceAccountRef, ServiceError, Session, SetCredentialRequest, SetGithubTokenRequest, SetGrantRequest, SetInstanceRoleRequest, SetMirrorScheduleRequest, SetOrgMemberRequest, SetPreferencesRequest, SetProtectionRequest, SetStatusRequest, SetSyncPolicyRequest, SetTeamMemberRequest, SignedActAsScopeSet, SshKeyInfo, StreamControl, StreamMessage, SyncConflicts, SyncConnection, SyncConnectionRef, SyncConnections, SyncPolicy, SyncRecords, SyncRecordsRequest, SyncWebhookSecret, Team, TeamRef, TreeRequest, TreeResponse, UnlinkProviderRequest, UpdateConnectionRequest, UpdateEndpointRequest, UpdateOrgRequest, UpdatePrRequest, UpdateRefRequest, UpdateRepoRequest, VerifyHeadRequest, WhoAmI } from "./types.gen.ts";
-import { fromApiTokenCbor, fromBeginLoginResponseCbor, fromBlobResponseCbor, fromBranchProtectionCbor, fromCaptureReportCbor, fromCommentCbor, fromCommitCbor, fromCommitPageCbor, fromCommitStatusCbor, fromCredentialCbor, fromDeliveryPageCbor, fromDeviceCodeCbor, fromDevicePollResponseCbor, fromDiffResponseCbor, fromEndpointCbor, fromFedHelloAckCbor, fromGithubHealthCbor, fromGithubInstallationListCbor, fromGithubLinkCbor, fromGithubRepoPageCbor, fromGrantCbor, fromHeadInfoCbor, fromImportAllResultCbor, fromInstanceRoleGrantCbor, fromInstanceRoleListCbor, fromListBlockedResponseCbor, fromListCommentsResponseCbor, fromListCredentialsResponseCbor, fromListEndpointsResponseCbor, fromListGrantsResponseCbor, fromListKeysResponseCbor, fromListProtectionsResponseCbor, fromListRefsResponseCbor, fromListReviewsResponseCbor, fromListServiceAccountsResponseCbor, fromListStatusResponseCbor, fromListTeamsResponseCbor, fromListTokensResponseCbor, fromLocalAccountCbor, fromMergeResultCbor, fromMirrorStatusCbor, fromOkCbor, fromOrgCbor, fromOrgMemberCbor, fromOrgMemberPageCbor, fromOrgPageCbor, fromPrPageCbor, fromPreferencesCbor, fromProviderLinkCbor, fromProviderLinksCbor, fromPullRequestCbor, fromReconcileReportCbor, fromRefInfoCbor, fromReplayResultCbor, fromRepoCbor, fromRepoPageCbor, fromReviewCbor, fromScopedBearerCbor, fromServerInfoCbor, fromServiceAccountCbor, fromSessionCbor, fromSignedActAsScopeSetCbor, fromSshKeyInfoCbor, fromSyncConflictsCbor, fromSyncConnectionCbor, fromSyncConnectionsCbor, fromSyncPolicyCbor, fromSyncRecordsCbor, fromSyncWebhookSecretCbor, fromTeamCbor, fromTreeResponseCbor, fromWhoAmICbor, toActAsExchangeRequestCbor, toBeginDeviceRequestCbor, toBeginLoginRequestCbor, toBlobRequestCbor, toChangeLocalPasswordRequestCbor, toCommentRequestCbor, toCompleteLoginRequestCbor, toConfigureMirrorRequestCbor, toConnectRemoteRequestCbor, toCreateEndpointRequestCbor, toCreateLocalAccountRequestCbor, toCreateOrgRequestCbor, toCreateRepoRequestCbor, toCreateServiceAccountRequestCbor, toCreateServiceAccountTokenRequestCbor, toCreateTeamRequestCbor, toCreateTokenRequestCbor, toCredentialRefCbor, toDeleteCommentRequestCbor, toDeleteRepoRequestCbor, toDeliveryQueryCbor, toDeliveryRefCbor, toDeviceApproveRequestCbor, toDevicePollRequestCbor, toDiffRequestCbor, toEditCommentRequestCbor, toEmptyCbor, toEndpointRefCbor, toFedHelloCbor, toForkRequestCbor, toGetCommitRequestCbor, toGetOrgRequestCbor, toGetRepoRequestCbor, toHeadQueryCbor, toImportAllRequestCbor, toImportRequestCbor, toKeyRefCbor, toLinkProviderRequestCbor, toListCredentialsRequestCbor, toListEndpointsRequestCbor, toListGithubReposRequestCbor, toListOrgMembersRequestCbor, toListOrgsRequestCbor, toListPrRequestCbor, toListRefsRequestCbor, toListReposRequestCbor, toListStatusRequestCbor, toLocalLoginRequestCbor, toLogRequestCbor, toMergeRequestCbor, toOpenPrRequestCbor, toPrRefCbor, toRegisterKeyRequestCbor, toRemoveGrantRequestCbor, toRemoveInstanceRoleRequestCbor, toRemoveOrgMemberRequestCbor, toRemoveProtectionRequestCbor, toReplayRequestCbor, toResetLocalPasswordRequestCbor, toResolveSyncConflictRequestCbor, toRetargetRequestCbor, toReviewRequestCbor, toRevokeServiceAccountTokenRequestCbor, toRevokeTokenRequestCbor, toScopeSetRequestCbor, toServiceAccountRefCbor, toSetCredentialRequestCbor, toSetGithubTokenRequestCbor, toSetGrantRequestCbor, toSetInstanceRoleRequestCbor, toSetMirrorScheduleRequestCbor, toSetOrgMemberRequestCbor, toSetPreferencesRequestCbor, toSetProtectionRequestCbor, toSetStatusRequestCbor, toSetSyncPolicyRequestCbor, toSetTeamMemberRequestCbor, toSyncConnectionRefCbor, toSyncRecordsRequestCbor, toTeamRefCbor, toTreeRequestCbor, toUnlinkProviderRequestCbor, toUpdateConnectionRequestCbor, toUpdateEndpointRequestCbor, toUpdateOrgRequestCbor, toUpdatePrRequestCbor, toUpdateRefRequestCbor, toUpdateRepoRequestCbor, toVerifyHeadRequestCbor } from "./codec.gen.ts";
+import { fromApiTokenCbor, fromBeginLoginResponseCbor, fromBlobResponseCbor, fromBranchProtectionCbor, fromCaptureReportCbor, fromCommentCbor, fromCommitCbor, fromCommitPageCbor, fromCommitStatusCbor, fromCredentialCbor, fromDeliveryPageCbor, fromDeviceCodeCbor, fromDevicePollResponseCbor, fromDiffResponseCbor, fromEndpointCbor, fromFedHelloAckCbor, fromGithubHealthCbor, fromGithubInstallationListCbor, fromGithubLinkCbor, fromGithubRepoPageCbor, fromGrantCbor, fromHeadInfoCbor, fromImportAllResultCbor, fromInstanceRoleGrantCbor, fromInstanceRoleListCbor, fromListBlockedResponseCbor, fromListCommentsResponseCbor, fromListCredentialsResponseCbor, fromListEndpointsResponseCbor, fromListGrantsResponseCbor, fromListKeysResponseCbor, fromListProtectionsResponseCbor, fromListRefsResponseCbor, fromListReviewsResponseCbor, fromListServiceAccountsResponseCbor, fromListStatusResponseCbor, fromListTeamsResponseCbor, fromListTokensResponseCbor, fromLocalAccountCbor, fromMergeResultCbor, fromMirrorStatusCbor, fromOkCbor, fromOrgCbor, fromOrgMemberCbor, fromOrgMemberPageCbor, fromOrgPageCbor, fromPrPageCbor, fromPreferencesCbor, fromProviderLinkCbor, fromProviderLinksCbor, fromPullRequestCbor, fromReconcileReportCbor, fromRefInfoCbor, fromReplayResultCbor, fromRepoCbor, fromRepoPageCbor, fromReviewCbor, fromScopedBearerCbor, fromServerInfoCbor, fromServiceAccountCbor, fromSessionCbor, fromSignedActAsScopeSetCbor, fromSshKeyInfoCbor, fromSyncConflictsCbor, fromSyncConnectionCbor, fromSyncConnectionsCbor, fromSyncPolicyCbor, fromSyncRecordsCbor, fromSyncWebhookSecretCbor, fromTeamCbor, fromTreeResponseCbor, fromWhoAmICbor, resolveRpcReply, toActAsExchangeRequestCbor, toBeginDeviceRequestCbor, toBeginLoginRequestCbor, toBlobRequestCbor, toChangeLocalPasswordRequestCbor, toCommentRequestCbor, toCompleteLoginRequestCbor, toConfigureMirrorRequestCbor, toConnectRemoteRequestCbor, toCreateEndpointRequestCbor, toCreateLocalAccountRequestCbor, toCreateOrgRequestCbor, toCreateRepoRequestCbor, toCreateServiceAccountRequestCbor, toCreateServiceAccountTokenRequestCbor, toCreateTeamRequestCbor, toCreateTokenRequestCbor, toCredentialRefCbor, toDeleteCommentRequestCbor, toDeleteRepoRequestCbor, toDeliveryQueryCbor, toDeliveryRefCbor, toDeviceApproveRequestCbor, toDevicePollRequestCbor, toDiffRequestCbor, toEditCommentRequestCbor, toEmptyCbor, toEndpointRefCbor, toFedHelloCbor, toForkRequestCbor, toGetCommitRequestCbor, toGetOrgRequestCbor, toGetRepoRequestCbor, toHeadQueryCbor, toImportAllRequestCbor, toImportRequestCbor, toKeyRefCbor, toLinkProviderRequestCbor, toListCredentialsRequestCbor, toListEndpointsRequestCbor, toListGithubReposRequestCbor, toListOrgMembersRequestCbor, toListOrgsRequestCbor, toListPrRequestCbor, toListRefsRequestCbor, toListReposRequestCbor, toListStatusRequestCbor, toLocalLoginRequestCbor, toLogRequestCbor, toMergeRequestCbor, toOpenPrRequestCbor, toPrRefCbor, toRegisterKeyRequestCbor, toRemoveGrantRequestCbor, toRemoveInstanceRoleRequestCbor, toRemoveOrgMemberRequestCbor, toRemoveProtectionRequestCbor, toReplayRequestCbor, toResetLocalPasswordRequestCbor, toResolveSyncConflictRequestCbor, toRetargetRequestCbor, toReviewRequestCbor, toRevokeServiceAccountTokenRequestCbor, toRevokeTokenRequestCbor, toScopeSetRequestCbor, toServiceAccountRefCbor, toSetCredentialRequestCbor, toSetGithubTokenRequestCbor, toSetGrantRequestCbor, toSetInstanceRoleRequestCbor, toSetMirrorScheduleRequestCbor, toSetOrgMemberRequestCbor, toSetPreferencesRequestCbor, toSetProtectionRequestCbor, toSetStatusRequestCbor, toSetSyncPolicyRequestCbor, toSetTeamMemberRequestCbor, toSyncConnectionRefCbor, toSyncRecordsRequestCbor, toTeamRefCbor, toTreeRequestCbor, toUnlinkProviderRequestCbor, toUpdateConnectionRequestCbor, toUpdateEndpointRequestCbor, toUpdateOrgRequestCbor, toUpdatePrRequestCbor, toUpdateRefRequestCbor, toUpdateRepoRequestCbor, toVerifyHeadRequestCbor } from "./codec.gen.ts";
 
 export interface ServiceTransport {
   call(service: string, op: string, req: Uint8Array): Uint8Array;
+  /**
+   * Perform an operation that declares more than one reply arm. Return the
+   * CSIL-RPC response `variant` (the CSIL name of the arm) with its payload
+   * bytes; the client decodes the arm that the variant names.
+   */
+  callReply(service: string, op: string, req: Uint8Array): { readonly variant?: string | null; readonly payload: Uint8Array };
 }
 
 export interface Codec {
@@ -26,7 +32,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   beginLogin(req: BeginLoginRequest): BeginLoginResponse {
-    const csilResp = this.t.call("Auth", "begin-login", toBeginLoginRequestCbor(req));
+    const csilReply = this.t.callReply("Auth", "begin-login", toBeginLoginRequestCbor(req));
+    const csilResp = resolveRpcReply("Auth", "begin-login", csilReply.variant, csilReply.payload);
     return fromBeginLoginResponseCbor(csilResp);
   }
 
@@ -35,7 +42,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   completeLogin(req: CompleteLoginRequest): Session {
-    const csilResp = this.t.call("Auth", "complete-login", toCompleteLoginRequestCbor(req));
+    const csilReply = this.t.callReply("Auth", "complete-login", toCompleteLoginRequestCbor(req));
+    const csilResp = resolveRpcReply("Auth", "complete-login", csilReply.variant, csilReply.payload);
     return fromSessionCbor(csilResp);
   }
 
@@ -44,7 +52,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   createToken(req: CreateTokenRequest): ApiToken {
-    const csilResp = this.t.call("Auth", "create-token", toCreateTokenRequestCbor(req));
+    const csilReply = this.t.callReply("Auth", "create-token", toCreateTokenRequestCbor(req));
+    const csilResp = resolveRpcReply("Auth", "create-token", csilReply.variant, csilReply.payload);
     return fromApiTokenCbor(csilResp);
   }
 
@@ -53,7 +62,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   revokeToken(req: RevokeTokenRequest): Ok {
-    const csilResp = this.t.call("Auth", "revoke-token", toRevokeTokenRequestCbor(req));
+    const csilReply = this.t.callReply("Auth", "revoke-token", toRevokeTokenRequestCbor(req));
+    const csilResp = resolveRpcReply("Auth", "revoke-token", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -62,7 +72,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   whoami(req: Empty): WhoAmI {
-    const csilResp = this.t.call("Auth", "whoami", toEmptyCbor(req));
+    const csilReply = this.t.callReply("Auth", "whoami", toEmptyCbor(req));
+    const csilResp = resolveRpcReply("Auth", "whoami", csilReply.variant, csilReply.payload);
     return fromWhoAmICbor(csilResp);
   }
 
@@ -71,7 +82,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   beginDeviceLogin(req: BeginDeviceRequest): DeviceCode {
-    const csilResp = this.t.call("Auth", "begin-device-login", toBeginDeviceRequestCbor(req));
+    const csilReply = this.t.callReply("Auth", "begin-device-login", toBeginDeviceRequestCbor(req));
+    const csilResp = resolveRpcReply("Auth", "begin-device-login", csilReply.variant, csilReply.payload);
     return fromDeviceCodeCbor(csilResp);
   }
 
@@ -80,7 +92,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   pollDeviceLogin(req: DevicePollRequest): DevicePollResponse {
-    const csilResp = this.t.call("Auth", "poll-device-login", toDevicePollRequestCbor(req));
+    const csilReply = this.t.callReply("Auth", "poll-device-login", toDevicePollRequestCbor(req));
+    const csilResp = resolveRpcReply("Auth", "poll-device-login", csilReply.variant, csilReply.payload);
     return fromDevicePollResponseCbor(csilResp);
   }
 
@@ -89,7 +102,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   exchangeActAsCredential(req: ActAsExchangeRequest): ScopedBearer {
-    const csilResp = this.t.call("Auth", "exchange-act-as-credential", toActAsExchangeRequestCbor(req));
+    const csilReply = this.t.callReply("Auth", "exchange-act-as-credential", toActAsExchangeRequestCbor(req));
+    const csilResp = resolveRpcReply("Auth", "exchange-act-as-credential", csilReply.variant, csilReply.payload);
     return fromScopedBearerCbor(csilResp);
   }
 
@@ -98,7 +112,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   scopeSet(req: ScopeSetRequest): SignedActAsScopeSet {
-    const csilResp = this.t.call("Auth", "scope-set", toScopeSetRequestCbor(req));
+    const csilReply = this.t.callReply("Auth", "scope-set", toScopeSetRequestCbor(req));
+    const csilResp = resolveRpcReply("Auth", "scope-set", csilReply.variant, csilReply.payload);
     return fromSignedActAsScopeSetCbor(csilResp);
   }
 
@@ -108,7 +123,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   approveDeviceLogin(req: DeviceApproveRequest): Ok {
-    const csilResp = this.t.call("Auth", "approve-device-login", toDeviceApproveRequestCbor(req));
+    const csilReply = this.t.callReply("Auth", "approve-device-login", toDeviceApproveRequestCbor(req));
+    const csilResp = resolveRpcReply("Auth", "approve-device-login", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -117,7 +133,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   registerKey(req: RegisterKeyRequest): SshKeyInfo {
-    const csilResp = this.t.call("Auth", "register-key", toRegisterKeyRequestCbor(req));
+    const csilReply = this.t.callReply("Auth", "register-key", toRegisterKeyRequestCbor(req));
+    const csilResp = resolveRpcReply("Auth", "register-key", csilReply.variant, csilReply.payload);
     return fromSshKeyInfoCbor(csilResp);
   }
 
@@ -126,7 +143,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listKeys(req: Empty): ListKeysResponse {
-    const csilResp = this.t.call("Auth", "list-keys", toEmptyCbor(req));
+    const csilReply = this.t.callReply("Auth", "list-keys", toEmptyCbor(req));
+    const csilResp = resolveRpcReply("Auth", "list-keys", csilReply.variant, csilReply.payload);
     return fromListKeysResponseCbor(csilResp);
   }
 
@@ -135,7 +153,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   revokeKey(req: KeyRef): Ok {
-    const csilResp = this.t.call("Auth", "revoke-key", toKeyRefCbor(req));
+    const csilReply = this.t.callReply("Auth", "revoke-key", toKeyRefCbor(req));
+    const csilResp = resolveRpcReply("Auth", "revoke-key", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -144,7 +163,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listTokens(req: Empty): ListTokensResponse {
-    const csilResp = this.t.call("Auth", "list-tokens", toEmptyCbor(req));
+    const csilReply = this.t.callReply("Auth", "list-tokens", toEmptyCbor(req));
+    const csilResp = resolveRpcReply("Auth", "list-tokens", csilReply.variant, csilReply.payload);
     return fromListTokensResponseCbor(csilResp);
   }
 
@@ -153,7 +173,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   logout(req: Empty): Ok {
-    const csilResp = this.t.call("Auth", "logout", toEmptyCbor(req));
+    const csilReply = this.t.callReply("Auth", "logout", toEmptyCbor(req));
+    const csilResp = resolveRpcReply("Auth", "logout", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -163,7 +184,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   githubLinkStatus(req: Empty): GithubLink {
-    const csilResp = this.t.call("Auth", "github-link-status", toEmptyCbor(req));
+    const csilReply = this.t.callReply("Auth", "github-link-status", toEmptyCbor(req));
+    const csilResp = resolveRpcReply("Auth", "github-link-status", csilReply.variant, csilReply.payload);
     return fromGithubLinkCbor(csilResp);
   }
 
@@ -172,7 +194,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   setGithubToken(req: SetGithubTokenRequest): GithubLink {
-    const csilResp = this.t.call("Auth", "set-github-token", toSetGithubTokenRequestCbor(req));
+    const csilReply = this.t.callReply("Auth", "set-github-token", toSetGithubTokenRequestCbor(req));
+    const csilResp = resolveRpcReply("Auth", "set-github-token", csilReply.variant, csilReply.payload);
     return fromGithubLinkCbor(csilResp);
   }
 
@@ -181,7 +204,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   unlinkGithub(req: Empty): Ok {
-    const csilResp = this.t.call("Auth", "unlink-github", toEmptyCbor(req));
+    const csilReply = this.t.callReply("Auth", "unlink-github", toEmptyCbor(req));
+    const csilResp = resolveRpcReply("Auth", "unlink-github", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -191,7 +215,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   getPreferences(req: Empty): Preferences {
-    const csilResp = this.t.call("Auth", "get-preferences", toEmptyCbor(req));
+    const csilReply = this.t.callReply("Auth", "get-preferences", toEmptyCbor(req));
+    const csilResp = resolveRpcReply("Auth", "get-preferences", csilReply.variant, csilReply.payload);
     return fromPreferencesCbor(csilResp);
   }
 
@@ -201,7 +226,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   setPreferences(req: SetPreferencesRequest): Preferences {
-    const csilResp = this.t.call("Auth", "set-preferences", toSetPreferencesRequestCbor(req));
+    const csilReply = this.t.callReply("Auth", "set-preferences", toSetPreferencesRequestCbor(req));
+    const csilResp = resolveRpcReply("Auth", "set-preferences", csilReply.variant, csilReply.payload);
     return fromPreferencesCbor(csilResp);
   }
 
@@ -210,7 +236,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   localLogin(req: LocalLoginRequest): Session {
-    const csilResp = this.t.call("Auth", "local-login", toLocalLoginRequestCbor(req));
+    const csilReply = this.t.callReply("Auth", "local-login", toLocalLoginRequestCbor(req));
+    const csilResp = resolveRpcReply("Auth", "local-login", csilReply.variant, csilReply.payload);
     return fromSessionCbor(csilResp);
   }
 
@@ -219,7 +246,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   localAccount(req: Empty): LocalAccount {
-    const csilResp = this.t.call("Auth", "local-account", toEmptyCbor(req));
+    const csilReply = this.t.callReply("Auth", "local-account", toEmptyCbor(req));
+    const csilResp = resolveRpcReply("Auth", "local-account", csilReply.variant, csilReply.payload);
     return fromLocalAccountCbor(csilResp);
   }
 
@@ -228,7 +256,8 @@ export class AuthClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   changeLocalPassword(req: ChangeLocalPasswordRequest): Ok {
-    const csilResp = this.t.call("Auth", "change-local-password", toChangeLocalPasswordRequestCbor(req));
+    const csilReply = this.t.callReply("Auth", "change-local-password", toChangeLocalPasswordRequestCbor(req));
+    const csilResp = resolveRpcReply("Auth", "change-local-password", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 }
@@ -278,7 +307,8 @@ export class FederationClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   handshake(req: FedHello): FedHelloAck {
-    const csilResp = this.t.call("Federation", "handshake", toFedHelloCbor(req));
+    const csilReply = this.t.callReply("Federation", "handshake", toFedHelloCbor(req));
+    const csilResp = resolveRpcReply("Federation", "handshake", csilReply.variant, csilReply.payload);
     return fromFedHelloAckCbor(csilResp);
   }
 
@@ -287,7 +317,8 @@ export class FederationClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   verifyHead(req: VerifyHeadRequest): HeadInfo {
-    const csilResp = this.t.call("Federation", "verify-head", toVerifyHeadRequestCbor(req));
+    const csilReply = this.t.callReply("Federation", "verify-head", toVerifyHeadRequestCbor(req));
+    const csilResp = resolveRpcReply("Federation", "verify-head", csilReply.variant, csilReply.payload);
     return fromHeadInfoCbor(csilResp);
   }
 
@@ -296,7 +327,8 @@ export class FederationClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   headInfo(req: HeadQuery): HeadInfo {
-    const csilResp = this.t.call("Federation", "head-info", toHeadQueryCbor(req));
+    const csilReply = this.t.callReply("Federation", "head-info", toHeadQueryCbor(req));
+    const csilResp = resolveRpcReply("Federation", "head-info", csilReply.variant, csilReply.payload);
     return fromHeadInfoCbor(csilResp);
   }
 
@@ -305,7 +337,8 @@ export class FederationClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   repoInfo(req: GetRepoRequest): Repo {
-    const csilResp = this.t.call("Federation", "repo-info", toGetRepoRequestCbor(req));
+    const csilReply = this.t.callReply("Federation", "repo-info", toGetRepoRequestCbor(req));
+    const csilResp = resolveRpcReply("Federation", "repo-info", csilReply.variant, csilReply.payload);
     return fromRepoCbor(csilResp);
   }
 }
@@ -322,7 +355,8 @@ export class HooksClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   createEndpoint(req: CreateEndpointRequest): Endpoint {
-    const csilResp = this.t.call("Hooks", "create-endpoint", toCreateEndpointRequestCbor(req));
+    const csilReply = this.t.callReply("Hooks", "create-endpoint", toCreateEndpointRequestCbor(req));
+    const csilResp = resolveRpcReply("Hooks", "create-endpoint", csilReply.variant, csilReply.payload);
     return fromEndpointCbor(csilResp);
   }
 
@@ -331,7 +365,8 @@ export class HooksClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listEndpoints(req: ListEndpointsRequest): ListEndpointsResponse {
-    const csilResp = this.t.call("Hooks", "list-endpoints", toListEndpointsRequestCbor(req));
+    const csilReply = this.t.callReply("Hooks", "list-endpoints", toListEndpointsRequestCbor(req));
+    const csilResp = resolveRpcReply("Hooks", "list-endpoints", csilReply.variant, csilReply.payload);
     return fromListEndpointsResponseCbor(csilResp);
   }
 
@@ -340,7 +375,8 @@ export class HooksClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   deleteEndpoint(req: EndpointRef): Ok {
-    const csilResp = this.t.call("Hooks", "delete-endpoint", toEndpointRefCbor(req));
+    const csilReply = this.t.callReply("Hooks", "delete-endpoint", toEndpointRefCbor(req));
+    const csilResp = resolveRpcReply("Hooks", "delete-endpoint", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -349,7 +385,8 @@ export class HooksClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listDeliveries(req: DeliveryQuery): DeliveryPage {
-    const csilResp = this.t.call("Hooks", "list-deliveries", toDeliveryQueryCbor(req));
+    const csilReply = this.t.callReply("Hooks", "list-deliveries", toDeliveryQueryCbor(req));
+    const csilResp = resolveRpcReply("Hooks", "list-deliveries", csilReply.variant, csilReply.payload);
     return fromDeliveryPageCbor(csilResp);
   }
 
@@ -358,7 +395,8 @@ export class HooksClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   redeliver(req: DeliveryRef): Ok {
-    const csilResp = this.t.call("Hooks", "redeliver", toDeliveryRefCbor(req));
+    const csilReply = this.t.callReply("Hooks", "redeliver", toDeliveryRefCbor(req));
+    const csilResp = resolveRpcReply("Hooks", "redeliver", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -367,7 +405,8 @@ export class HooksClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   updateEndpoint(req: UpdateEndpointRequest): Endpoint {
-    const csilResp = this.t.call("Hooks", "update-endpoint", toUpdateEndpointRequestCbor(req));
+    const csilReply = this.t.callReply("Hooks", "update-endpoint", toUpdateEndpointRequestCbor(req));
+    const csilResp = resolveRpcReply("Hooks", "update-endpoint", csilReply.variant, csilReply.payload);
     return fromEndpointCbor(csilResp);
   }
 }
@@ -385,7 +424,8 @@ export class InstanceClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listRoles(req: Empty): InstanceRoleList {
-    const csilResp = this.t.call("Instance", "list-roles", toEmptyCbor(req));
+    const csilReply = this.t.callReply("Instance", "list-roles", toEmptyCbor(req));
+    const csilResp = resolveRpcReply("Instance", "list-roles", csilReply.variant, csilReply.payload);
     return fromInstanceRoleListCbor(csilResp);
   }
 
@@ -394,7 +434,8 @@ export class InstanceClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   setRole(req: SetInstanceRoleRequest): InstanceRoleGrant {
-    const csilResp = this.t.call("Instance", "set-role", toSetInstanceRoleRequestCbor(req));
+    const csilReply = this.t.callReply("Instance", "set-role", toSetInstanceRoleRequestCbor(req));
+    const csilResp = resolveRpcReply("Instance", "set-role", csilReply.variant, csilReply.payload);
     return fromInstanceRoleGrantCbor(csilResp);
   }
 
@@ -403,7 +444,8 @@ export class InstanceClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   removeRole(req: RemoveInstanceRoleRequest): Ok {
-    const csilResp = this.t.call("Instance", "remove-role", toRemoveInstanceRoleRequestCbor(req));
+    const csilReply = this.t.callReply("Instance", "remove-role", toRemoveInstanceRoleRequestCbor(req));
+    const csilResp = resolveRpcReply("Instance", "remove-role", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -412,7 +454,8 @@ export class InstanceClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   createLocalAccount(req: CreateLocalAccountRequest): LocalAccount {
-    const csilResp = this.t.call("Instance", "create-local-account", toCreateLocalAccountRequestCbor(req));
+    const csilReply = this.t.callReply("Instance", "create-local-account", toCreateLocalAccountRequestCbor(req));
+    const csilResp = resolveRpcReply("Instance", "create-local-account", csilReply.variant, csilReply.payload);
     return fromLocalAccountCbor(csilResp);
   }
 
@@ -421,7 +464,8 @@ export class InstanceClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   resetLocalPassword(req: ResetLocalPasswordRequest): Ok {
-    const csilResp = this.t.call("Instance", "reset-local-password", toResetLocalPasswordRequestCbor(req));
+    const csilReply = this.t.callReply("Instance", "reset-local-password", toResetLocalPasswordRequestCbor(req));
+    const csilResp = resolveRpcReply("Instance", "reset-local-password", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 }
@@ -438,7 +482,8 @@ export class MetaClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   serverInfo(req: Empty): ServerInfo {
-    const csilResp = this.t.call("Meta", "server-info", toEmptyCbor(req));
+    const csilReply = this.t.callReply("Meta", "server-info", toEmptyCbor(req));
+    const csilResp = resolveRpcReply("Meta", "server-info", csilReply.variant, csilReply.payload);
     return fromServerInfoCbor(csilResp);
   }
 }
@@ -455,7 +500,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   status(req: GetRepoRequest): MirrorStatus {
-    const csilResp = this.t.call("Mirror", "status", toGetRepoRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "status", toGetRepoRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "status", csilReply.variant, csilReply.payload);
     return fromMirrorStatusCbor(csilResp);
   }
 
@@ -464,7 +510,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listBlocked(req: GetRepoRequest): ListBlockedResponse {
-    const csilResp = this.t.call("Mirror", "list-blocked", toGetRepoRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "list-blocked", toGetRepoRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "list-blocked", csilReply.variant, csilReply.payload);
     return fromListBlockedResponseCbor(csilResp);
   }
 
@@ -473,7 +520,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   replayBlocked(req: ReplayRequest): ReplayResult {
-    const csilResp = this.t.call("Mirror", "replay-blocked", toReplayRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "replay-blocked", toReplayRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "replay-blocked", csilReply.variant, csilReply.payload);
     return fromReplayResultCbor(csilResp);
   }
 
@@ -482,7 +530,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   setCredential(req: SetCredentialRequest): Credential {
-    const csilResp = this.t.call("Mirror", "set-credential", toSetCredentialRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "set-credential", toSetCredentialRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "set-credential", csilReply.variant, csilReply.payload);
     return fromCredentialCbor(csilResp);
   }
 
@@ -491,7 +540,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   reconcile(req: GetRepoRequest): ReconcileReport {
-    const csilResp = this.t.call("Mirror", "reconcile", toGetRepoRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "reconcile", toGetRepoRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "reconcile", csilReply.variant, csilReply.payload);
     return fromReconcileReportCbor(csilResp);
   }
 
@@ -500,7 +550,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   pause(req: GetRepoRequest): Ok {
-    const csilResp = this.t.call("Mirror", "pause", toGetRepoRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "pause", toGetRepoRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "pause", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -509,7 +560,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   resume(req: GetRepoRequest): Ok {
-    const csilResp = this.t.call("Mirror", "resume", toGetRepoRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "resume", toGetRepoRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "resume", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -520,7 +572,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   importRepo(req: ImportRequest): Repo {
-    const csilResp = this.t.call("Mirror", "import-repo", toImportRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "import-repo", toImportRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "import-repo", csilReply.variant, csilReply.payload);
     return fromRepoCbor(csilResp);
   }
 
@@ -529,7 +582,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   configure(req: ConfigureMirrorRequest): MirrorStatus {
-    const csilResp = this.t.call("Mirror", "configure", toConfigureMirrorRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "configure", toConfigureMirrorRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "configure", csilReply.variant, csilReply.payload);
     return fromMirrorStatusCbor(csilResp);
   }
 
@@ -538,7 +592,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listCredentials(req: ListCredentialsRequest): ListCredentialsResponse {
-    const csilResp = this.t.call("Mirror", "list-credentials", toListCredentialsRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "list-credentials", toListCredentialsRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "list-credentials", csilReply.variant, csilReply.payload);
     return fromListCredentialsResponseCbor(csilResp);
   }
 
@@ -547,7 +602,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   removeCredential(req: CredentialRef): Ok {
-    const csilResp = this.t.call("Mirror", "remove-credential", toCredentialRefCbor(req));
+    const csilReply = this.t.callReply("Mirror", "remove-credential", toCredentialRefCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "remove-credential", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -559,7 +615,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listGithubRepos(req: ListGithubReposRequest): GithubRepoPage {
-    const csilResp = this.t.call("Mirror", "list-github-repos", toListGithubReposRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "list-github-repos", toListGithubReposRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "list-github-repos", csilReply.variant, csilReply.payload);
     return fromGithubRepoPageCbor(csilResp);
   }
 
@@ -569,7 +626,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   health(req: Empty): GithubHealth {
-    const csilResp = this.t.call("Mirror", "health", toEmptyCbor(req));
+    const csilReply = this.t.callReply("Mirror", "health", toEmptyCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "health", csilReply.variant, csilReply.payload);
     return fromGithubHealthCbor(csilResp);
   }
 
@@ -581,7 +639,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   backfill(req: GetRepoRequest): MirrorStatus {
-    const csilResp = this.t.call("Mirror", "backfill", toGetRepoRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "backfill", toGetRepoRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "backfill", csilReply.variant, csilReply.payload);
     return fromMirrorStatusCbor(csilResp);
   }
 
@@ -592,7 +651,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listGithubInstallations(req: Empty): GithubInstallationList {
-    const csilResp = this.t.call("Mirror", "list-github-installations", toEmptyCbor(req));
+    const csilReply = this.t.callReply("Mirror", "list-github-installations", toEmptyCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "list-github-installations", csilReply.variant, csilReply.payload);
     return fromGithubInstallationListCbor(csilResp);
   }
 
@@ -601,7 +661,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   importAll(req: ImportAllRequest): ImportAllResult {
-    const csilResp = this.t.call("Mirror", "import-all", toImportAllRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "import-all", toImportAllRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "import-all", csilReply.variant, csilReply.payload);
     return fromImportAllResultCbor(csilResp);
   }
 
@@ -610,7 +671,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   setSchedule(req: SetMirrorScheduleRequest): MirrorStatus {
-    const csilResp = this.t.call("Mirror", "set-schedule", toSetMirrorScheduleRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "set-schedule", toSetMirrorScheduleRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "set-schedule", csilReply.variant, csilReply.payload);
     return fromMirrorStatusCbor(csilResp);
   }
 
@@ -619,7 +681,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listConnections(req: GetRepoRequest): SyncConnections {
-    const csilResp = this.t.call("Mirror", "list-connections", toGetRepoRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "list-connections", toGetRepoRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "list-connections", csilReply.variant, csilReply.payload);
     return fromSyncConnectionsCbor(csilResp);
   }
 
@@ -628,7 +691,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   connect(req: ConnectRemoteRequest): SyncConnection {
-    const csilResp = this.t.call("Mirror", "connect", toConnectRemoteRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "connect", toConnectRemoteRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "connect", csilReply.variant, csilReply.payload);
     return fromSyncConnectionCbor(csilResp);
   }
 
@@ -637,7 +701,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   updateConnection(req: UpdateConnectionRequest): SyncConnection {
-    const csilResp = this.t.call("Mirror", "update-connection", toUpdateConnectionRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "update-connection", toUpdateConnectionRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "update-connection", csilReply.variant, csilReply.payload);
     return fromSyncConnectionCbor(csilResp);
   }
 
@@ -646,7 +711,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   syncNow(req: SyncConnectionRef): Ok {
-    const csilResp = this.t.call("Mirror", "sync-now", toSyncConnectionRefCbor(req));
+    const csilReply = this.t.callReply("Mirror", "sync-now", toSyncConnectionRefCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "sync-now", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -655,7 +721,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   webhookSecret(req: SyncConnectionRef): SyncWebhookSecret {
-    const csilResp = this.t.call("Mirror", "webhook-secret", toSyncConnectionRefCbor(req));
+    const csilReply = this.t.callReply("Mirror", "webhook-secret", toSyncConnectionRefCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "webhook-secret", csilReply.variant, csilReply.payload);
     return fromSyncWebhookSecretCbor(csilResp);
   }
 
@@ -664,7 +731,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   getPolicy(req: GetRepoRequest): SyncPolicy {
-    const csilResp = this.t.call("Mirror", "get-policy", toGetRepoRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "get-policy", toGetRepoRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "get-policy", csilReply.variant, csilReply.payload);
     return fromSyncPolicyCbor(csilResp);
   }
 
@@ -673,7 +741,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   setPolicy(req: SetSyncPolicyRequest): SyncPolicy {
-    const csilResp = this.t.call("Mirror", "set-policy", toSetSyncPolicyRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "set-policy", toSetSyncPolicyRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "set-policy", csilReply.variant, csilReply.payload);
     return fromSyncPolicyCbor(csilResp);
   }
 
@@ -682,7 +751,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listConflicts(req: GetRepoRequest): SyncConflicts {
-    const csilResp = this.t.call("Mirror", "list-conflicts", toGetRepoRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "list-conflicts", toGetRepoRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "list-conflicts", csilReply.variant, csilReply.payload);
     return fromSyncConflictsCbor(csilResp);
   }
 
@@ -691,7 +761,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   resolveConflict(req: ResolveSyncConflictRequest): Ok {
-    const csilResp = this.t.call("Mirror", "resolve-conflict", toResolveSyncConflictRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "resolve-conflict", toResolveSyncConflictRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "resolve-conflict", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -700,7 +771,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   linkProvider(req: LinkProviderRequest): ProviderLink {
-    const csilResp = this.t.call("Mirror", "link-provider", toLinkProviderRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "link-provider", toLinkProviderRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "link-provider", csilReply.variant, csilReply.payload);
     return fromProviderLinkCbor(csilResp);
   }
 
@@ -709,7 +781,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listProviderLinks(req: Empty): ProviderLinks {
-    const csilResp = this.t.call("Mirror", "list-provider-links", toEmptyCbor(req));
+    const csilReply = this.t.callReply("Mirror", "list-provider-links", toEmptyCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "list-provider-links", csilReply.variant, csilReply.payload);
     return fromProviderLinksCbor(csilResp);
   }
 
@@ -718,7 +791,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   unlinkProvider(req: UnlinkProviderRequest): Ok {
-    const csilResp = this.t.call("Mirror", "unlink-provider", toUnlinkProviderRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "unlink-provider", toUnlinkProviderRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "unlink-provider", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -727,7 +801,8 @@ export class MirrorClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listSyncRecords(req: SyncRecordsRequest): SyncRecords {
-    const csilResp = this.t.call("Mirror", "list-sync-records", toSyncRecordsRequestCbor(req));
+    const csilReply = this.t.callReply("Mirror", "list-sync-records", toSyncRecordsRequestCbor(req));
+    const csilResp = resolveRpcReply("Mirror", "list-sync-records", csilReply.variant, csilReply.payload);
     return fromSyncRecordsCbor(csilResp);
   }
 }
@@ -744,7 +819,8 @@ export class OrgsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   create(req: CreateOrgRequest): Org {
-    const csilResp = this.t.call("Orgs", "create", toCreateOrgRequestCbor(req));
+    const csilReply = this.t.callReply("Orgs", "create", toCreateOrgRequestCbor(req));
+    const csilResp = resolveRpcReply("Orgs", "create", csilReply.variant, csilReply.payload);
     return fromOrgCbor(csilResp);
   }
 
@@ -753,7 +829,8 @@ export class OrgsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   get(req: GetOrgRequest): Org {
-    const csilResp = this.t.call("Orgs", "get", toGetOrgRequestCbor(req));
+    const csilReply = this.t.callReply("Orgs", "get", toGetOrgRequestCbor(req));
+    const csilResp = resolveRpcReply("Orgs", "get", csilReply.variant, csilReply.payload);
     return fromOrgCbor(csilResp);
   }
 
@@ -762,7 +839,8 @@ export class OrgsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   list(req: ListOrgsRequest): OrgPage {
-    const csilResp = this.t.call("Orgs", "list", toListOrgsRequestCbor(req));
+    const csilReply = this.t.callReply("Orgs", "list", toListOrgsRequestCbor(req));
+    const csilResp = resolveRpcReply("Orgs", "list", csilReply.variant, csilReply.payload);
     return fromOrgPageCbor(csilResp);
   }
 
@@ -771,7 +849,8 @@ export class OrgsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   update(req: UpdateOrgRequest): Org {
-    const csilResp = this.t.call("Orgs", "update", toUpdateOrgRequestCbor(req));
+    const csilReply = this.t.callReply("Orgs", "update", toUpdateOrgRequestCbor(req));
+    const csilResp = resolveRpcReply("Orgs", "update", csilReply.variant, csilReply.payload);
     return fromOrgCbor(csilResp);
   }
 
@@ -780,7 +859,8 @@ export class OrgsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   setMember(req: SetOrgMemberRequest): OrgMember {
-    const csilResp = this.t.call("Orgs", "set-member", toSetOrgMemberRequestCbor(req));
+    const csilReply = this.t.callReply("Orgs", "set-member", toSetOrgMemberRequestCbor(req));
+    const csilResp = resolveRpcReply("Orgs", "set-member", csilReply.variant, csilReply.payload);
     return fromOrgMemberCbor(csilResp);
   }
 
@@ -789,7 +869,8 @@ export class OrgsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   removeMember(req: RemoveOrgMemberRequest): Ok {
-    const csilResp = this.t.call("Orgs", "remove-member", toRemoveOrgMemberRequestCbor(req));
+    const csilReply = this.t.callReply("Orgs", "remove-member", toRemoveOrgMemberRequestCbor(req));
+    const csilResp = resolveRpcReply("Orgs", "remove-member", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -798,7 +879,8 @@ export class OrgsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listMembers(req: ListOrgMembersRequest): OrgMemberPage {
-    const csilResp = this.t.call("Orgs", "list-members", toListOrgMembersRequestCbor(req));
+    const csilReply = this.t.callReply("Orgs", "list-members", toListOrgMembersRequestCbor(req));
+    const csilResp = resolveRpcReply("Orgs", "list-members", csilReply.variant, csilReply.payload);
     return fromOrgMemberPageCbor(csilResp);
   }
 
@@ -807,7 +889,8 @@ export class OrgsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   createTeam(req: CreateTeamRequest): Team {
-    const csilResp = this.t.call("Orgs", "create-team", toCreateTeamRequestCbor(req));
+    const csilReply = this.t.callReply("Orgs", "create-team", toCreateTeamRequestCbor(req));
+    const csilResp = resolveRpcReply("Orgs", "create-team", csilReply.variant, csilReply.payload);
     return fromTeamCbor(csilResp);
   }
 
@@ -816,7 +899,8 @@ export class OrgsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   deleteTeam(req: TeamRef): Ok {
-    const csilResp = this.t.call("Orgs", "delete-team", toTeamRefCbor(req));
+    const csilReply = this.t.callReply("Orgs", "delete-team", toTeamRefCbor(req));
+    const csilResp = resolveRpcReply("Orgs", "delete-team", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -825,7 +909,8 @@ export class OrgsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   setTeamMember(req: SetTeamMemberRequest): Team {
-    const csilResp = this.t.call("Orgs", "set-team-member", toSetTeamMemberRequestCbor(req));
+    const csilReply = this.t.callReply("Orgs", "set-team-member", toSetTeamMemberRequestCbor(req));
+    const csilResp = resolveRpcReply("Orgs", "set-team-member", csilReply.variant, csilReply.payload);
     return fromTeamCbor(csilResp);
   }
 
@@ -834,7 +919,8 @@ export class OrgsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listTeams(req: GetOrgRequest): ListTeamsResponse {
-    const csilResp = this.t.call("Orgs", "list-teams", toGetOrgRequestCbor(req));
+    const csilReply = this.t.callReply("Orgs", "list-teams", toGetOrgRequestCbor(req));
+    const csilResp = resolveRpcReply("Orgs", "list-teams", csilReply.variant, csilReply.payload);
     return fromListTeamsResponseCbor(csilResp);
   }
 }
@@ -851,7 +937,8 @@ export class PullRequestsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   open(req: OpenPrRequest): PullRequest {
-    const csilResp = this.t.call("PullRequests", "open", toOpenPrRequestCbor(req));
+    const csilReply = this.t.callReply("PullRequests", "open", toOpenPrRequestCbor(req));
+    const csilResp = resolveRpcReply("PullRequests", "open", csilReply.variant, csilReply.payload);
     return fromPullRequestCbor(csilResp);
   }
 
@@ -860,7 +947,8 @@ export class PullRequestsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   get(req: PrRef): PullRequest {
-    const csilResp = this.t.call("PullRequests", "get", toPrRefCbor(req));
+    const csilReply = this.t.callReply("PullRequests", "get", toPrRefCbor(req));
+    const csilResp = resolveRpcReply("PullRequests", "get", csilReply.variant, csilReply.payload);
     return fromPullRequestCbor(csilResp);
   }
 
@@ -869,7 +957,8 @@ export class PullRequestsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   list(req: ListPrRequest): PrPage {
-    const csilResp = this.t.call("PullRequests", "list", toListPrRequestCbor(req));
+    const csilReply = this.t.callReply("PullRequests", "list", toListPrRequestCbor(req));
+    const csilResp = resolveRpcReply("PullRequests", "list", csilReply.variant, csilReply.payload);
     return fromPrPageCbor(csilResp);
   }
 
@@ -878,7 +967,8 @@ export class PullRequestsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   review(req: ReviewRequest): Review {
-    const csilResp = this.t.call("PullRequests", "review", toReviewRequestCbor(req));
+    const csilReply = this.t.callReply("PullRequests", "review", toReviewRequestCbor(req));
+    const csilResp = resolveRpcReply("PullRequests", "review", csilReply.variant, csilReply.payload);
     return fromReviewCbor(csilResp);
   }
 
@@ -887,7 +977,8 @@ export class PullRequestsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   comment(req: CommentRequest): Comment {
-    const csilResp = this.t.call("PullRequests", "comment", toCommentRequestCbor(req));
+    const csilReply = this.t.callReply("PullRequests", "comment", toCommentRequestCbor(req));
+    const csilResp = resolveRpcReply("PullRequests", "comment", csilReply.variant, csilReply.payload);
     return fromCommentCbor(csilResp);
   }
 
@@ -896,7 +987,8 @@ export class PullRequestsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   merge(req: MergeRequest): MergeResult {
-    const csilResp = this.t.call("PullRequests", "merge", toMergeRequestCbor(req));
+    const csilReply = this.t.callReply("PullRequests", "merge", toMergeRequestCbor(req));
+    const csilResp = resolveRpcReply("PullRequests", "merge", csilReply.variant, csilReply.payload);
     return fromMergeResultCbor(csilResp);
   }
 
@@ -905,7 +997,8 @@ export class PullRequestsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   close(req: PrRef): PullRequest {
-    const csilResp = this.t.call("PullRequests", "close", toPrRefCbor(req));
+    const csilReply = this.t.callReply("PullRequests", "close", toPrRefCbor(req));
+    const csilResp = resolveRpcReply("PullRequests", "close", csilReply.variant, csilReply.payload);
     return fromPullRequestCbor(csilResp);
   }
 
@@ -914,7 +1007,8 @@ export class PullRequestsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   reopen(req: PrRef): PullRequest {
-    const csilResp = this.t.call("PullRequests", "reopen", toPrRefCbor(req));
+    const csilReply = this.t.callReply("PullRequests", "reopen", toPrRefCbor(req));
+    const csilResp = resolveRpcReply("PullRequests", "reopen", csilReply.variant, csilReply.payload);
     return fromPullRequestCbor(csilResp);
   }
 
@@ -923,7 +1017,8 @@ export class PullRequestsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   retarget(req: RetargetRequest): PullRequest {
-    const csilResp = this.t.call("PullRequests", "retarget", toRetargetRequestCbor(req));
+    const csilReply = this.t.callReply("PullRequests", "retarget", toRetargetRequestCbor(req));
+    const csilResp = resolveRpcReply("PullRequests", "retarget", csilReply.variant, csilReply.payload);
     return fromPullRequestCbor(csilResp);
   }
 
@@ -932,7 +1027,8 @@ export class PullRequestsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   update(req: UpdatePrRequest): PullRequest {
-    const csilResp = this.t.call("PullRequests", "update", toUpdatePrRequestCbor(req));
+    const csilReply = this.t.callReply("PullRequests", "update", toUpdatePrRequestCbor(req));
+    const csilResp = resolveRpcReply("PullRequests", "update", csilReply.variant, csilReply.payload);
     return fromPullRequestCbor(csilResp);
   }
 
@@ -941,7 +1037,8 @@ export class PullRequestsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listReviews(req: PrRef): ListReviewsResponse {
-    const csilResp = this.t.call("PullRequests", "list-reviews", toPrRefCbor(req));
+    const csilReply = this.t.callReply("PullRequests", "list-reviews", toPrRefCbor(req));
+    const csilResp = resolveRpcReply("PullRequests", "list-reviews", csilReply.variant, csilReply.payload);
     return fromListReviewsResponseCbor(csilResp);
   }
 
@@ -950,7 +1047,8 @@ export class PullRequestsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listComments(req: PrRef): ListCommentsResponse {
-    const csilResp = this.t.call("PullRequests", "list-comments", toPrRefCbor(req));
+    const csilReply = this.t.callReply("PullRequests", "list-comments", toPrRefCbor(req));
+    const csilResp = resolveRpcReply("PullRequests", "list-comments", csilReply.variant, csilReply.payload);
     return fromListCommentsResponseCbor(csilResp);
   }
 
@@ -959,7 +1057,8 @@ export class PullRequestsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   editComment(req: EditCommentRequest): Comment {
-    const csilResp = this.t.call("PullRequests", "edit-comment", toEditCommentRequestCbor(req));
+    const csilReply = this.t.callReply("PullRequests", "edit-comment", toEditCommentRequestCbor(req));
+    const csilResp = resolveRpcReply("PullRequests", "edit-comment", csilReply.variant, csilReply.payload);
     return fromCommentCbor(csilResp);
   }
 
@@ -968,7 +1067,8 @@ export class PullRequestsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   deleteComment(req: DeleteCommentRequest): Ok {
-    const csilResp = this.t.call("PullRequests", "delete-comment", toDeleteCommentRequestCbor(req));
+    const csilReply = this.t.callReply("PullRequests", "delete-comment", toDeleteCommentRequestCbor(req));
+    const csilResp = resolveRpcReply("PullRequests", "delete-comment", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 }
@@ -985,7 +1085,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   create(req: CreateRepoRequest): Repo {
-    const csilResp = this.t.call("Repos", "create", toCreateRepoRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "create", toCreateRepoRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "create", csilReply.variant, csilReply.payload);
     return fromRepoCbor(csilResp);
   }
 
@@ -994,7 +1095,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   get(req: GetRepoRequest): Repo {
-    const csilResp = this.t.call("Repos", "get", toGetRepoRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "get", toGetRepoRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "get", csilReply.variant, csilReply.payload);
     return fromRepoCbor(csilResp);
   }
 
@@ -1003,7 +1105,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   list(req: ListReposRequest): RepoPage {
-    const csilResp = this.t.call("Repos", "list", toListReposRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "list", toListReposRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "list", csilReply.variant, csilReply.payload);
     return fromRepoPageCbor(csilResp);
   }
 
@@ -1012,7 +1115,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   update(req: UpdateRepoRequest): Repo {
-    const csilResp = this.t.call("Repos", "update", toUpdateRepoRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "update", toUpdateRepoRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "update", csilReply.variant, csilReply.payload);
     return fromRepoCbor(csilResp);
   }
 
@@ -1021,7 +1125,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   fork(req: ForkRequest): Repo {
-    const csilResp = this.t.call("Repos", "fork", toForkRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "fork", toForkRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "fork", csilReply.variant, csilReply.payload);
     return fromRepoCbor(csilResp);
   }
 
@@ -1030,7 +1135,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listRefs(req: ListRefsRequest): ListRefsResponse {
-    const csilResp = this.t.call("Repos", "list-refs", toListRefsRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "list-refs", toListRefsRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "list-refs", csilReply.variant, csilReply.payload);
     return fromListRefsResponseCbor(csilResp);
   }
 
@@ -1039,7 +1145,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   log(req: LogRequest): CommitPage {
-    const csilResp = this.t.call("Repos", "log", toLogRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "log", toLogRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "log", csilReply.variant, csilReply.payload);
     return fromCommitPageCbor(csilResp);
   }
 
@@ -1048,7 +1155,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   tree(req: TreeRequest): TreeResponse {
-    const csilResp = this.t.call("Repos", "tree", toTreeRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "tree", toTreeRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "tree", csilReply.variant, csilReply.payload);
     return fromTreeResponseCbor(csilResp);
   }
 
@@ -1057,7 +1165,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   blob(req: BlobRequest): BlobResponse {
-    const csilResp = this.t.call("Repos", "blob", toBlobRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "blob", toBlobRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "blob", csilReply.variant, csilReply.payload);
     return fromBlobResponseCbor(csilResp);
   }
 
@@ -1066,7 +1175,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   diff(req: DiffRequest): DiffResponse {
-    const csilResp = this.t.call("Repos", "diff", toDiffRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "diff", toDiffRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "diff", csilReply.variant, csilReply.payload);
     return fromDiffResponseCbor(csilResp);
   }
 
@@ -1075,7 +1185,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   delete(req: DeleteRepoRequest): Ok {
-    const csilResp = this.t.call("Repos", "delete", toDeleteRepoRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "delete", toDeleteRepoRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "delete", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -1084,7 +1195,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   updateRef(req: UpdateRefRequest): RefInfo {
-    const csilResp = this.t.call("Repos", "update-ref", toUpdateRefRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "update-ref", toUpdateRefRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "update-ref", csilReply.variant, csilReply.payload);
     return fromRefInfoCbor(csilResp);
   }
 
@@ -1093,7 +1205,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   getCommit(req: GetCommitRequest): Commit {
-    const csilResp = this.t.call("Repos", "get-commit", toGetCommitRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "get-commit", toGetCommitRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "get-commit", csilReply.variant, csilReply.payload);
     return fromCommitCbor(csilResp);
   }
 
@@ -1102,7 +1215,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   setGrant(req: SetGrantRequest): Grant {
-    const csilResp = this.t.call("Repos", "set-grant", toSetGrantRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "set-grant", toSetGrantRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "set-grant", csilReply.variant, csilReply.payload);
     return fromGrantCbor(csilResp);
   }
 
@@ -1111,7 +1225,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   removeGrant(req: RemoveGrantRequest): Ok {
-    const csilResp = this.t.call("Repos", "remove-grant", toRemoveGrantRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "remove-grant", toRemoveGrantRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "remove-grant", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -1120,7 +1235,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listGrants(req: GetRepoRequest): ListGrantsResponse {
-    const csilResp = this.t.call("Repos", "list-grants", toGetRepoRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "list-grants", toGetRepoRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "list-grants", csilReply.variant, csilReply.payload);
     return fromListGrantsResponseCbor(csilResp);
   }
 
@@ -1129,7 +1245,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   setProtection(req: SetProtectionRequest): BranchProtection {
-    const csilResp = this.t.call("Repos", "set-protection", toSetProtectionRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "set-protection", toSetProtectionRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "set-protection", csilReply.variant, csilReply.payload);
     return fromBranchProtectionCbor(csilResp);
   }
 
@@ -1138,7 +1255,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   removeProtection(req: RemoveProtectionRequest): Ok {
-    const csilResp = this.t.call("Repos", "remove-protection", toRemoveProtectionRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "remove-protection", toRemoveProtectionRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "remove-protection", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -1147,7 +1265,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listProtections(req: GetRepoRequest): ListProtectionsResponse {
-    const csilResp = this.t.call("Repos", "list-protections", toGetRepoRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "list-protections", toGetRepoRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "list-protections", csilReply.variant, csilReply.payload);
     return fromListProtectionsResponseCbor(csilResp);
   }
 
@@ -1159,7 +1278,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   captureHistory(req: GetRepoRequest): CaptureReport {
-    const csilResp = this.t.call("Repos", "capture-history", toGetRepoRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "capture-history", toGetRepoRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "capture-history", csilReply.variant, csilReply.payload);
     return fromCaptureReportCbor(csilResp);
   }
 
@@ -1170,7 +1290,8 @@ export class ReposClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listForks(req: GetRepoRequest): RepoPage {
-    const csilResp = this.t.call("Repos", "list-forks", toGetRepoRequestCbor(req));
+    const csilReply = this.t.callReply("Repos", "list-forks", toGetRepoRequestCbor(req));
+    const csilResp = resolveRpcReply("Repos", "list-forks", csilReply.variant, csilReply.payload);
     return fromRepoPageCbor(csilResp);
   }
 }
@@ -1187,7 +1308,8 @@ export class ServiceAccountsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   create(req: CreateServiceAccountRequest): ServiceAccount {
-    const csilResp = this.t.call("ServiceAccounts", "create", toCreateServiceAccountRequestCbor(req));
+    const csilReply = this.t.callReply("ServiceAccounts", "create", toCreateServiceAccountRequestCbor(req));
+    const csilResp = resolveRpcReply("ServiceAccounts", "create", csilReply.variant, csilReply.payload);
     return fromServiceAccountCbor(csilResp);
   }
 
@@ -1196,7 +1318,8 @@ export class ServiceAccountsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   list(req: GetOrgRequest): ListServiceAccountsResponse {
-    const csilResp = this.t.call("ServiceAccounts", "list", toGetOrgRequestCbor(req));
+    const csilReply = this.t.callReply("ServiceAccounts", "list", toGetOrgRequestCbor(req));
+    const csilResp = resolveRpcReply("ServiceAccounts", "list", csilReply.variant, csilReply.payload);
     return fromListServiceAccountsResponseCbor(csilResp);
   }
 
@@ -1207,7 +1330,8 @@ export class ServiceAccountsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   disable(req: ServiceAccountRef): Ok {
-    const csilResp = this.t.call("ServiceAccounts", "disable", toServiceAccountRefCbor(req));
+    const csilReply = this.t.callReply("ServiceAccounts", "disable", toServiceAccountRefCbor(req));
+    const csilResp = resolveRpcReply("ServiceAccounts", "disable", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -1216,7 +1340,8 @@ export class ServiceAccountsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   enable(req: ServiceAccountRef): Ok {
-    const csilResp = this.t.call("ServiceAccounts", "enable", toServiceAccountRefCbor(req));
+    const csilReply = this.t.callReply("ServiceAccounts", "enable", toServiceAccountRefCbor(req));
+    const csilResp = resolveRpcReply("ServiceAccounts", "enable", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 
@@ -1225,7 +1350,8 @@ export class ServiceAccountsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   createToken(req: CreateServiceAccountTokenRequest): ApiToken {
-    const csilResp = this.t.call("ServiceAccounts", "create-token", toCreateServiceAccountTokenRequestCbor(req));
+    const csilReply = this.t.callReply("ServiceAccounts", "create-token", toCreateServiceAccountTokenRequestCbor(req));
+    const csilResp = resolveRpcReply("ServiceAccounts", "create-token", csilReply.variant, csilReply.payload);
     return fromApiTokenCbor(csilResp);
   }
 
@@ -1234,7 +1360,8 @@ export class ServiceAccountsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   listTokens(req: ServiceAccountRef): ListTokensResponse {
-    const csilResp = this.t.call("ServiceAccounts", "list-tokens", toServiceAccountRefCbor(req));
+    const csilReply = this.t.callReply("ServiceAccounts", "list-tokens", toServiceAccountRefCbor(req));
+    const csilResp = resolveRpcReply("ServiceAccounts", "list-tokens", csilReply.variant, csilReply.payload);
     return fromListTokensResponseCbor(csilResp);
   }
 
@@ -1243,7 +1370,8 @@ export class ServiceAccountsClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   revokeToken(req: RevokeServiceAccountTokenRequest): Ok {
-    const csilResp = this.t.call("ServiceAccounts", "revoke-token", toRevokeServiceAccountTokenRequestCbor(req));
+    const csilReply = this.t.callReply("ServiceAccounts", "revoke-token", toRevokeServiceAccountTokenRequestCbor(req));
+    const csilResp = resolveRpcReply("ServiceAccounts", "revoke-token", csilReply.variant, csilReply.payload);
     return fromOkCbor(csilResp);
   }
 }
@@ -1260,7 +1388,8 @@ export class StatusesClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   set(req: SetStatusRequest): CommitStatus {
-    const csilResp = this.t.call("Statuses", "set", toSetStatusRequestCbor(req));
+    const csilReply = this.t.callReply("Statuses", "set", toSetStatusRequestCbor(req));
+    const csilResp = resolveRpcReply("Statuses", "set", csilReply.variant, csilReply.payload);
     return fromCommitStatusCbor(csilResp);
   }
 
@@ -1269,7 +1398,8 @@ export class StatusesClient {
    * @throws transport errors (network, timeout) raised by the transport
    */
   list(req: ListStatusRequest): ListStatusResponse {
-    const csilResp = this.t.call("Statuses", "list", toListStatusRequestCbor(req));
+    const csilReply = this.t.callReply("Statuses", "list", toListStatusRequestCbor(req));
+    const csilResp = resolveRpcReply("Statuses", "list", csilReply.variant, csilReply.payload);
     return fromListStatusResponseCbor(csilResp);
   }
 }

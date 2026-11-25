@@ -891,7 +891,7 @@ dependencies = [
 [[package]]
 name = "csilgen-transport"
 version = "0.1.0"
-source = "git+https://github.com/catalystcommunity/csilgen?rev=9690ed8794454c2beb21571ce525ffd62a2f0701#9690ed8794454c2beb21571ce525ffd62a2f0701"
+source = "git+https://github.com/catalystcommunity/csilgen?rev=73ba5ac55f74608c73da6320693efc8e2b7239ca#73ba5ac55f74608c73da6320693efc8e2b7239ca"
 dependencies = [
  "ciborium",
  "ciborium-io",
@@ -902,7 +902,7 @@ dependencies = [
 [[package]]
 name = "csilgen-transport"
 version = "0.1.0"
-source = "git+https://github.com/catalystcommunity/linkkeys?rev=d8e9215d82d0f57dd3d75d717640dac8d8219322#d8e9215d82d0f57dd3d75d717640dac8d8219322"
+source = "git+https://github.com/catalystcommunity/linkkeys?rev=e7cfb3d61d89d324d60cc16f4ca82ba6d34be86e#e7cfb3d61d89d324d60cc16f4ca82ba6d34be86e"
 dependencies = [
  "ciborium",
  "ciborium-io",
@@ -2315,7 +2315,7 @@ checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 [[package]]
 name = "liblinkkeys"
 version = "0.1.0"
-source = "git+https://github.com/catalystcommunity/linkkeys?rev=d8e9215d82d0f57dd3d75d717640dac8d8219322#d8e9215d82d0f57dd3d75d717640dac8d8219322"
+source = "git+https://github.com/catalystcommunity/linkkeys?rev=e7cfb3d61d89d324d60cc16f4ca82ba6d34be86e#e7cfb3d61d89d324d60cc16f4ca82ba6d34be86e"
 dependencies = [
  "aes-gcm 0.10.3",
  "argon2 0.5.3",
@@ -2344,10 +2344,10 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 [[package]]
 name = "linkkeys-rpc-client"
 version = "0.1.0"
-source = "git+https://github.com/catalystcommunity/linkkeys?rev=d8e9215d82d0f57dd3d75d717640dac8d8219322#d8e9215d82d0f57dd3d75d717640dac8d8219322"
+source = "git+https://github.com/catalystcommunity/linkkeys?rev=e7cfb3d61d89d324d60cc16f4ca82ba6d34be86e#e7cfb3d61d89d324d60cc16f4ca82ba6d34be86e"
 dependencies = [
  "ciborium",
- "csilgen-transport 0.1.0 (git+https://github.com/catalystcommunity/linkkeys?rev=d8e9215d82d0f57dd3d75d717640dac8d8219322)",
+ "csilgen-transport 0.1.0 (git+https://github.com/catalystcommunity/linkkeys?rev=e7cfb3d61d89d324d60cc16f4ca82ba6d34be86e)",
  "liblinkkeys",
  "log",
  "rcgen",
@@ -5166,7 +5166,7 @@ dependencies = [
  "chacha20poly1305",
  "ciborium",
  "corndogs",
- "csilgen-transport 0.1.0 (git+https://github.com/catalystcommunity/csilgen?rev=9690ed8794454c2beb21571ce525ffd62a2f0701)",
+ "csilgen-transport 0.1.0 (git+https://github.com/catalystcommunity/csilgen?rev=73ba5ac55f74608c73da6320693efc8e2b7239ca)",
  "diesel",
  "ed25519-dalek 2.2.0",
  "hex",
@@ -5233,7 +5233,7 @@ dependencies = [
 name = "vcsstar-transport"
 version = "0.1.0"
 dependencies = [
- "csilgen-transport 0.1.0 (git+https://github.com/catalystcommunity/csilgen?rev=9690ed8794454c2beb21571ce525ffd62a2f0701)",
+ "csilgen-transport 0.1.0 (git+https://github.com/catalystcommunity/csilgen?rev=73ba5ac55f74608c73da6320693efc8e2b7239ca)",
  "thiserror 2.0.21",
  "tracing",
  "ureq",

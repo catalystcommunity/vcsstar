@@ -73,9 +73,13 @@ function encInto(v: CborValue, out: number[]): void {
     head(4, v.length, out);
     for (const x of v) encInto(x, out);
   } else if (v instanceof Map) {
-    head(5, v.size, out);
-    for (const [k, val] of v) {
-      encInto(k, out);
+    // RFC 8949 section 4.2.1: entries go in bytewise order of the encoded keys, so
+    // every peer emits the same bytes and a decoder can check the order in one pass.
+    const entries = Array.from(v, ([k, val]): [Uint8Array, CborValue] => [encodeValue(k), val]);
+    entries.sort(([a], [b]) => csilCompareBytes(a, b));
+    head(5, entries.length, out);
+    for (const [k, val] of entries) {
+      for (const b of k) out.push(b);
       encInto(val, out);
     }
   } else {
@@ -89,6 +93,34 @@ export function encodeValue(value: CborValue): Uint8Array {
   const out: number[] = [];
   encInto(value, out);
   return Uint8Array.from(out);
+}
+
+function csilCompareBytes(a: Uint8Array, b: Uint8Array): number {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    if (a[i] !== b[i]) return a[i] - b[i];
+  }
+  return a.length - b.length;
+}
+
+// A record accepts its fields in any order, so the decoder only marks a map whose
+// keys are out of canonical order; a dynamic-map reader refuses a marked map.
+const csilUnorderedMaps = new WeakSet<Map<CborValue, CborValue>>();
+
+// A key with a longer head than needed is a second byte form of the same key, so
+// the order and duplicate checks on raw bytes would miss it.
+function csilShortestHead(b: Uint8Array, at: number): boolean {
+  const major = b[at] >> 5;
+  const low = b[at] & 0x1f;
+  if (major === 7 || low < 24) return true;
+  if (low === 24) return b[at + 1] >= 24;
+  if (low === 25) return b[at + 1] !== 0;
+  if (low === 26) return b[at + 1] !== 0 || b[at + 2] !== 0;
+  return b[at + 1] !== 0 || b[at + 2] !== 0 || b[at + 3] !== 0 || b[at + 4] !== 0;
+}
+
+function csilKeyLabel(key: CborValue): string {
+  return typeof key === "string" ? JSON.stringify(key) : String(key);
 }
 
 type Cursor = { b: Uint8Array; pos: number };
@@ -132,8 +164,24 @@ function smallInt(arg: bigint): number | bigint {
   return arg <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(arg) : arg;
 }
 
+/** Widen an IEEE 754 half-precision value (RFC 8949 Appendix D) exactly to binary64. */
+function csilHalfToFloat64(half: number): number {
+  const exp = (half >> 10) & 0x1f;
+  const mant = half & 0x3ff;
+  let magnitude: number;
+  if (exp === 0) magnitude = mant * 2 ** -24;
+  else if (exp === 31) magnitude = mant === 0 ? Infinity : NaN;
+  else magnitude = (mant + 1024) * 2 ** (exp - 25);
+  return half & 0x8000 ? -magnitude : magnitude;
+}
+
 function readFloat(st: Cursor, low: number): number {
   const bits = readArg(st, low);
+  if (low === 25) {
+    const view = new DataView(new ArrayBuffer(2));
+    view.setUint16(0, Number(bits), false);
+    return csilHalfToFloat64(view.getUint16(0, false));
+  }
   if (low === 26) {
     const view = new DataView(new ArrayBuffer(4));
     view.setUint32(0, Number(bits), false);
@@ -163,7 +211,7 @@ function decInto(st: Cursor, depth: number): CborValue {
       st.pos += 1;
       return null;
     }
-    if (low === 26 || low === 27) return readFloat(st, low);
+    if (low === 25 || low === 26 || low === 27) return readFloat(st, low);
     throw new Error("malformed CBOR simple value");
   }
   const arg = readArg(st, low);
@@ -199,8 +247,21 @@ function decInto(st: Cursor, depth: number): CborValue {
       if (arg > BigInt(st.b.length - st.pos)) throw new Error("CBOR map length exceeds remaining input");
       const n = Number(arg);
       const m = new Map<CborValue, CborValue>();
+      // Raw key bytes catch a repeated byte-string key and a key encoded twice in
+      // different widths, which a JS `Map` cannot tell apart from distinct keys.
+      const seen = new Set<string>();
+      let prev: Uint8Array | null = null;
       for (let i = 0; i < n; i++) {
+        const start = st.pos;
         const k = decInto(st, depth + 1);
+        if (!csilShortestHead(st.b, start)) throw new Error("csil cbor: map key is not in shortest form");
+        const raw = st.b.subarray(start, st.pos);
+        let id = "";
+        for (const b of raw) id += String.fromCharCode(b);
+        if (seen.has(id) || m.has(k)) throw new Error(`csil cbor: duplicate key ${csilKeyLabel(k)}`);
+        seen.add(id);
+        if (prev !== null && csilCompareBytes(prev, raw) > 0) csilUnorderedMaps.add(m);
+        prev = raw;
         const val = decInto(st, depth + 1);
         m.set(k, val);
       }
@@ -264,6 +325,13 @@ export function asArray(value: CborValue): CborValue[] {
 export function asMap(value: CborValue): Map<CborValue, CborValue> {
   if (value instanceof Map) return value;
   throw new Error("expected a map");
+}
+
+/** A `{ * K => V }` map: its keys must arrive in canonical order (RFC 8949 section 4.2.1). */
+export function asDynamicMap(value: CborValue): Map<CborValue, CborValue> {
+  const m = asMap(value);
+  if (csilUnorderedMaps.has(m)) throw new Error("csil cbor: map keys are not in canonical order");
+  return m;
 }
 
 /** A decoded integer may surface as `bigint` (see `decInto`'s large-value path), so a
@@ -348,7 +416,92 @@ function asTagged(value: CborValue, tag: number): CborValue {
 
 /** Decode a tag-0 (RFC 3339, UTC) timestamp into a `Date`. */
 export function asTimestamp(value: CborValue): Date {
-  return new Date(asString(asTagged(value, 0)));
+  return csilTsFromText(asString(asTagged(value, 0)));
+}
+
+// `Date` parsing accepts many shapes the wire contract forbids (a space for `T`, no
+// offset, leap seconds rolled over), so the grammar is checked by hand. `[0-9]` stays
+// ASCII-only, and `$` without the `m` flag matches only at the true end of input.
+const CSIL_TS_PATTERN =
+  /^([0-9]{4})-([0-9]{2})-([0-9]{2})[Tt]([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]{1,9}))?(?:[Zz]|([+-])([0-9]{2}):([0-9]{2}))$/;
+
+/** Parse canonical tag-0 text strictly. `Date` holds milliseconds, so a nonzero digit
+ * past the third fraction digit is an error rather than a silent rounding. */
+export function csilTsFromText(text: string): Date {
+  const m = CSIL_TS_PATTERN.exec(text);
+  if (m === null) throw new Error(`invalid RFC 3339 timestamp ${JSON.stringify(text)}`);
+  const [year, month, day, hour, minute, second] = m.slice(1, 7).map(Number);
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const monthDays = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > monthDays[month - 1]) {
+    throw new Error(`invalid calendar date in timestamp ${JSON.stringify(text)}`);
+  }
+  if (hour > 23 || minute > 59 || second > 59) {
+    throw new Error(`invalid time of day in timestamp ${JSON.stringify(text)}`);
+  }
+  const fraction = m[7] ?? "";
+  if (/[1-9]/.test(fraction.slice(3))) {
+    throw new Error(`timestamp ${JSON.stringify(text)} is finer than milliseconds`);
+  }
+  let offsetMinutes = 0;
+  if (m[8] !== undefined) {
+    const offsetHour = Number(m[9]);
+    const offsetMinute = Number(m[10]);
+    if (offsetHour > 23 || offsetMinute > 59) {
+      throw new Error(`invalid offset in timestamp ${JSON.stringify(text)}`);
+    }
+    offsetMinutes = (m[8] === "-" ? -1 : 1) * (offsetHour * 60 + offsetMinute);
+  }
+  // `Date.UTC` maps years 0-99 to 1900-1999, so the year is set on its own.
+  const local = new Date(0);
+  local.setUTCFullYear(year, month - 1, day);
+  local.setUTCHours(hour, minute, second, Number(fraction.padEnd(3, "0").slice(0, 3)));
+  const instant = new Date(local.getTime() - offsetMinutes * 60000);
+  const utcYear = instant.getUTCFullYear();
+  if (utcYear < 1 || utcYear > 9999) {
+    throw new Error(`timestamp ${JSON.stringify(text)} is outside years 0001-9999 in UTC`);
+  }
+  return instant;
+}
+
+const CSIL_EPOCH_FIRST = -62135596800;
+const CSIL_EPOCH_LAST = 253402300799;
+
+/** Decode tag-1 epoch seconds (`cddl_time`) into a `Date`. A `Date` holds
+ * milliseconds, so a float fraction is rounded to three digits by the shared rule. */
+export function asCddlTime(value: CborValue): Date {
+  const inner = asTagged(value, 1);
+  // An integer past 2^53 decodes as a `bigint`; every one of those is out of range.
+  if (typeof inner === "bigint") throw new Error("cddl_time is outside years 0001-9999");
+  if (typeof inner !== "number") throw new Error("cddl_time content must be a number");
+  if (!Number.isFinite(inner)) throw new Error("cddl_time must be finite");
+  if (inner < CSIL_EPOCH_FIRST - 1 || inner > CSIL_EPOCH_LAST + 1) {
+    throw new Error("cddl_time is outside years 0001-9999");
+  }
+  // An integer and a float with the same value decode to the same `number`, and the
+  // rule gives an integer a zero fraction, so one path serves both.
+  let seconds = Math.floor(inner);
+  let units = Math.floor((inner - seconds) * 1000 + 0.5);
+  if (units === 1000) {
+    seconds += 1;
+    units = 0;
+  }
+  if (seconds < CSIL_EPOCH_FIRST || seconds > CSIL_EPOCH_LAST) {
+    throw new Error("cddl_time is outside years 0001-9999");
+  }
+  return new Date(seconds * 1000 + units);
+}
+
+/** A `Date` as tag-1 content: whole seconds as an integer, else a binary64 float. */
+export function csilEpochFromDate(d: Date): number {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) throw new Error("expected a valid Date");
+  const millis = d.getTime();
+  const seconds = Math.floor(millis / 1000);
+  if (seconds < CSIL_EPOCH_FIRST || seconds > CSIL_EPOCH_LAST) {
+    throw new Error("cddl_time is outside years 0001-9999");
+  }
+  const units = millis - seconds * 1000;
+  return units === 0 ? seconds : seconds + units / 1000;
 }
 
 /** Decode a tag-4 decimal fraction into its `[exponent, mantissa]` payload. */
@@ -363,6 +516,11 @@ export function asDecimalPayload(value: CborValue): [number | bigint, number | b
 
 /** A `Date` rendered as the canonical tag-0 text: RFC 3339, UTC, `Z` offset. */
 export function csilTsToText(d: Date): string {
+  // An Invalid Date or a year outside 0001-9999 has no canonical text, and
+  // `toISOString` would write an expanded `+YYYYYY` year for the latter.
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) throw new Error("expected a valid Date");
+  const year = d.getUTCFullYear();
+  if (year < 1 || year > 9999) throw new Error("timestamp is outside years 0001-9999");
   return d.toISOString().replace(/\.000Z$/, "Z");
 }
 
@@ -376,6 +534,7 @@ export function toCtxCborValue(v: Ctx): CborValue {
 }
 
 export function fromCtxCborValue(value: CborValue): Ctx {
+  asMap(value);
   return {
     requestId: asString(requireKey(value, "request_id")),
     deadlineMs: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "deadline_ms")),
@@ -400,6 +559,7 @@ export function toServiceErrorCborValue(v: ServiceError): CborValue {
 }
 
 export function fromServiceErrorCborValue(value: CborValue): ServiceError {
+  asMap(value);
   return {
     code: asNumber(requireKey(value, "code")),
     message: asString(requireKey(value, "message")),
@@ -421,6 +581,7 @@ export function toOkCborValue(v: Ok): CborValue {
 }
 
 export function fromOkCborValue(value: CborValue): Ok {
+  asMap(value);
   return {
     ok: asBool(requireKey(value, "ok")),
   };
@@ -441,6 +602,7 @@ export function toEmptyCborValue(v: Empty): CborValue {
 }
 
 export function fromEmptyCborValue(value: CborValue): Empty {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
   };
@@ -464,6 +626,7 @@ export function toIdentityCborValue(v: Identity): CborValue {
 }
 
 export function fromIdentityCborValue(value: CborValue): Identity {
+  asMap(value);
   return {
     userId: asString(requireKey(value, "user_id")),
     domain: asString(requireKey(value, "domain")),
@@ -489,6 +652,7 @@ export function toRepoRefCborValue(v: RepoRef): CborValue {
 }
 
 export function fromRepoRefCborValue(value: CborValue): RepoRef {
+  asMap(value);
   return {
     instance: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "instance")),
     org: asString(requireKey(value, "org")),
@@ -511,6 +675,7 @@ export function toOrgRefCborValue(v: OrgRef): CborValue {
 }
 
 export function fromOrgRefCborValue(value: CborValue): OrgRef {
+  asMap(value);
   return {
     org: asString(requireKey(value, "org")),
   };
@@ -532,6 +697,7 @@ export function toOrgRepoRefCborValue(v: OrgRepoRef): CborValue {
 }
 
 export function fromOrgRepoRefCborValue(value: CborValue): OrgRepoRef {
+  asMap(value);
   return {
     org: asString(requireKey(value, "org")),
     repo: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "repo")),
@@ -554,6 +720,7 @@ export function toPageCborValue(v: Page): CborValue {
 }
 
 export function fromPageCborValue(value: CborValue): Page {
+  asMap(value);
   return {
     cursor: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "cursor")),
     limit: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "limit")),
@@ -581,6 +748,7 @@ export function toServerInfoCborValue(v: ServerInfo): CborValue {
 }
 
 export function fromServerInfoCborValue(value: CborValue): ServerInfo {
+  asMap(value);
   return {
     version: asString(requireKey(value, "version")),
     contractVersion: asString(requireKey(value, "contract_version")),
@@ -611,6 +779,7 @@ export function toBeginLoginRequestCborValue(v: BeginLoginRequest): CborValue {
 }
 
 export function fromBeginLoginRequestCborValue(value: CborValue): BeginLoginRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     identityInput: asString(requireKey(value, "identity_input")),
@@ -637,6 +806,7 @@ export function toBeginLoginResponseCborValue(v: BeginLoginResponse): CborValue 
 }
 
 export function fromBeginLoginResponseCborValue(value: CborValue): BeginLoginResponse {
+  asMap(value);
   return {
     redirectUrl: asString(requireKey(value, "redirect_url")),
     attemptToken: asString(requireKey(value, "attempt_token")),
@@ -661,6 +831,7 @@ export function toCompleteLoginRequestCborValue(v: CompleteLoginRequest): CborVa
 }
 
 export function fromCompleteLoginRequestCborValue(value: CborValue): CompleteLoginRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     attemptToken: asString(requireKey(value, "attempt_token")),
@@ -686,6 +857,7 @@ export function toSessionCborValue(v: Session): CborValue {
 }
 
 export function fromSessionCborValue(value: CborValue): Session {
+  asMap(value);
   return {
     sessionToken: asString(requireKey(value, "session_token")),
     identity: fromIdentityCborValue(requireKey(value, "identity")),
@@ -713,6 +885,7 @@ export function toCreateTokenRequestCborValue(v: CreateTokenRequest): CborValue 
 }
 
 export function fromCreateTokenRequestCborValue(value: CborValue): CreateTokenRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     name: asString(requireKey(value, "name")),
@@ -743,6 +916,7 @@ export function toApiTokenCborValue(v: ApiToken): CborValue {
 }
 
 export function fromApiTokenCborValue(value: CborValue): ApiToken {
+  asMap(value);
   return {
     id: asString(requireKey(value, "id")),
     name: asString(requireKey(value, "name")),
@@ -770,6 +944,7 @@ export function toRevokeTokenRequestCborValue(v: RevokeTokenRequest): CborValue 
 }
 
 export function fromRevokeTokenRequestCborValue(value: CborValue): RevokeTokenRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     tokenId: asString(requireKey(value, "token_id")),
@@ -791,6 +966,7 @@ export function toListTokensResponseCborValue(v: ListTokensResponse): CborValue 
 }
 
 export function fromListTokensResponseCborValue(value: CborValue): ListTokensResponse {
+  asMap(value);
   return {
     tokens: asArray(requireKey(value, "tokens")).map((csilE) => fromApiTokenCborValue(csilE)),
   };
@@ -811,6 +987,7 @@ export function toPreferencesCborValue(v: Preferences): CborValue {
 }
 
 export function fromPreferencesCborValue(value: CborValue): Preferences {
+  asMap(value);
   return {
     diffLayout: asString(requireKey(value, "diff_layout")),
   };
@@ -832,6 +1009,7 @@ export function toSetPreferencesRequestCborValue(v: SetPreferencesRequest): Cbor
 }
 
 export function fromSetPreferencesRequestCborValue(value: CborValue): SetPreferencesRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     diffLayout: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "diff_layout")),
@@ -858,6 +1036,7 @@ export function toWhoAmICborValue(v: WhoAmI): CborValue {
 }
 
 export function fromWhoAmICborValue(value: CborValue): WhoAmI {
+  asMap(value);
   return {
     identity: fromIdentityCborValue(requireKey(value, "identity")),
     scopes: asArray(requireKey(value, "scopes")).map((csilE) => asString(csilE)),
@@ -885,6 +1064,7 @@ export function toBeginDeviceRequestCborValue(v: BeginDeviceRequest): CborValue 
 }
 
 export function fromBeginDeviceRequestCborValue(value: CborValue): BeginDeviceRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     clientLabel: asString(requireKey(value, "client_label")),
@@ -911,6 +1091,7 @@ export function toDeviceCodeCborValue(v: DeviceCode): CborValue {
 }
 
 export function fromDeviceCodeCborValue(value: CborValue): DeviceCode {
+  asMap(value);
   return {
     deviceCode: asString(requireKey(value, "device_code")),
     userCode: asString(requireKey(value, "user_code")),
@@ -936,6 +1117,7 @@ export function toDevicePollRequestCborValue(v: DevicePollRequest): CborValue {
 }
 
 export function fromDevicePollRequestCborValue(value: CborValue): DevicePollRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     deviceCode: asString(requireKey(value, "device_code")),
@@ -958,6 +1140,7 @@ export function toDevicePollResponseCborValue(v: DevicePollResponse): CborValue 
 }
 
 export function fromDevicePollResponseCborValue(value: CborValue): DevicePollResponse {
+  asMap(value);
   return {
     pending: asBool(requireKey(value, "pending")),
     token: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromApiTokenCborValue(csilV))(mapGet(value, "token")),
@@ -981,6 +1164,7 @@ export function toDeviceApproveRequestCborValue(v: DeviceApproveRequest): CborVa
 }
 
 export function fromDeviceApproveRequestCborValue(value: CborValue): DeviceApproveRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     userCode: asString(requireKey(value, "user_code")),
@@ -1005,6 +1189,7 @@ export function toActAsExchangeRequestCborValue(v: ActAsExchangeRequest): CborVa
 }
 
 export function fromActAsExchangeRequestCborValue(value: CborValue): ActAsExchangeRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     credentialCbor: asBytes(requireKey(value, "credential_cbor")),
@@ -1031,6 +1216,7 @@ export function toScopedBearerCborValue(v: ScopedBearer): CborValue {
 }
 
 export function fromScopedBearerCborValue(value: CborValue): ScopedBearer {
+  asMap(value);
   return {
     bearer: asString(requireKey(value, "bearer")),
     scopes: asArray(requireKey(value, "scopes")).map((csilE) => asString(csilE)),
@@ -1057,6 +1243,7 @@ export function toScopeSetRequestCborValue(v: ScopeSetRequest): CborValue {
 }
 
 export function fromScopeSetRequestCborValue(value: CborValue): ScopeSetRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     granteeCbor: asBytes(requireKey(value, "grantee_cbor")),
@@ -1081,6 +1268,7 @@ export function toSignedActAsScopeSetCborValue(v: SignedActAsScopeSet): CborValu
 }
 
 export function fromSignedActAsScopeSetCborValue(value: CborValue): SignedActAsScopeSet {
+  asMap(value);
   return {
     scopeSetCbor: asBytes(requireKey(value, "scope_set_cbor")),
     scopes: asArray(requireKey(value, "scopes")).map((csilE) => asString(csilE)),
@@ -1110,6 +1298,7 @@ export function toSshKeyInfoCborValue(v: SshKeyInfo): CborValue {
 }
 
 export function fromSshKeyInfoCborValue(value: CborValue): SshKeyInfo {
+  asMap(value);
   return {
     keyId: asString(requireKey(value, "key_id")),
     publicKey: asString(requireKey(value, "public_key")),
@@ -1142,6 +1331,7 @@ export function toRegisterKeyRequestCborValue(v: RegisterKeyRequest): CborValue 
 }
 
 export function fromRegisterKeyRequestCborValue(value: CborValue): RegisterKeyRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     publicKey: asString(requireKey(value, "public_key")),
@@ -1168,6 +1358,7 @@ export function toKeyRefCborValue(v: KeyRef): CborValue {
 }
 
 export function fromKeyRefCborValue(value: CborValue): KeyRef {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     keyId: asString(requireKey(value, "key_id")),
@@ -1189,6 +1380,7 @@ export function toListKeysResponseCborValue(v: ListKeysResponse): CborValue {
 }
 
 export function fromListKeysResponseCborValue(value: CborValue): ListKeysResponse {
+  asMap(value);
   return {
     keys: asArray(requireKey(value, "keys")).map((csilE) => fromSshKeyInfoCborValue(csilE)),
   };
@@ -1217,6 +1409,7 @@ export function toGithubLinkCborValue(v: GithubLink): CborValue {
 }
 
 export function fromGithubLinkCborValue(value: CborValue): GithubLink {
+  asMap(value);
   return {
     linked: asBool(requireKey(value, "linked")),
     kind: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "kind")),
@@ -1246,6 +1439,7 @@ export function toSetGithubTokenRequestCborValue(v: SetGithubTokenRequest): Cbor
 }
 
 export function fromSetGithubTokenRequestCborValue(value: CborValue): SetGithubTokenRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     token: asString(requireKey(value, "token")),
@@ -1271,6 +1465,7 @@ export function toLocalLoginRequestCborValue(v: LocalLoginRequest): CborValue {
 }
 
 export function fromLocalLoginRequestCborValue(value: CborValue): LocalLoginRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     username: asString(requireKey(value, "username")),
@@ -1298,6 +1493,7 @@ export function toCreateLocalAccountRequestCborValue(v: CreateLocalAccountReques
 }
 
 export function fromCreateLocalAccountRequestCborValue(value: CborValue): CreateLocalAccountRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     username: asString(requireKey(value, "username")),
@@ -1323,6 +1519,7 @@ export function toResetLocalPasswordRequestCborValue(v: ResetLocalPasswordReques
 }
 
 export function fromResetLocalPasswordRequestCborValue(value: CborValue): ResetLocalPasswordRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     identity: asString(requireKey(value, "identity")),
@@ -1347,6 +1544,7 @@ export function toChangeLocalPasswordRequestCborValue(v: ChangeLocalPasswordRequ
 }
 
 export function fromChangeLocalPasswordRequestCborValue(value: CborValue): ChangeLocalPasswordRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     currentPassword: asString(requireKey(value, "current_password")),
@@ -1371,6 +1569,7 @@ export function toLocalAccountCborValue(v: LocalAccount): CborValue {
 }
 
 export function fromLocalAccountCborValue(value: CborValue): LocalAccount {
+  asMap(value);
   return {
     identity: fromIdentityCborValue(requireKey(value, "identity")),
     username: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "username")),
@@ -1397,6 +1596,7 @@ export function toOrgCborValue(v: Org): CborValue {
 }
 
 export function fromOrgCborValue(value: CborValue): Org {
+  asMap(value);
   return {
     name: asString(requireKey(value, "name")),
     displayName: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "display_name")),
@@ -1424,6 +1624,7 @@ export function toCreateOrgRequestCborValue(v: CreateOrgRequest): CborValue {
 }
 
 export function fromCreateOrgRequestCborValue(value: CborValue): CreateOrgRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     name: asString(requireKey(value, "name")),
@@ -1448,6 +1649,7 @@ export function toGetOrgRequestCborValue(v: GetOrgRequest): CborValue {
 }
 
 export function fromGetOrgRequestCborValue(value: CborValue): GetOrgRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     org: asString(requireKey(value, "org")),
@@ -1470,6 +1672,7 @@ export function toListOrgsRequestCborValue(v: ListOrgsRequest): CborValue {
 }
 
 export function fromListOrgsRequestCborValue(value: CborValue): ListOrgsRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     page: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromPageCborValue(csilV))(mapGet(value, "page")),
@@ -1492,6 +1695,7 @@ export function toOrgPageCborValue(v: OrgPage): CborValue {
 }
 
 export function fromOrgPageCborValue(value: CborValue): OrgPage {
+  asMap(value);
   return {
     orgs: asArray(requireKey(value, "orgs")).map((csilE) => fromOrgCborValue(csilE)),
     nextCursor: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "next_cursor")),
@@ -1516,6 +1720,7 @@ export function toUpdateOrgRequestCborValue(v: UpdateOrgRequest): CborValue {
 }
 
 export function fromUpdateOrgRequestCborValue(value: CborValue): UpdateOrgRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     org: asString(requireKey(value, "org")),
@@ -1540,6 +1745,7 @@ export function toOrgMemberCborValue(v: OrgMember): CborValue {
 }
 
 export function fromOrgMemberCborValue(value: CborValue): OrgMember {
+  asMap(value);
   return {
     identity: fromIdentityCborValue(requireKey(value, "identity")),
     role: asString(requireKey(value, "role")),
@@ -1564,6 +1770,7 @@ export function toSetOrgMemberRequestCborValue(v: SetOrgMemberRequest): CborValu
 }
 
 export function fromSetOrgMemberRequestCborValue(value: CborValue): SetOrgMemberRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     org: asString(requireKey(value, "org")),
@@ -1589,6 +1796,7 @@ export function toRemoveOrgMemberRequestCborValue(v: RemoveOrgMemberRequest): Cb
 }
 
 export function fromRemoveOrgMemberRequestCborValue(value: CborValue): RemoveOrgMemberRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     org: asString(requireKey(value, "org")),
@@ -1613,6 +1821,7 @@ export function toListOrgMembersRequestCborValue(v: ListOrgMembersRequest): Cbor
 }
 
 export function fromListOrgMembersRequestCborValue(value: CborValue): ListOrgMembersRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     org: asString(requireKey(value, "org")),
@@ -1636,6 +1845,7 @@ export function toOrgMemberPageCborValue(v: OrgMemberPage): CborValue {
 }
 
 export function fromOrgMemberPageCborValue(value: CborValue): OrgMemberPage {
+  asMap(value);
   return {
     members: asArray(requireKey(value, "members")).map((csilE) => fromOrgMemberCborValue(csilE)),
     nextCursor: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "next_cursor")),
@@ -1659,6 +1869,7 @@ export function toTeamCborValue(v: Team): CborValue {
 }
 
 export function fromTeamCborValue(value: CborValue): Team {
+  asMap(value);
   return {
     org: asString(requireKey(value, "org")),
     name: asString(requireKey(value, "name")),
@@ -1683,6 +1894,7 @@ export function toCreateTeamRequestCborValue(v: CreateTeamRequest): CborValue {
 }
 
 export function fromCreateTeamRequestCborValue(value: CborValue): CreateTeamRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     org: asString(requireKey(value, "org")),
@@ -1707,6 +1919,7 @@ export function toTeamRefCborValue(v: TeamRef): CborValue {
 }
 
 export function fromTeamRefCborValue(value: CborValue): TeamRef {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     org: asString(requireKey(value, "org")),
@@ -1733,6 +1946,7 @@ export function toSetTeamMemberRequestCborValue(v: SetTeamMemberRequest): CborVa
 }
 
 export function fromSetTeamMemberRequestCborValue(value: CborValue): SetTeamMemberRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     org: asString(requireKey(value, "org")),
@@ -1757,6 +1971,7 @@ export function toListTeamsResponseCborValue(v: ListTeamsResponse): CborValue {
 }
 
 export function fromListTeamsResponseCborValue(value: CborValue): ListTeamsResponse {
+  asMap(value);
   return {
     teams: asArray(requireKey(value, "teams")).map((csilE) => fromTeamCborValue(csilE)),
   };
@@ -1790,6 +2005,7 @@ export function toRepoCborValue(v: Repo): CborValue {
 }
 
 export function fromRepoCborValue(value: CborValue): Repo {
+  asMap(value);
   return {
     org: asString(requireKey(value, "org")),
     name: asString(requireKey(value, "name")),
@@ -1829,6 +2045,7 @@ export function toCreateRepoRequestCborValue(v: CreateRepoRequest): CborValue {
 }
 
 export function fromCreateRepoRequestCborValue(value: CborValue): CreateRepoRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     org: asString(requireKey(value, "org")),
@@ -1856,6 +2073,7 @@ export function toGetRepoRequestCborValue(v: GetRepoRequest): CborValue {
 }
 
 export function fromGetRepoRequestCborValue(value: CborValue): GetRepoRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -1879,6 +2097,7 @@ export function toListReposRequestCborValue(v: ListReposRequest): CborValue {
 }
 
 export function fromListReposRequestCborValue(value: CborValue): ListReposRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     org: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "org")),
@@ -1902,6 +2121,7 @@ export function toRepoPageCborValue(v: RepoPage): CborValue {
 }
 
 export function fromRepoPageCborValue(value: CborValue): RepoPage {
+  asMap(value);
   return {
     repos: asArray(requireKey(value, "repos")).map((csilE) => fromRepoCborValue(csilE)),
     nextCursor: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "next_cursor")),
@@ -1929,6 +2149,7 @@ export function toUpdateRepoRequestCborValue(v: UpdateRepoRequest): CborValue {
 }
 
 export function fromUpdateRepoRequestCborValue(value: CborValue): UpdateRepoRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -1957,6 +2178,7 @@ export function toDeleteRepoRequestCborValue(v: DeleteRepoRequest): CborValue {
 }
 
 export function fromDeleteRepoRequestCborValue(value: CborValue): DeleteRepoRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -1982,6 +2204,7 @@ export function toForkRequestCborValue(v: ForkRequest): CborValue {
 }
 
 export function fromForkRequestCborValue(value: CborValue): ForkRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     source: fromRepoRefCborValue(requireKey(value, "source")),
@@ -2007,6 +2230,7 @@ export function toRefInfoCborValue(v: RefInfo): CborValue {
 }
 
 export function fromRefInfoCborValue(value: CborValue): RefInfo {
+  asMap(value);
   return {
     name: asString(requireKey(value, "name")),
     target: asString(requireKey(value, "target")),
@@ -2031,6 +2255,7 @@ export function toListRefsRequestCborValue(v: ListRefsRequest): CborValue {
 }
 
 export function fromListRefsRequestCborValue(value: CborValue): ListRefsRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -2057,6 +2282,7 @@ export function toCaptureReportCborValue(v: CaptureReport): CborValue {
 }
 
 export function fromCaptureReportCborValue(value: CborValue): CaptureReport {
+  asMap(value);
   return {
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
     uploaded: asBool(requireKey(value, "uploaded")),
@@ -2082,6 +2308,7 @@ export function toListRefsResponseCborValue(v: ListRefsResponse): CborValue {
 }
 
 export function fromListRefsResponseCborValue(value: CborValue): ListRefsResponse {
+  asMap(value);
   return {
     refs: asArray(requireKey(value, "refs")).map((csilE) => fromRefInfoCborValue(csilE)),
     refsVersion: asNumber(requireKey(value, "refs_version")),
@@ -2107,6 +2334,7 @@ export function toUpdateRefRequestCborValue(v: UpdateRefRequest): CborValue {
 }
 
 export function fromUpdateRefRequestCborValue(value: CborValue): UpdateRefRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -2133,6 +2361,7 @@ export function toSignatureCborValue(v: Signature): CborValue {
 }
 
 export function fromSignatureCborValue(value: CborValue): Signature {
+  asMap(value);
   return {
     status: asString(requireKey(value, "status")),
     signer: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromIdentityCborValue(csilV))(mapGet(value, "signer")),
@@ -2165,6 +2394,7 @@ export function toCommitCborValue(v: Commit): CborValue {
 }
 
 export function fromCommitCborValue(value: CborValue): Commit {
+  asMap(value);
   return {
     id: asString(requireKey(value, "id")),
     parents: asArray(requireKey(value, "parents")).map((csilE) => asString(csilE)),
@@ -2199,6 +2429,7 @@ export function toLogRequestCborValue(v: LogRequest): CborValue {
 }
 
 export function fromLogRequestCborValue(value: CborValue): LogRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -2224,6 +2455,7 @@ export function toCommitPageCborValue(v: CommitPage): CborValue {
 }
 
 export function fromCommitPageCborValue(value: CborValue): CommitPage {
+  asMap(value);
   return {
     commits: asArray(requireKey(value, "commits")).map((csilE) => fromCommitCborValue(csilE)),
     nextCursor: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "next_cursor")),
@@ -2247,6 +2479,7 @@ export function toGetCommitRequestCborValue(v: GetCommitRequest): CborValue {
 }
 
 export function fromGetCommitRequestCborValue(value: CborValue): GetCommitRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -2273,6 +2506,7 @@ export function toTreeEntryCborValue(v: TreeEntry): CborValue {
 }
 
 export function fromTreeEntryCborValue(value: CborValue): TreeEntry {
+  asMap(value);
   return {
     name: asString(requireKey(value, "name")),
     kind: asString(requireKey(value, "kind")),
@@ -2300,6 +2534,7 @@ export function toTreeRequestCborValue(v: TreeRequest): CborValue {
 }
 
 export function fromTreeRequestCborValue(value: CborValue): TreeRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -2324,6 +2559,7 @@ export function toTreeResponseCborValue(v: TreeResponse): CborValue {
 }
 
 export function fromTreeResponseCborValue(value: CborValue): TreeResponse {
+  asMap(value);
   return {
     entries: asArray(requireKey(value, "entries")).map((csilE) => fromTreeEntryCborValue(csilE)),
     revId: asString(requireKey(value, "rev_id")),
@@ -2350,6 +2586,7 @@ export function toBlobRequestCborValue(v: BlobRequest): CborValue {
 }
 
 export function fromBlobRequestCborValue(value: CborValue): BlobRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -2380,6 +2617,7 @@ export function toBlobResponseCborValue(v: BlobResponse): CborValue {
 }
 
 export function fromBlobResponseCborValue(value: CborValue): BlobResponse {
+  asMap(value);
   return {
     id: asString(requireKey(value, "id")),
     size: asNumber(requireKey(value, "size")),
@@ -2410,6 +2648,7 @@ export function toDiffRequestCborValue(v: DiffRequest): CborValue {
 }
 
 export function fromDiffRequestCborValue(value: CborValue): DiffRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -2440,6 +2679,7 @@ export function toFileDiffCborValue(v: FileDiff): CborValue {
 }
 
 export function fromFileDiffCborValue(value: CborValue): FileDiff {
+  asMap(value);
   return {
     status: asString(requireKey(value, "status")),
     oldPath: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "old_path")),
@@ -2466,6 +2706,7 @@ export function toDiffResponseCborValue(v: DiffResponse): CborValue {
 }
 
 export function fromDiffResponseCborValue(value: CborValue): DiffResponse {
+  asMap(value);
   return {
     files: asArray(requireKey(value, "files")).map((csilE) => fromFileDiffCborValue(csilE)),
     nextCursor: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "next_cursor")),
@@ -2489,6 +2730,7 @@ export function toGrantCborValue(v: Grant): CborValue {
 }
 
 export function fromGrantCborValue(value: CborValue): Grant {
+  asMap(value);
   return {
     granteeKind: asString(requireKey(value, "grantee_kind")),
     grantee: asString(requireKey(value, "grantee")),
@@ -2513,6 +2755,7 @@ export function toSetGrantRequestCborValue(v: SetGrantRequest): CborValue {
 }
 
 export function fromSetGrantRequestCborValue(value: CborValue): SetGrantRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -2538,6 +2781,7 @@ export function toRemoveGrantRequestCborValue(v: RemoveGrantRequest): CborValue 
 }
 
 export function fromRemoveGrantRequestCborValue(value: CborValue): RemoveGrantRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -2561,6 +2805,7 @@ export function toListGrantsResponseCborValue(v: ListGrantsResponse): CborValue 
 }
 
 export function fromListGrantsResponseCborValue(value: CborValue): ListGrantsResponse {
+  asMap(value);
   return {
     grants: asArray(requireKey(value, "grants")).map((csilE) => fromGrantCborValue(csilE)),
   };
@@ -2597,6 +2842,7 @@ export function toBranchProtectionCborValue(v: BranchProtection): CborValue {
 }
 
 export function fromBranchProtectionCborValue(value: CborValue): BranchProtection {
+  asMap(value);
   return {
     refPattern: asString(requireKey(value, "ref_pattern")),
     requiredApprovals: asNumber(requireKey(value, "required_approvals")),
@@ -2635,6 +2881,7 @@ export function toSetProtectionRequestCborValue(v: SetProtectionRequest): CborVa
 }
 
 export function fromSetProtectionRequestCborValue(value: CborValue): SetProtectionRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -2659,6 +2906,7 @@ export function toRemoveProtectionRequestCborValue(v: RemoveProtectionRequest): 
 }
 
 export function fromRemoveProtectionRequestCborValue(value: CborValue): RemoveProtectionRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -2681,6 +2929,7 @@ export function toListProtectionsResponseCborValue(v: ListProtectionsResponse): 
 }
 
 export function fromListProtectionsResponseCborValue(value: CborValue): ListProtectionsResponse {
+  asMap(value);
   return {
     protections: asArray(requireKey(value, "protections")).map((csilE) => fromBranchProtectionCborValue(csilE)),
   };
@@ -2702,6 +2951,7 @@ export function toPrHeadCborValue(v: PrHead): CborValue {
 }
 
 export function fromPrHeadCborValue(value: CborValue): PrHead {
+  asMap(value);
   return {
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
     ref: asString(requireKey(value, "ref")),
@@ -2742,6 +2992,7 @@ export function toPullRequestCborValue(v: PullRequest): CborValue {
 }
 
 export function fromPullRequestCborValue(value: CborValue): PullRequest {
+  asMap(value);
   return {
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
     number: asNumber(requireKey(value, "number")),
@@ -2783,6 +3034,7 @@ export function toPrRefCborValue(v: PrRef): CborValue {
 }
 
 export function fromPrRefCborValue(value: CborValue): PrRef {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -2810,6 +3062,7 @@ export function toOpenPrRequestCborValue(v: OpenPrRequest): CborValue {
 }
 
 export function fromOpenPrRequestCborValue(value: CborValue): OpenPrRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -2838,6 +3091,7 @@ export function toListPrRequestCborValue(v: ListPrRequest): CborValue {
 }
 
 export function fromListPrRequestCborValue(value: CborValue): ListPrRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -2862,6 +3116,7 @@ export function toPrPageCborValue(v: PrPage): CborValue {
 }
 
 export function fromPrPageCborValue(value: CborValue): PrPage {
+  asMap(value);
   return {
     pullRequests: asArray(requireKey(value, "pull_requests")).map((csilE) => fromPullRequestCborValue(csilE)),
     nextCursor: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "next_cursor")),
@@ -2892,6 +3147,7 @@ export function toReviewCborValue(v: Review): CborValue {
 }
 
 export function fromReviewCborValue(value: CborValue): Review {
+  asMap(value);
   return {
     id: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "id")),
     invalidated: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "invalidated")),
@@ -2928,6 +3184,7 @@ export function toReviewRequestCborValue(v: ReviewRequest): CborValue {
 }
 
 export function fromReviewRequestCborValue(value: CborValue): ReviewRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -2963,6 +3220,7 @@ export function toCommentCborValue(v: Comment): CborValue {
 }
 
 export function fromCommentCborValue(value: CborValue): Comment {
+  asMap(value);
   return {
     id: asString(requireKey(value, "id")),
     number: asNumber(requireKey(value, "number")),
@@ -2997,6 +3255,7 @@ export function toCommentRequestCborValue(v: CommentRequest): CborValue {
 }
 
 export function fromCommentRequestCborValue(value: CborValue): CommentRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -3023,6 +3282,7 @@ export function toListCommentsResponseCborValue(v: ListCommentsResponse): CborVa
 }
 
 export function fromListCommentsResponseCborValue(value: CborValue): ListCommentsResponse {
+  asMap(value);
   return {
     comments: asArray(requireKey(value, "comments")).map((csilE) => fromCommentCborValue(csilE)),
   };
@@ -3043,6 +3303,7 @@ export function toListReviewsResponseCborValue(v: ListReviewsResponse): CborValu
 }
 
 export function fromListReviewsResponseCborValue(value: CborValue): ListReviewsResponse {
+  asMap(value);
   return {
     reviews: asArray(requireKey(value, "reviews")).map((csilE) => fromReviewCborValue(csilE)),
   };
@@ -3068,6 +3329,7 @@ export function toMergeRequestCborValue(v: MergeRequest): CborValue {
 }
 
 export function fromMergeRequestCborValue(value: CborValue): MergeRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -3094,6 +3356,7 @@ export function toMergeResultCborValue(v: MergeResult): CborValue {
 }
 
 export function fromMergeResultCborValue(value: CborValue): MergeResult {
+  asMap(value);
   return {
     pullRequest: fromPullRequestCborValue(requireKey(value, "pull_request")),
     mergedCommit: asString(requireKey(value, "merged_commit")),
@@ -3118,6 +3381,7 @@ export function toRetargetRequestCborValue(v: RetargetRequest): CborValue {
 }
 
 export function fromRetargetRequestCborValue(value: CborValue): RetargetRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -3145,6 +3409,7 @@ export function toUpdatePrRequestCborValue(v: UpdatePrRequest): CborValue {
 }
 
 export function fromUpdatePrRequestCborValue(value: CborValue): UpdatePrRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -3176,6 +3441,7 @@ export function toCommitStatusCborValue(v: CommitStatus): CborValue {
 }
 
 export function fromCommitStatusCborValue(value: CborValue): CommitStatus {
+  asMap(value);
   return {
     baseSha: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "base_sha")),
     sha: asString(requireKey(value, "sha")),
@@ -3210,6 +3476,7 @@ export function toSetStatusRequestCborValue(v: SetStatusRequest): CborValue {
 }
 
 export function fromSetStatusRequestCborValue(value: CborValue): SetStatusRequest {
+  asMap(value);
   return {
     baseSha: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "base_sha")),
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
@@ -3239,6 +3506,7 @@ export function toListStatusRequestCborValue(v: ListStatusRequest): CborValue {
 }
 
 export function fromListStatusRequestCborValue(value: CborValue): ListStatusRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -3261,6 +3529,7 @@ export function toListStatusResponseCborValue(v: ListStatusResponse): CborValue 
 }
 
 export function fromListStatusResponseCborValue(value: CborValue): ListStatusResponse {
+  asMap(value);
   return {
     statuses: asArray(requireKey(value, "statuses")).map((csilE) => fromCommitStatusCborValue(csilE)),
   };
@@ -3291,6 +3560,7 @@ export function toEndpointCborValue(v: Endpoint): CborValue {
 }
 
 export function fromEndpointCborValue(value: CborValue): Endpoint {
+  asMap(value);
   return {
     id: asString(requireKey(value, "id")),
     org: asString(requireKey(value, "org")),
@@ -3330,6 +3600,7 @@ export function toCreateEndpointRequestCborValue(v: CreateEndpointRequest): Cbor
 }
 
 export function fromCreateEndpointRequestCborValue(value: CborValue): CreateEndpointRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     org: asString(requireKey(value, "org")),
@@ -3360,6 +3631,7 @@ export function toListEndpointsRequestCborValue(v: ListEndpointsRequest): CborVa
 }
 
 export function fromListEndpointsRequestCborValue(value: CborValue): ListEndpointsRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     target: fromOrgRepoRefCborValue(requireKey(value, "target")),
@@ -3381,6 +3653,7 @@ export function toListEndpointsResponseCborValue(v: ListEndpointsResponse): Cbor
 }
 
 export function fromListEndpointsResponseCborValue(value: CborValue): ListEndpointsResponse {
+  asMap(value);
   return {
     endpoints: asArray(requireKey(value, "endpoints")).map((csilE) => fromEndpointCborValue(csilE)),
   };
@@ -3402,6 +3675,7 @@ export function toEndpointRefCborValue(v: EndpointRef): CborValue {
 }
 
 export function fromEndpointRefCborValue(value: CborValue): EndpointRef {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     endpointId: asString(requireKey(value, "endpoint_id")),
@@ -3429,6 +3703,7 @@ export function toUpdateEndpointRequestCborValue(v: UpdateEndpointRequest): Cbor
 }
 
 export function fromUpdateEndpointRequestCborValue(value: CborValue): UpdateEndpointRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     endpointId: asString(requireKey(value, "endpoint_id")),
@@ -3465,6 +3740,7 @@ export function toDeliveryCborValue(v: Delivery): CborValue {
 }
 
 export function fromDeliveryCborValue(value: CborValue): Delivery {
+  asMap(value);
   return {
     id: asString(requireKey(value, "id")),
     endpointId: asString(requireKey(value, "endpoint_id")),
@@ -3498,6 +3774,7 @@ export function toDeliveryQueryCborValue(v: DeliveryQuery): CborValue {
 }
 
 export function fromDeliveryQueryCborValue(value: CborValue): DeliveryQuery {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     endpointId: asString(requireKey(value, "endpoint_id")),
@@ -3522,6 +3799,7 @@ export function toDeliveryPageCborValue(v: DeliveryPage): CborValue {
 }
 
 export function fromDeliveryPageCborValue(value: CborValue): DeliveryPage {
+  asMap(value);
   return {
     deliveries: asArray(requireKey(value, "deliveries")).map((csilE) => fromDeliveryCborValue(csilE)),
     nextCursor: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "next_cursor")),
@@ -3544,6 +3822,7 @@ export function toDeliveryRefCborValue(v: DeliveryRef): CborValue {
 }
 
 export function fromDeliveryRefCborValue(value: CborValue): DeliveryRef {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     deliveryId: asString(requireKey(value, "delivery_id")),
@@ -3584,6 +3863,7 @@ export function toMirrorStatusCborValue(v: MirrorStatus): CborValue {
 }
 
 export function fromMirrorStatusCborValue(value: CborValue): MirrorStatus {
+  asMap(value);
   return {
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
     provider: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "provider")),
@@ -3626,6 +3906,7 @@ export function toSetMirrorScheduleRequestCborValue(v: SetMirrorScheduleRequest)
 }
 
 export function fromSetMirrorScheduleRequestCborValue(value: CborValue): SetMirrorScheduleRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -3652,6 +3933,7 @@ export function toImportAllRequestCborValue(v: ImportAllRequest): CborValue {
 }
 
 export function fromImportAllRequestCborValue(value: CborValue): ImportAllRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     org: asString(requireKey(value, "org")),
@@ -3676,6 +3958,7 @@ export function toImportAllResultCborValue(v: ImportAllResult): CborValue {
 }
 
 export function fromImportAllResultCborValue(value: CborValue): ImportAllResult {
+  asMap(value);
   return {
     queued: asArray(requireKey(value, "queued")).map((csilE) => asString(csilE)),
     skipped: asArray(requireKey(value, "skipped")).map((csilE) => asString(csilE)),
@@ -3703,6 +3986,7 @@ export function toBlockedActionCborValue(v: BlockedAction): CborValue {
 }
 
 export function fromBlockedActionCborValue(value: CborValue): BlockedAction {
+  asMap(value);
   return {
     id: asString(requireKey(value, "id")),
     eventSeq: asNumber(requireKey(value, "event_seq")),
@@ -3729,6 +4013,7 @@ export function toListBlockedResponseCborValue(v: ListBlockedResponse): CborValu
 }
 
 export function fromListBlockedResponseCborValue(value: CborValue): ListBlockedResponse {
+  asMap(value);
   return {
     actions: asArray(requireKey(value, "actions")).map((csilE) => fromBlockedActionCborValue(csilE)),
   };
@@ -3751,6 +4036,7 @@ export function toReplayRequestCborValue(v: ReplayRequest): CborValue {
 }
 
 export function fromReplayRequestCborValue(value: CborValue): ReplayRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -3773,6 +4059,7 @@ export function toReplayResultCborValue(v: ReplayResult): CborValue {
 }
 
 export function fromReplayResultCborValue(value: CborValue): ReplayResult {
+  asMap(value);
   return {
     requeued: asNumber(requireKey(value, "requeued")),
   };
@@ -3801,6 +4088,7 @@ export function toCredentialCborValue(v: Credential): CborValue {
 }
 
 export function fromCredentialCborValue(value: CborValue): Credential {
+  asMap(value);
   return {
     id: asString(requireKey(value, "id")),
     org: asString(requireKey(value, "org")),
@@ -3838,6 +4126,7 @@ export function toSetCredentialRequestCborValue(v: SetCredentialRequest): CborVa
 }
 
 export function fromSetCredentialRequestCborValue(value: CborValue): SetCredentialRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     org: asString(requireKey(value, "org")),
@@ -3868,6 +4157,7 @@ export function toListCredentialsRequestCborValue(v: ListCredentialsRequest): Cb
 }
 
 export function fromListCredentialsRequestCborValue(value: CborValue): ListCredentialsRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     target: fromOrgRepoRefCborValue(requireKey(value, "target")),
@@ -3889,6 +4179,7 @@ export function toListCredentialsResponseCborValue(v: ListCredentialsResponse): 
 }
 
 export function fromListCredentialsResponseCborValue(value: CborValue): ListCredentialsResponse {
+  asMap(value);
   return {
     credentials: asArray(requireKey(value, "credentials")).map((csilE) => fromCredentialCborValue(csilE)),
   };
@@ -3910,6 +4201,7 @@ export function toCredentialRefCborValue(v: CredentialRef): CborValue {
 }
 
 export function fromCredentialRefCborValue(value: CborValue): CredentialRef {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     credentialId: asString(requireKey(value, "credential_id")),
@@ -3937,6 +4229,7 @@ export function toConfigureMirrorRequestCborValue(v: ConfigureMirrorRequest): Cb
 }
 
 export function fromConfigureMirrorRequestCborValue(value: CborValue): ConfigureMirrorRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -3972,6 +4265,7 @@ export function toReconcileReportCborValue(v: ReconcileReport): CborValue {
 }
 
 export function fromReconcileReportCborValue(value: CborValue): ReconcileReport {
+  asMap(value);
   return {
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
     startedAt: asNumber(requireKey(value, "started_at")),
@@ -4008,6 +4302,7 @@ export function toImportRequestCborValue(v: ImportRequest): CborValue {
 }
 
 export function fromImportRequestCborValue(value: CborValue): ImportRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     org: asString(requireKey(value, "org")),
@@ -4037,6 +4332,7 @@ export function toListGithubReposRequestCborValue(v: ListGithubReposRequest): Cb
 }
 
 export function fromListGithubReposRequestCborValue(value: CborValue): ListGithubReposRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     org: asString(requireKey(value, "org")),
@@ -4068,6 +4364,7 @@ export function toGithubRepoInfoCborValue(v: GithubRepoInfo): CborValue {
 }
 
 export function fromGithubRepoInfoCborValue(value: CborValue): GithubRepoInfo {
+  asMap(value);
   return {
     fullName: asString(requireKey(value, "full_name")),
     description: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "description")),
@@ -4103,6 +4400,7 @@ export function toGithubInstallationCborValue(v: GithubInstallation): CborValue 
 }
 
 export function fromGithubInstallationCborValue(value: CborValue): GithubInstallation {
+  asMap(value);
   return {
     appId: asString(requireKey(value, "app_id")),
     appSlug: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "app_slug")),
@@ -4130,6 +4428,7 @@ export function toGithubInstallationListCborValue(v: GithubInstallationList): Cb
 }
 
 export function fromGithubInstallationListCborValue(value: CborValue): GithubInstallationList {
+  asMap(value);
   return {
     installations: asArray(requireKey(value, "installations")).map((csilE) => fromGithubInstallationCborValue(csilE)),
     errors: asArray(requireKey(value, "errors")).map((csilE) => asString(csilE)),
@@ -4154,6 +4453,7 @@ export function toGithubRepoPageCborValue(v: GithubRepoPage): CborValue {
 }
 
 export function fromGithubRepoPageCborValue(value: CborValue): GithubRepoPage {
+  asMap(value);
   return {
     repos: asArray(requireKey(value, "repos")).map((csilE) => fromGithubRepoInfoCborValue(csilE)),
     nextCursor: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "next_cursor")),
@@ -4184,6 +4484,7 @@ export function toLaneHealthCborValue(v: LaneHealth): CborValue {
 }
 
 export function fromLaneHealthCborValue(value: CborValue): LaneHealth {
+  asMap(value);
   return {
     lane: asString(requireKey(value, "lane")),
     state: asString(requireKey(value, "state")),
@@ -4215,6 +4516,7 @@ export function toRateLimitInfoCborValue(v: RateLimitInfo): CborValue {
 }
 
 export function fromRateLimitInfoCborValue(value: CborValue): RateLimitInfo {
+  asMap(value);
   return {
     token: asString(requireKey(value, "token")),
     remaining: asNumber(requireKey(value, "remaining")),
@@ -4243,6 +4545,7 @@ export function toGithubHealthCborValue(v: GithubHealth): CborValue {
 }
 
 export function fromGithubHealthCborValue(value: CborValue): GithubHealth {
+  asMap(value);
   return {
     lanes: asArray(requireKey(value, "lanes")).map((csilE) => fromLaneHealthCborValue(csilE)),
     rateLimits: asArray(requireKey(value, "rate_limits")).map((csilE) => fromRateLimitInfoCborValue(csilE)),
@@ -4281,6 +4584,7 @@ export function toSyncConnectionCborValue(v: SyncConnection): CborValue {
 }
 
 export function fromSyncConnectionCborValue(value: CborValue): SyncConnection {
+  asMap(value);
   return {
     id: asString(requireKey(value, "id")),
     provider: asString(requireKey(value, "provider")),
@@ -4315,6 +4619,7 @@ export function toSyncConnectionsCborValue(v: SyncConnections): CborValue {
 }
 
 export function fromSyncConnectionsCborValue(value: CborValue): SyncConnections {
+  asMap(value);
   return {
     connections: asArray(requireKey(value, "connections")).map((csilE) => fromSyncConnectionCborValue(csilE)),
   };
@@ -4343,6 +4648,7 @@ export function toConnectRemoteRequestCborValue(v: ConnectRemoteRequest): CborVa
 }
 
 export function fromConnectRemoteRequestCborValue(value: CborValue): ConnectRemoteRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -4373,6 +4679,7 @@ export function toSyncConnectionRefCborValue(v: SyncConnectionRef): CborValue {
 }
 
 export function fromSyncConnectionRefCborValue(value: CborValue): SyncConnectionRef {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -4401,6 +4708,7 @@ export function toUpdateConnectionRequestCborValue(v: UpdateConnectionRequest): 
 }
 
 export function fromUpdateConnectionRequestCborValue(value: CborValue): UpdateConnectionRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -4428,6 +4736,7 @@ export function toSyncWebhookSecretCborValue(v: SyncWebhookSecret): CborValue {
 }
 
 export function fromSyncWebhookSecretCborValue(value: CborValue): SyncWebhookSecret {
+  asMap(value);
   return {
     url: asString(requireKey(value, "url")),
     secret: asString(requireKey(value, "secret")),
@@ -4451,6 +4760,7 @@ export function toSyncPolicyCborValue(v: SyncPolicy): CborValue {
 }
 
 export function fromSyncPolicyCborValue(value: CborValue): SyncPolicy {
+  asMap(value);
   return {
     preferredSource: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "preferred_source")),
     resolverIdentity: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "resolver_identity")),
@@ -4475,6 +4785,7 @@ export function toSetSyncPolicyRequestCborValue(v: SetSyncPolicyRequest): CborVa
 }
 
 export function fromSetSyncPolicyRequestCborValue(value: CborValue): SetSyncPolicyRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -4502,6 +4813,7 @@ export function toSyncConflictCborValue(v: SyncConflict): CborValue {
 }
 
 export function fromSyncConflictCborValue(value: CborValue): SyncConflict {
+  asMap(value);
   return {
     id: asString(requireKey(value, "id")),
     connectionId: asString(requireKey(value, "connection_id")),
@@ -4527,6 +4839,7 @@ export function toSyncConflictsCborValue(v: SyncConflicts): CborValue {
 }
 
 export function fromSyncConflictsCborValue(value: CborValue): SyncConflicts {
+  asMap(value);
   return {
     conflicts: asArray(requireKey(value, "conflicts")).map((csilE) => fromSyncConflictCborValue(csilE)),
   };
@@ -4550,6 +4863,7 @@ export function toResolveSyncConflictRequestCborValue(v: ResolveSyncConflictRequ
 }
 
 export function fromResolveSyncConflictRequestCborValue(value: CborValue): ResolveSyncConflictRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -4576,6 +4890,7 @@ export function toProviderLinkCborValue(v: ProviderLink): CborValue {
 }
 
 export function fromProviderLinkCborValue(value: CborValue): ProviderLink {
+  asMap(value);
   return {
     provider: asString(requireKey(value, "provider")),
     host: asString(requireKey(value, "host")),
@@ -4599,6 +4914,7 @@ export function toProviderLinksCborValue(v: ProviderLinks): CborValue {
 }
 
 export function fromProviderLinksCborValue(value: CborValue): ProviderLinks {
+  asMap(value);
   return {
     links: asArray(requireKey(value, "links")).map((csilE) => fromProviderLinkCborValue(csilE)),
   };
@@ -4622,6 +4938,7 @@ export function toLinkProviderRequestCborValue(v: LinkProviderRequest): CborValu
 }
 
 export function fromLinkProviderRequestCborValue(value: CborValue): LinkProviderRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     provider: asString(requireKey(value, "provider")),
@@ -4647,6 +4964,7 @@ export function toUnlinkProviderRequestCborValue(v: UnlinkProviderRequest): Cbor
 }
 
 export function fromUnlinkProviderRequestCborValue(value: CborValue): UnlinkProviderRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     provider: asString(requireKey(value, "provider")),
@@ -4672,6 +4990,7 @@ export function toSyncRecordCborValue(v: SyncRecord): CborValue {
 }
 
 export function fromSyncRecordCborValue(value: CborValue): SyncRecord {
+  asMap(value);
   return {
     objectKey: asString(requireKey(value, "object_key")),
     payloadJson: asString(requireKey(value, "payload_json")),
@@ -4696,6 +5015,7 @@ export function toSyncRecordsCborValue(v: SyncRecords): CborValue {
 }
 
 export function fromSyncRecordsCborValue(value: CborValue): SyncRecords {
+  asMap(value);
   return {
     records: asArray(requireKey(value, "records")).map((csilE) => fromSyncRecordCborValue(csilE)),
     nextCursor: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "next_cursor")),
@@ -4719,6 +5039,7 @@ export function toSyncRecordsRequestCborValue(v: SyncRecordsRequest): CborValue 
 }
 
 export function fromSyncRecordsRequestCborValue(value: CborValue): SyncRecordsRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -4745,6 +5066,7 @@ export function toEditCommentRequestCborValue(v: EditCommentRequest): CborValue 
 }
 
 export function fromEditCommentRequestCborValue(value: CborValue): EditCommentRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -4772,6 +5094,7 @@ export function toDeleteCommentRequestCborValue(v: DeleteCommentRequest): CborVa
 }
 
 export function fromDeleteCommentRequestCborValue(value: CborValue): DeleteCommentRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -4801,6 +5124,7 @@ export function toServiceAccountCborValue(v: ServiceAccount): CborValue {
 }
 
 export function fromServiceAccountCborValue(value: CborValue): ServiceAccount {
+  asMap(value);
   return {
     identity: fromIdentityCborValue(requireKey(value, "identity")),
     org: asString(requireKey(value, "org")),
@@ -4830,6 +5154,7 @@ export function toCreateServiceAccountRequestCborValue(v: CreateServiceAccountRe
 }
 
 export function fromCreateServiceAccountRequestCborValue(value: CborValue): CreateServiceAccountRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     org: asString(requireKey(value, "org")),
@@ -4855,6 +5180,7 @@ export function toServiceAccountRefCborValue(v: ServiceAccountRef): CborValue {
 }
 
 export function fromServiceAccountRefCborValue(value: CborValue): ServiceAccountRef {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     org: asString(requireKey(value, "org")),
@@ -4877,6 +5203,7 @@ export function toListServiceAccountsResponseCborValue(v: ListServiceAccountsRes
 }
 
 export function fromListServiceAccountsResponseCborValue(value: CborValue): ListServiceAccountsResponse {
+  asMap(value);
   return {
     accounts: asArray(requireKey(value, "accounts")).map((csilE) => fromServiceAccountCborValue(csilE)),
   };
@@ -4903,6 +5230,7 @@ export function toCreateServiceAccountTokenRequestCborValue(v: CreateServiceAcco
 }
 
 export function fromCreateServiceAccountTokenRequestCborValue(value: CborValue): CreateServiceAccountTokenRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     org: asString(requireKey(value, "org")),
@@ -4932,6 +5260,7 @@ export function toRevokeServiceAccountTokenRequestCborValue(v: RevokeServiceAcco
 }
 
 export function fromRevokeServiceAccountTokenRequestCborValue(value: CborValue): RevokeServiceAccountTokenRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     org: asString(requireKey(value, "org")),
@@ -4959,6 +5288,7 @@ export function toInstanceRoleGrantCborValue(v: InstanceRoleGrant): CborValue {
 }
 
 export function fromInstanceRoleGrantCborValue(value: CborValue): InstanceRoleGrant {
+  asMap(value);
   return {
     identity: fromIdentityCborValue(requireKey(value, "identity")),
     role: asString(requireKey(value, "role")),
@@ -4984,6 +5314,7 @@ export function toInstanceRoleListCborValue(v: InstanceRoleList): CborValue {
 }
 
 export function fromInstanceRoleListCborValue(value: CborValue): InstanceRoleList {
+  asMap(value);
   return {
     grants: asArray(requireKey(value, "grants")).map((csilE) => fromInstanceRoleGrantCborValue(csilE)),
     configuredAdmins: asArray(requireKey(value, "configured_admins")).map((csilE) => asString(csilE)),
@@ -5007,6 +5338,7 @@ export function toSetInstanceRoleRequestCborValue(v: SetInstanceRoleRequest): Cb
 }
 
 export function fromSetInstanceRoleRequestCborValue(value: CborValue): SetInstanceRoleRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     identity: asString(requireKey(value, "identity")),
@@ -5030,6 +5362,7 @@ export function toRemoveInstanceRoleRequestCborValue(v: RemoveInstanceRoleReques
 }
 
 export function fromRemoveInstanceRoleRequestCborValue(value: CborValue): RemoveInstanceRoleRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     identity: asString(requireKey(value, "identity")),
@@ -5059,6 +5392,7 @@ export function toFedHelloCborValue(v: FedHello): CborValue {
 }
 
 export function fromFedHelloCborValue(value: CborValue): FedHello {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     instance: asString(requireKey(value, "instance")),
@@ -5090,6 +5424,7 @@ export function toFedCapabilitiesCborValue(v: FedCapabilities): CborValue {
 }
 
 export function fromFedCapabilitiesCborValue(value: CborValue): FedCapabilities {
+  asMap(value);
   return {
     protocolVersions: asArray(requireKey(value, "protocol_versions")).map((csilE) => asString(csilE)),
     vcsTypes: asArray(requireKey(value, "vcs_types")).map((csilE) => asString(csilE)),
@@ -5122,6 +5457,7 @@ export function toFedHelloAckCborValue(v: FedHelloAck): CborValue {
 }
 
 export function fromFedHelloAckCborValue(value: CborValue): FedHelloAck {
+  asMap(value);
   return {
     instance: asString(requireKey(value, "instance")),
     instanceIdentity: asString(requireKey(value, "instance_identity")),
@@ -5155,6 +5491,7 @@ export function toVerifyHeadRequestCborValue(v: VerifyHeadRequest): CborValue {
 }
 
 export function fromVerifyHeadRequestCborValue(value: CborValue): VerifyHeadRequest {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -5181,6 +5518,7 @@ export function toHeadQueryCborValue(v: HeadQuery): CborValue {
 }
 
 export function fromHeadQueryCborValue(value: CborValue): HeadQuery {
+  asMap(value);
   return {
     ctx: fromCtxCborValue(requireKey(value, "ctx")),
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
@@ -5208,6 +5546,7 @@ export function toHeadInfoCborValue(v: HeadInfo): CborValue {
 }
 
 export function fromHeadInfoCborValue(value: CborValue): HeadInfo {
+  asMap(value);
   return {
     repo: fromRepoRefCborValue(requireKey(value, "repo")),
     ref: asString(requireKey(value, "ref")),
@@ -5237,6 +5576,7 @@ export function toCommitSummaryCborValue(v: CommitSummary): CborValue {
 }
 
 export function fromCommitSummaryCborValue(value: CborValue): CommitSummary {
+  asMap(value);
   return {
     id: asString(requireKey(value, "id")),
     authorName: asString(requireKey(value, "author_name")),
@@ -5265,6 +5605,7 @@ export function toPushPayloadCborValue(v: PushPayload): CborValue {
 }
 
 export function fromPushPayloadCborValue(value: CborValue): PushPayload {
+  asMap(value);
   return {
     ref: asString(requireKey(value, "ref")),
     before: asString(requireKey(value, "before")),
@@ -5291,6 +5632,7 @@ export function toRefPayloadCborValue(v: RefPayload): CborValue {
 }
 
 export function fromRefPayloadCborValue(value: CborValue): RefPayload {
+  asMap(value);
   return {
     ref: asString(requireKey(value, "ref")),
     before: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "before")),
@@ -5320,6 +5662,7 @@ export function toPrPayloadCborValue(v: PrPayload): CborValue {
 }
 
 export function fromPrPayloadCborValue(value: CborValue): PrPayload {
+  asMap(value);
   return {
     baseSha: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "base_sha")),
     number: asNumber(requireKey(value, "number")),
@@ -5351,6 +5694,7 @@ export function toReleasePayloadCborValue(v: ReleasePayload): CborValue {
 }
 
 export function fromReleasePayloadCborValue(value: CborValue): ReleasePayload {
+  asMap(value);
   return {
     tag: asString(requireKey(value, "tag")),
     name: asString(requireKey(value, "name")),
@@ -5377,6 +5721,7 @@ export function toMirrorPayloadCborValue(v: MirrorPayload): CborValue {
 }
 
 export function fromMirrorPayloadCborValue(value: CborValue): MirrorPayload {
+  asMap(value);
   return {
     objectKey: asString(requireKey(value, "object_key")),
     error: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "error")),
@@ -5399,6 +5744,7 @@ export function toSettingsPayloadCborValue(v: SettingsPayload): CborValue {
 }
 
 export function fromSettingsPayloadCborValue(value: CborValue): SettingsPayload {
+  asMap(value);
   return {
     changed: asArray(requireKey(value, "changed")).map((csilE) => asString(csilE)),
   };
@@ -5421,6 +5767,7 @@ export function toStatusPayloadCborValue(v: StatusPayload): CborValue {
 }
 
 export function fromStatusPayloadCborValue(value: CborValue): StatusPayload {
+  asMap(value);
   return {
     sha: asString(requireKey(value, "sha")),
     context: asString(requireKey(value, "context")),
@@ -5445,6 +5792,7 @@ export function toMembershipPayloadCborValue(v: MembershipPayload): CborValue {
 }
 
 export function fromMembershipPayloadCborValue(value: CborValue): MembershipPayload {
+  asMap(value);
   return {
     identity: asString(requireKey(value, "identity")),
     role: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "role")),
@@ -5461,14 +5809,14 @@ export function fromMembershipPayloadCbor(bytes: Uint8Array): MembershipPayload 
 }
 
 export function toEventPayloadCborValue(v: EventPayload): CborValue {
-  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && Object.prototype.hasOwnProperty.call(v, "ref") && Object.prototype.hasOwnProperty.call(v, "before") && Object.prototype.hasOwnProperty.call(v, "after") && Object.prototype.hasOwnProperty.call(v, "forced") && Object.prototype.hasOwnProperty.call(v, "commits")) { const csilV = v as PushPayload; return [0, toPushPayloadCborValue(csilV)]; }
-  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && Object.prototype.hasOwnProperty.call(v, "ref")) { const csilV = v as RefPayload; return [1, toRefPayloadCborValue(csilV)]; }
-  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && Object.prototype.hasOwnProperty.call(v, "number")) { const csilV = v as PrPayload; return [2, toPrPayloadCborValue(csilV)]; }
-  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && Object.prototype.hasOwnProperty.call(v, "tag") && Object.prototype.hasOwnProperty.call(v, "name") && Object.prototype.hasOwnProperty.call(v, "draft") && Object.prototype.hasOwnProperty.call(v, "prerelease")) { const csilV = v as ReleasePayload; return [3, toReleasePayloadCborValue(csilV)]; }
-  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && Object.prototype.hasOwnProperty.call(v, "objectKey") && Object.prototype.hasOwnProperty.call(v, "actionKind")) { const csilV = v as MirrorPayload; return [4, toMirrorPayloadCborValue(csilV)]; }
-  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && Object.prototype.hasOwnProperty.call(v, "changed")) { const csilV = v as SettingsPayload; return [5, toSettingsPayloadCborValue(csilV)]; }
-  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && Object.prototype.hasOwnProperty.call(v, "sha") && Object.prototype.hasOwnProperty.call(v, "context") && Object.prototype.hasOwnProperty.call(v, "state")) { const csilV = v as StatusPayload; return [6, toStatusPayloadCborValue(csilV)]; }
-  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && Object.prototype.hasOwnProperty.call(v, "identity")) { const csilV = v as MembershipPayload; return [7, toMembershipPayloadCborValue(csilV)]; }
+  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && !(v instanceof Date) && Object.prototype.hasOwnProperty.call(v, "ref") && (typeof (v as unknown as Record<string, unknown>)["ref"] === "string") && Object.prototype.hasOwnProperty.call(v, "before") && (typeof (v as unknown as Record<string, unknown>)["before"] === "string") && Object.prototype.hasOwnProperty.call(v, "after") && (typeof (v as unknown as Record<string, unknown>)["after"] === "string") && Object.prototype.hasOwnProperty.call(v, "forced") && (typeof (v as unknown as Record<string, unknown>)["forced"] === "boolean") && Object.prototype.hasOwnProperty.call(v, "commits") && (Array.isArray((v as unknown as Record<string, unknown>)["commits"]) && ((v as unknown as Record<string, unknown>)["commits"] as unknown[]).every((csilFit1: unknown) => typeof csilFit1 === "object" && csilFit1 !== null && !Array.isArray(csilFit1) && !(csilFit1 instanceof Uint8Array) && !(csilFit1 instanceof Map) && !(csilFit1 instanceof Date) && Object.prototype.hasOwnProperty.call(csilFit1, "id") && Object.prototype.hasOwnProperty.call(csilFit1, "authorName") && Object.prototype.hasOwnProperty.call(csilFit1, "authorEmail") && Object.prototype.hasOwnProperty.call(csilFit1, "messageHead") && Object.prototype.hasOwnProperty.call(csilFit1, "signature")))) { const csilV = v as PushPayload; return [0, toPushPayloadCborValue(csilV)]; }
+  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && !(v instanceof Date) && Object.prototype.hasOwnProperty.call(v, "ref") && (typeof (v as unknown as Record<string, unknown>)["ref"] === "string") && ((v as unknown as Record<string, unknown>)["before"] === undefined || typeof (v as unknown as Record<string, unknown>)["before"] === "string") && ((v as unknown as Record<string, unknown>)["after"] === undefined || typeof (v as unknown as Record<string, unknown>)["after"] === "string")) { const csilV = v as RefPayload; return [1, toRefPayloadCborValue(csilV)]; }
+  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && !(v instanceof Date) && ((v as unknown as Record<string, unknown>)["baseSha"] === undefined || typeof (v as unknown as Record<string, unknown>)["baseSha"] === "string") && Object.prototype.hasOwnProperty.call(v, "number") && (typeof (v as unknown as Record<string, unknown>)["number"] === "number" || typeof (v as unknown as Record<string, unknown>)["number"] === "bigint") && ((v as unknown as Record<string, unknown>)["headSha"] === undefined || typeof (v as unknown as Record<string, unknown>)["headSha"] === "string") && ((v as unknown as Record<string, unknown>)["baseRef"] === undefined || typeof (v as unknown as Record<string, unknown>)["baseRef"] === "string") && ((v as unknown as Record<string, unknown>)["state"] === undefined || typeof (v as unknown as Record<string, unknown>)["state"] === "string") && ((v as unknown as Record<string, unknown>)["mergeKind"] === undefined || typeof (v as unknown as Record<string, unknown>)["mergeKind"] === "string") && ((v as unknown as Record<string, unknown>)["commentId"] === undefined || typeof (v as unknown as Record<string, unknown>)["commentId"] === "string") && ((v as unknown as Record<string, unknown>)["reviewId"] === undefined || typeof (v as unknown as Record<string, unknown>)["reviewId"] === "string")) { const csilV = v as PrPayload; return [2, toPrPayloadCborValue(csilV)]; }
+  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && !(v instanceof Date) && Object.prototype.hasOwnProperty.call(v, "tag") && (typeof (v as unknown as Record<string, unknown>)["tag"] === "string") && Object.prototype.hasOwnProperty.call(v, "name") && (typeof (v as unknown as Record<string, unknown>)["name"] === "string") && ((v as unknown as Record<string, unknown>)["body"] === undefined || typeof (v as unknown as Record<string, unknown>)["body"] === "string") && Object.prototype.hasOwnProperty.call(v, "draft") && (typeof (v as unknown as Record<string, unknown>)["draft"] === "boolean") && Object.prototype.hasOwnProperty.call(v, "prerelease") && (typeof (v as unknown as Record<string, unknown>)["prerelease"] === "boolean")) { const csilV = v as ReleasePayload; return [3, toReleasePayloadCborValue(csilV)]; }
+  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && !(v instanceof Date) && Object.prototype.hasOwnProperty.call(v, "objectKey") && (typeof (v as unknown as Record<string, unknown>)["objectKey"] === "string") && ((v as unknown as Record<string, unknown>)["error"] === undefined || typeof (v as unknown as Record<string, unknown>)["error"] === "string") && Object.prototype.hasOwnProperty.call(v, "actionKind") && (typeof (v as unknown as Record<string, unknown>)["actionKind"] === "string")) { const csilV = v as MirrorPayload; return [4, toMirrorPayloadCborValue(csilV)]; }
+  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && !(v instanceof Date) && Object.prototype.hasOwnProperty.call(v, "changed") && (Array.isArray((v as unknown as Record<string, unknown>)["changed"]) && ((v as unknown as Record<string, unknown>)["changed"] as unknown[]).every((csilFit1: unknown) => typeof csilFit1 === "string"))) { const csilV = v as SettingsPayload; return [5, toSettingsPayloadCborValue(csilV)]; }
+  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && !(v instanceof Date) && Object.prototype.hasOwnProperty.call(v, "sha") && (typeof (v as unknown as Record<string, unknown>)["sha"] === "string") && Object.prototype.hasOwnProperty.call(v, "context") && (typeof (v as unknown as Record<string, unknown>)["context"] === "string") && Object.prototype.hasOwnProperty.call(v, "state") && (typeof (v as unknown as Record<string, unknown>)["state"] === "string")) { const csilV = v as StatusPayload; return [6, toStatusPayloadCborValue(csilV)]; }
+  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && !(v instanceof Date) && Object.prototype.hasOwnProperty.call(v, "identity") && (typeof (v as unknown as Record<string, unknown>)["identity"] === "string") && ((v as unknown as Record<string, unknown>)["role"] === undefined || typeof (v as unknown as Record<string, unknown>)["role"] === "string") && ((v as unknown as Record<string, unknown>)["team"] === undefined || typeof (v as unknown as Record<string, unknown>)["team"] === "string")) { const csilV = v as MembershipPayload; return [7, toMembershipPayloadCborValue(csilV)]; }
   throw new Error("unencodable EventPayload union value");
 }
 
@@ -5512,6 +5860,7 @@ export function toEventCborValue(v: Event): CborValue {
 }
 
 export function fromEventCborValue(value: CborValue): Event {
+  asMap(value);
   return {
     lane: asString(requireKey(value, "lane")),
     seq: asNumber(requireKey(value, "seq")),
@@ -5542,6 +5891,7 @@ export function toSubscribeRequestCborValue(v: SubscribeRequest): CborValue {
 }
 
 export function fromSubscribeRequestCborValue(value: CborValue): SubscribeRequest {
+  asMap(value);
   return {
     lanes: asArray(requireKey(value, "lanes")).map((csilE) => asString(csilE)),
     kinds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "kinds")),
@@ -5564,6 +5914,7 @@ export function toUnsubscribeRequestCborValue(v: UnsubscribeRequest): CborValue 
 }
 
 export function fromUnsubscribeRequestCborValue(value: CborValue): UnsubscribeRequest {
+  asMap(value);
   return {
     lanes: asArray(requireKey(value, "lanes")).map((csilE) => asString(csilE)),
   };
@@ -5578,8 +5929,8 @@ export function fromUnsubscribeRequestCbor(bytes: Uint8Array): UnsubscribeReques
 }
 
 export function toStreamControlCborValue(v: StreamControl): CborValue {
-  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && Object.prototype.hasOwnProperty.call(v, "lanes")) { const csilV = v as SubscribeRequest; return [0, toSubscribeRequestCborValue(csilV)]; }
-  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && Object.prototype.hasOwnProperty.call(v, "unsubscribe")) { const csilV = v as UnsribeMarker; return [1, toUnsribeMarkerCborValue(csilV)]; }
+  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && !(v instanceof Date) && Object.prototype.hasOwnProperty.call(v, "lanes") && (Array.isArray((v as unknown as Record<string, unknown>)["lanes"]) && ((v as unknown as Record<string, unknown>)["lanes"] as unknown[]).every((csilFit1: unknown) => typeof csilFit1 === "string")) && ((v as unknown as Record<string, unknown>)["kinds"] === undefined || Array.isArray((v as unknown as Record<string, unknown>)["kinds"]) && ((v as unknown as Record<string, unknown>)["kinds"] as unknown[]).every((csilFit1: unknown) => typeof csilFit1 === "string")) && ((v as unknown as Record<string, unknown>)["afterSeq"] === undefined || typeof (v as unknown as Record<string, unknown>)["afterSeq"] === "number" || typeof (v as unknown as Record<string, unknown>)["afterSeq"] === "bigint")) { const csilV = v as SubscribeRequest; return [0, toSubscribeRequestCborValue(csilV)]; }
+  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && !(v instanceof Date) && Object.prototype.hasOwnProperty.call(v, "unsubscribe") && (typeof (v as unknown as Record<string, unknown>)["unsubscribe"] === "object" && (v as unknown as Record<string, unknown>)["unsubscribe"] !== null && !Array.isArray((v as unknown as Record<string, unknown>)["unsubscribe"]) && !((v as unknown as Record<string, unknown>)["unsubscribe"] instanceof Uint8Array) && !((v as unknown as Record<string, unknown>)["unsubscribe"] instanceof Map) && !((v as unknown as Record<string, unknown>)["unsubscribe"] instanceof Date) && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["unsubscribe"], "lanes") && (Array.isArray(((v as unknown as Record<string, unknown>)["unsubscribe"] as unknown as Record<string, unknown>)["lanes"])))) { const csilV = v as UnsribeMarker; return [1, toUnsribeMarkerCborValue(csilV)]; }
   throw new Error("unencodable StreamControl union value");
 }
 
@@ -5609,6 +5960,7 @@ export function toUnsribeMarkerCborValue(v: UnsribeMarker): CborValue {
 }
 
 export function fromUnsribeMarkerCborValue(value: CborValue): UnsribeMarker {
+  asMap(value);
   return {
     unsubscribe: fromUnsubscribeRequestCborValue(requireKey(value, "unsubscribe")),
   };
@@ -5629,6 +5981,7 @@ export function toStreamAckCborValue(v: StreamAck): CborValue {
 }
 
 export function fromStreamAckCborValue(value: CborValue): StreamAck {
+  asMap(value);
   return {
     subscribed: asArray(requireKey(value, "subscribed")).map((csilE) => asString(csilE)),
   };
@@ -5643,8 +5996,8 @@ export function fromStreamAckCbor(bytes: Uint8Array): StreamAck {
 }
 
 export function toStreamMessageCborValue(v: StreamMessage): CborValue {
-  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && Object.prototype.hasOwnProperty.call(v, "lane") && Object.prototype.hasOwnProperty.call(v, "seq") && Object.prototype.hasOwnProperty.call(v, "kind") && Object.prototype.hasOwnProperty.call(v, "at") && Object.prototype.hasOwnProperty.call(v, "payload")) { const csilV = v as Event; return [0, toEventCborValue(csilV)]; }
-  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && Object.prototype.hasOwnProperty.call(v, "subscribed")) { const csilV = v as StreamAck; return [1, toStreamAckCborValue(csilV)]; }
+  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && !(v instanceof Date) && Object.prototype.hasOwnProperty.call(v, "lane") && (typeof (v as unknown as Record<string, unknown>)["lane"] === "string") && Object.prototype.hasOwnProperty.call(v, "seq") && (typeof (v as unknown as Record<string, unknown>)["seq"] === "number" || typeof (v as unknown as Record<string, unknown>)["seq"] === "bigint") && Object.prototype.hasOwnProperty.call(v, "kind") && (typeof (v as unknown as Record<string, unknown>)["kind"] === "string") && ((v as unknown as Record<string, unknown>)["actor"] === undefined || typeof (v as unknown as Record<string, unknown>)["actor"] === "object" && (v as unknown as Record<string, unknown>)["actor"] !== null && !Array.isArray((v as unknown as Record<string, unknown>)["actor"]) && !((v as unknown as Record<string, unknown>)["actor"] instanceof Uint8Array) && !((v as unknown as Record<string, unknown>)["actor"] instanceof Map) && !((v as unknown as Record<string, unknown>)["actor"] instanceof Date) && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["actor"], "userId") && (typeof ((v as unknown as Record<string, unknown>)["actor"] as unknown as Record<string, unknown>)["userId"] === "string") && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["actor"], "domain") && (typeof ((v as unknown as Record<string, unknown>)["actor"] as unknown as Record<string, unknown>)["domain"] === "string") && (((v as unknown as Record<string, unknown>)["actor"] as unknown as Record<string, unknown>)["handle"] === undefined || typeof ((v as unknown as Record<string, unknown>)["actor"] as unknown as Record<string, unknown>)["handle"] === "string") && (((v as unknown as Record<string, unknown>)["actor"] as unknown as Record<string, unknown>)["displayName"] === undefined || typeof ((v as unknown as Record<string, unknown>)["actor"] as unknown as Record<string, unknown>)["displayName"] === "string")) && ((v as unknown as Record<string, unknown>)["repo"] === undefined || typeof (v as unknown as Record<string, unknown>)["repo"] === "object" && (v as unknown as Record<string, unknown>)["repo"] !== null && !Array.isArray((v as unknown as Record<string, unknown>)["repo"]) && !((v as unknown as Record<string, unknown>)["repo"] instanceof Uint8Array) && !((v as unknown as Record<string, unknown>)["repo"] instanceof Map) && !((v as unknown as Record<string, unknown>)["repo"] instanceof Date) && (((v as unknown as Record<string, unknown>)["repo"] as unknown as Record<string, unknown>)["instance"] === undefined || typeof ((v as unknown as Record<string, unknown>)["repo"] as unknown as Record<string, unknown>)["instance"] === "string") && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["repo"], "org") && (typeof ((v as unknown as Record<string, unknown>)["repo"] as unknown as Record<string, unknown>)["org"] === "string") && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["repo"], "name") && (typeof ((v as unknown as Record<string, unknown>)["repo"] as unknown as Record<string, unknown>)["name"] === "string")) && ((v as unknown as Record<string, unknown>)["org"] === undefined || typeof (v as unknown as Record<string, unknown>)["org"] === "string") && ((v as unknown as Record<string, unknown>)["subject"] === undefined || typeof (v as unknown as Record<string, unknown>)["subject"] === "string") && Object.prototype.hasOwnProperty.call(v, "at") && (typeof (v as unknown as Record<string, unknown>)["at"] === "number" || typeof (v as unknown as Record<string, unknown>)["at"] === "bigint") && Object.prototype.hasOwnProperty.call(v, "payload") && ((typeof (v as unknown as Record<string, unknown>)["payload"] === "object" && (v as unknown as Record<string, unknown>)["payload"] !== null && !Array.isArray((v as unknown as Record<string, unknown>)["payload"]) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Uint8Array) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Map) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Date) && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["payload"], "ref") && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["payload"], "before") && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["payload"], "after") && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["payload"], "forced") && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["payload"], "commits")) || (typeof (v as unknown as Record<string, unknown>)["payload"] === "object" && (v as unknown as Record<string, unknown>)["payload"] !== null && !Array.isArray((v as unknown as Record<string, unknown>)["payload"]) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Uint8Array) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Map) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Date) && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["payload"], "ref")) || (typeof (v as unknown as Record<string, unknown>)["payload"] === "object" && (v as unknown as Record<string, unknown>)["payload"] !== null && !Array.isArray((v as unknown as Record<string, unknown>)["payload"]) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Uint8Array) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Map) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Date) && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["payload"], "number")) || (typeof (v as unknown as Record<string, unknown>)["payload"] === "object" && (v as unknown as Record<string, unknown>)["payload"] !== null && !Array.isArray((v as unknown as Record<string, unknown>)["payload"]) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Uint8Array) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Map) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Date) && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["payload"], "tag") && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["payload"], "name") && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["payload"], "draft") && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["payload"], "prerelease")) || (typeof (v as unknown as Record<string, unknown>)["payload"] === "object" && (v as unknown as Record<string, unknown>)["payload"] !== null && !Array.isArray((v as unknown as Record<string, unknown>)["payload"]) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Uint8Array) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Map) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Date) && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["payload"], "objectKey") && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["payload"], "actionKind")) || (typeof (v as unknown as Record<string, unknown>)["payload"] === "object" && (v as unknown as Record<string, unknown>)["payload"] !== null && !Array.isArray((v as unknown as Record<string, unknown>)["payload"]) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Uint8Array) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Map) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Date) && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["payload"], "changed")) || (typeof (v as unknown as Record<string, unknown>)["payload"] === "object" && (v as unknown as Record<string, unknown>)["payload"] !== null && !Array.isArray((v as unknown as Record<string, unknown>)["payload"]) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Uint8Array) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Map) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Date) && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["payload"], "sha") && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["payload"], "context") && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["payload"], "state")) || (typeof (v as unknown as Record<string, unknown>)["payload"] === "object" && (v as unknown as Record<string, unknown>)["payload"] !== null && !Array.isArray((v as unknown as Record<string, unknown>)["payload"]) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Uint8Array) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Map) && !((v as unknown as Record<string, unknown>)["payload"] instanceof Date) && Object.prototype.hasOwnProperty.call((v as unknown as Record<string, unknown>)["payload"], "identity")))) { const csilV = v as Event; return [0, toEventCborValue(csilV)]; }
+  if (typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array) && !(v instanceof Map) && !(v instanceof Date) && Object.prototype.hasOwnProperty.call(v, "subscribed") && (Array.isArray((v as unknown as Record<string, unknown>)["subscribed"]) && ((v as unknown as Record<string, unknown>)["subscribed"] as unknown[]).every((csilFit1: unknown) => typeof csilFit1 === "string"))) { const csilV = v as StreamAck; return [1, toStreamAckCborValue(csilV)]; }
   throw new Error("unencodable StreamMessage union value");
 }
 

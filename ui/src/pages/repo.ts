@@ -1,6 +1,6 @@
 // A repository: code, commits, pull requests, the mirror, webhooks, and
 // settings. The tabs are routes, so the page stays while the tab changes.
-import { api, bytesToText, ctx, short, when, who } from "../api";
+import { api, bytesToText, errorText, ctx, short, when, who } from "../api";
 import { button, checkBox, comboBox, fill, form, h, link, spinBox, textArea, textButton, textField, clear } from "../dom";
 import { live } from "../live";
 import { Page } from "../page";
@@ -517,7 +517,7 @@ async function fileView(repo: { org: string; name: string }, rev: string, path: 
       const shown = asText ? "text/plain;charset=utf-8" : type && type !== "image/svg+xml" ? type : "text/plain;charset=utf-8";
       window.open(URL.createObjectURL(new Blob([bytes as BlobPart], { type: shown })), "_blank", "noopener");
       status.textContent = "";
-    } catch (error) { status.textContent = String((error as Error).message ?? error); }
+    } catch (error) { status.textContent = errorText(error); }
   };
   const download = async () => {
     status.textContent = "Loading…";
@@ -526,7 +526,7 @@ async function fileView(repo: { org: string; name: string }, rev: string, path: 
       const a = h("a", { href: URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/octet-stream" })), download: name }) as HTMLAnchorElement;
       document.body.append(a); a.click(); a.remove();
       status.textContent = "";
-    } catch (error) { status.textContent = String((error as Error).message ?? error); }
+    } catch (error) { status.textContent = errorText(error); }
   };
   const tools: unknown[] = [];
   const text = blob.binary ? null : bytesToText(blob.content);

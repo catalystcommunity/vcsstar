@@ -8,7 +8,7 @@ import { button, h } from "../dom";
 import { badge } from "../ui";
 import { diffLayout, onDiffLayout, setDiffLayout, type DiffLayout } from "../prefs";
 import { drawMermaid, highlightLines, isMarkdown, isMermaid, languageOf, markdown, mediaType, rawUrl, readAll } from "../render";
-import { bytesToText } from "../api";
+import { bytesToText, errorText } from "../api";
 
 export type DiffFile = { status: string; oldPath?: string; newPath?: string; additions: number; deletions: number; patch?: string };
 
@@ -72,7 +72,7 @@ function fileView(f: DiffFile, layout: DiffLayout, open: boolean, sides?: DiffSi
         body.replaceChildren(markdown(text, { ...sides!.repo, rev: sides!.head, dir }));
       }
     } catch (error) {
-      body.replaceChildren(h("p", { class: "problem" }, String((error as Error).message ?? error)));
+      body.replaceChildren(h("p", { class: "problem" }, errorText(error)));
     }
   };
   mark(false);

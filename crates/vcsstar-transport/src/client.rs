@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use csilgen_transport::carrier::StreamCarrier;
 use csilgen_transport::rpc::{RpcClient, RpcRequest, RpcResponse};
-use vcsstar_types::{ClientError, Transport};
+use vcsstar_types::{ClientError, Transport, WireReply};
 
 use crate::MAX_FRAME;
 
@@ -41,7 +41,7 @@ impl HttpTransport {
     }
 
     /// Send one raw envelope and return the decoded response. The generic CLI
-    /// layer uses this; typed clients go through `Transport::call`.
+    /// layer and the typed client share this carrier.
     pub fn call_envelope(
         &self,
         service: &str,
@@ -107,14 +107,21 @@ pub fn response_to_payload(response: RpcResponse) -> Result<Vec<u8>, ClientError
     Ok(response.payload)
 }
 
-fn resolve_reply(service: &str, op: &str, response: RpcResponse) -> Result<Vec<u8>, ClientError> {
+fn wire_reply(response: RpcResponse) -> Result<WireReply, ClientError> {
     check_status(&response)?;
-    vcsstar_types::resolve_rpc_reply(service, op, response.variant.as_deref(), response.payload)
+    Ok(WireReply {
+        variant: response.variant,
+        payload: response.payload,
+    })
 }
 
 impl Transport for HttpTransport {
     fn call(&self, service: &str, op: &str, req: &[u8]) -> Result<Vec<u8>, ClientError> {
-        resolve_reply(service, op, self.call_envelope(service, op, req.to_vec())?)
+        Ok(self.call_reply(service, op, req)?.payload)
+    }
+
+    fn call_reply(&self, service: &str, op: &str, req: &[u8]) -> Result<WireReply, ClientError> {
+        wire_reply(self.call_envelope(service, op, req.to_vec())?)
     }
 }
 
@@ -165,6 +172,10 @@ impl TcpTransport {
 
 impl Transport for TcpTransport {
     fn call(&self, service: &str, op: &str, req: &[u8]) -> Result<Vec<u8>, ClientError> {
-        resolve_reply(service, op, self.call_envelope(service, op, req.to_vec())?)
+        Ok(self.call_reply(service, op, req)?.payload)
+    }
+
+    fn call_reply(&self, service: &str, op: &str, req: &[u8]) -> Result<WireReply, ClientError> {
+        wire_reply(self.call_envelope(service, op, req.to_vec())?)
     }
 }

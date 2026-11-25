@@ -8,13 +8,13 @@
 #   tools/csilgen.sh validate   validate csil/vcsstar.csil only
 set -euo pipefail
 
-CSILGEN_PIN="0.2.15"
+CSILGEN_PIN="0.3.3"
 # Commit of tag csilgen/v${CSILGEN_PIN}; Cargo.toml pins csilgen-transport
 # to the same commit.
-CSILGEN_COMMIT="9690ed8794454c2beb21571ce525ffd62a2f0701"
-SHA_CLI_X86_64="a322246036d25ee013ad108ade04a4148fe0aab6cb5fd7522c757a4bb57817d8"
-SHA_CLI_AARCH64="a35571539e2f451253639a574eb617e76c11675d21bbc2b7c330b0e189fb62a4"
-SHA_GENERATORS="89c6d6ea88fc3ea5af7c9fb1fe30b87ddd166b2b8a6d6ce4c612791e97de9a75"
+CSILGEN_COMMIT="73ba5ac55f74608c73da6320693efc8e2b7239ca"
+SHA_CLI_X86_64="df3680f788e7b504814495eb3dcfb180ccc3a1991a6871f8c60dc9044c48cb67"
+SHA_CLI_AARCH64="89937c0093a58466d041e973d3f3710ced2e4e8227c0c20a86b179a4b21727f6"
+SHA_GENERATORS="1b65c460d980c9caf20868bd86e9cf3fd8cc6e091925d43b35ea67ecf0cdb799"
 RELEASE_BASE="https://github.com/catalystcommunity/csilgen/releases/download/csilgen/v${CSILGEN_PIN}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -1,7 +1,6 @@
 //! Browser login against a fake RP, through the real database. Runs only
 //! when DATABASE_URL points at a migrated dev database.
 
-use liblinkkeys::timestamp::Rfc3339 as _;
 use std::sync::{Arc, Mutex};
 
 use liblinkkeys::claims::{sign_claim, ClaimSigner, ClaimSpec};
@@ -42,10 +41,10 @@ impl HomeKey {
             key_id: "k1".into(),
             public_key: self.public.clone(),
             fingerprint: fingerprint(&self.public),
-            algorithm: "ed25519".into(),
-            key_usage: "sign".into(),
-            created_at: (now - time::Duration::days(1)).to_rfc3339(),
-            expires_at: (now + time::Duration::days(1)).to_rfc3339(),
+            algorithm: lk::KeyAlgorithm::Ed25519,
+            key_usage: lk::KeyUsage::Sign,
+            created_at: now - time::Duration::days(1),
+            expires_at: now + time::Duration::days(1),
             revoked_at: None,
             signed_by_key_id: None,
             key_signature: None,
@@ -53,7 +52,7 @@ impl HomeKey {
     }
 
     fn claim(&self, claim_type: &str, value: &str) -> lk::Claim {
-        let attested = time::OffsetDateTime::now_utc().to_rfc3339_secs_z();
+        let attested = liblinkkeys::timestamp::now_whole_seconds();
         sign_claim(
             &ClaimSpec {
                 claim_id: &format!("c-{claim_type}"),
@@ -62,7 +61,7 @@ impl HomeKey {
                 user_id: USER,
                 subject_domain: HOME,
                 expires_at: None,
-                attested_at: &attested,
+                attested_at: attested,
             },
             &[ClaimSigner {
                 domain: HOME,
@@ -86,11 +85,6 @@ impl RpCaller for FakeRp {
         match op {
             "sign-request" => {
                 let req = decode_rp_sign_request(&payload).unwrap();
-                assert_eq!(
-                    req.application_id.as_deref(),
-                    Some("vcsstar"),
-                    "sign-request names the application consent is keyed by"
-                );
                 assert!(req
                     .requested_claims
                     .as_ref()
@@ -101,13 +95,15 @@ impl RpCaller for FakeRp {
                 *self.nonce.lock().unwrap() = Some(req.nonce.clone());
                 Ok(encode_rp_sign_response(&lk::RpSignResponse {
                     signed_request: format!("signed:{}", req.nonce),
-                }))
+                })
+                .unwrap())
             }
             "decrypt-token" => {
                 let req = decode_rp_decrypt_request(&payload).unwrap();
                 Ok(encode_rp_decrypt_response(&lk::RpDecryptResponse {
                     signed_assertion: format!("assertion-for:{}", req.encrypted_token),
-                }))
+                })
+                .unwrap())
             }
             "verify-assertion" => {
                 let req = decode_rp_verify_request(&payload).unwrap();
@@ -116,16 +112,22 @@ impl RpCaller for FakeRp {
                     user_id: USER.into(),
                     domain: req.expected_domain.clone(),
                     audience: "catalystsquad.com".into(),
+                    application: lk::ApplicationRef {
+                        subject_user_id: "rp-account".into(),
+                        subject_domain: "catalystsquad.com".into(),
+                        application_id: "vcsstar".into(),
+                    },
                     nonce: self.nonce.lock().unwrap().clone().unwrap_or_default(),
-                    issued_at: now.to_rfc3339(),
-                    expires_at: (now + time::Duration::minutes(4)).to_rfc3339(),
+                    issued_at: now,
+                    expires_at: now + time::Duration::minutes(4),
                     authorized_claims: vec!["handle".into()],
                     display_name: Some("Alice".into()),
                 };
                 Ok(encode_rp_verify_response(&lk::RpVerifyResponse {
                     assertion,
                     verified: self.verified,
-                }))
+                })
+                .unwrap())
             }
             "userinfo-fetch" => {
                 let req = decode_rp_user_info_request(&payload).unwrap();
@@ -138,22 +140,24 @@ impl RpCaller for FakeRp {
                         self.home.claim("handle", "alice"),
                         self.home.claim("email", "alice@example.com"),
                     ],
-                }))
+                })
+                .unwrap())
             }
             "resolve-domain-keys" => {
                 let req = decode_rp_resolve_domain_keys_request(&payload).unwrap();
                 assert_eq!(req.domain, HOME);
-                let now = time::OffsetDateTime::now_utc().to_rfc3339();
-                Ok(encode_rp_resolve_domain_keys_response(
-                    &lk::RpResolveDomainKeysResponse {
+                let now = time::OffsetDateTime::now_utc();
+                Ok(
+                    encode_rp_resolve_domain_keys_response(&lk::RpResolveDomainKeysResponse {
                         domain: HOME.into(),
                         keys: vec![self.home.domain_key()],
                         revocations: vec![],
-                        fetched_at: now.clone(),
+                        fetched_at: now,
                         revocations_checked_at: now,
-                        cache_status: "fresh".into(),
-                    },
-                ))
+                        cache_status: lk::RpCacheStatus::Fresh,
+                    })
+                    .unwrap(),
+                )
             }
             other => panic!("unexpected rp op {other}"),
         }
