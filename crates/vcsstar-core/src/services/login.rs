@@ -680,7 +680,6 @@ mod tests {
     use super::*;
     use liblinkkeys::claims::{sign_claim, ClaimSigner, ClaimSpec};
     use liblinkkeys::crypto::{fingerprint, generate_keypair, SigningAlgorithm};
-    use liblinkkeys::timestamp::Rfc3339 as _;
 
     const USER: &str = "01a11ea7-24d3-7612-8586-8e4645452613";
 
@@ -701,10 +700,10 @@ mod tests {
                 key_id: key_id.into(),
                 fingerprint: fingerprint(&public),
                 public_key: public,
-                algorithm: "ed25519".into(),
-                key_usage: "sign".into(),
-                created_at: (now - Duration::days(1)).to_rfc3339(),
-                expires_at: (now + Duration::days(1)).to_rfc3339(),
+                algorithm: lk::KeyAlgorithm::Ed25519,
+                key_usage: lk::KeyUsage::Sign,
+                created_at: now - Duration::days(1),
+                expires_at: now + Duration::days(1),
                 revoked_at: None,
                 signed_by_key_id: None,
                 key_signature: None,
@@ -714,7 +713,7 @@ mod tests {
     }
 
     fn signed(d: &Domain, claim_type: &str, value: &str) -> lk::Claim {
-        let attested = OffsetDateTime::now_utc().to_rfc3339_secs_z();
+        let attested = liblinkkeys::timestamp::now_whole_seconds();
         sign_claim(
             &ClaimSpec {
                 claim_id: &format!("{claim_type}-1"),
@@ -723,7 +722,7 @@ mod tests {
                 user_id: USER,
                 subject_domain: "home.test",
                 expires_at: None,
-                attested_at: &attested,
+                attested_at: attested,
             },
             &[ClaimSigner {
                 domain: d.name,

@@ -84,15 +84,15 @@ pub fn scope_set(
             description: Some(d.to_string()),
         })
         .collect();
-    let now = OffsetDateTime::now_utc();
+    let now = liblinkkeys::timestamp::now_whole_seconds();
     let set = lk::ActAsScopeSet {
         audience: own_application(app)?,
         grantee,
         entries,
         language: Some("en-US".into()),
         audience_handle_claim: None,
-        issued_at: aa::format_time(now),
-        expires_at: aa::format_time(now + Duration::seconds(SCOPE_SET_SECONDS)),
+        issued_at: now,
+        expires_at: now + Duration::seconds(SCOPE_SET_SECONDS),
     };
     let mut conn = app.conn()?;
     let keys = instance_keys::application_signers(app, &mut conn)?;
@@ -113,7 +113,7 @@ pub fn scope_set(
     let signed = aa::sign_scope_set(&set, &instance_keys::instance_id(app), &signers)
         .map_err(|e| Error::internal(format!("sign scope set: {e}")))?;
     Ok(SignedActAsScopeSet {
-        scope_set_cbor: g::encode_signed_act_as_scope_set(&signed),
+        scope_set_cbor: g::encode_signed_act_as_scope_set(&signed).map_err(Error::internal)?,
         scopes: wanted.iter().map(|s| s.to_string()).collect(),
         expires_at: to_ms(now + Duration::seconds(SCOPE_SET_SECONDS)),
     })
@@ -133,13 +133,13 @@ fn own_key_refs(
         .filter(|k| k.instance_id == instance)
         .map(|k| ApplicationKeyRef {
             key_id: k.key_id,
-            key_usage: ak::KEY_USAGE_SIGN.into(),
-            algorithm: "ed25519".into(),
+            key_usage: ak::KEY_USAGE_SIGN,
+            algorithm: lk::KeyAlgorithm::Ed25519,
             fingerprint: liblinkkeys::crypto::fingerprint(&k.public_key),
             public_key: k.public_key,
-            created_at: aa::format_time(k.created_at),
-            expires_at: aa::format_time(k.created_at + Duration::days(365)),
-            revoked_at: k.revoked_at.map(aa::format_time),
+            created_at: k.created_at,
+            expires_at: k.created_at + Duration::days(365),
+            revoked_at: k.revoked_at,
         })
         .collect())
 }
@@ -151,11 +151,12 @@ fn rp_domain_keys(app: &App, domain: &str) -> Result<Vec<lk::DomainPublicKey>, E
         g::encode_rp_resolve_domain_keys_request(&lk::RpResolveDomainKeysRequest {
             domain: domain.to_string(),
             max_cache_age_seconds: Some(300),
-        }),
+        })
+        .map_err(Error::internal)?,
     )?;
     let resp = g::decode_rp_resolve_domain_keys_response(&raw)
         .map_err(|e| Error::new(Code::Unavailable, format!("resolve-domain-keys: {e}")))?;
-    if resp.cache_status == "stale" {
+    if resp.cache_status == lk::RpCacheStatus::Stale {
         return Err(Error::new(
             Code::Unavailable,
             format!("home domain {domain} unreachable"),
@@ -179,11 +180,12 @@ fn rp_grantee_keys(
             application_id: grantee.application_id.clone(),
             instance_id: instance.to_string(),
             max_cache_age_seconds: Some(300),
-        }),
+        })
+        .map_err(Error::internal)?,
     )?;
     let resp = g::decode_rp_resolve_application_keys_response(&raw)
         .map_err(|e| Error::new(Code::Unavailable, format!("resolve-application-keys: {e}")))?;
-    if resp.cache_status == "stale" {
+    if resp.cache_status == lk::RpCacheStatus::Stale {
         return Err(Error::new(
             Code::Unavailable,
             "grantee home domain unreachable",
@@ -207,14 +209,14 @@ fn rp_grantee_keys(
         .iter()
         .map(|k| ApplicationKeyRef {
             key_id: k.attestation.key_id.clone(),
-            key_usage: k.attestation.key_usage.clone(),
-            algorithm: k.attestation.algorithm.clone(),
+            key_usage: k.attestation.key_usage,
+            algorithm: k.attestation.algorithm,
             public_key: k.attestation.public_key.clone(),
             fingerprint: k.attestation.fingerprint.clone(),
-            created_at: k.attestation.key_created_at.clone(),
-            expires_at: k.attestation.key_expires_at.clone(),
+            created_at: k.attestation.key_created_at,
+            expires_at: k.attestation.key_expires_at,
             revoked_at: match &k.status {
-                ak::KeyStatus::Revoked { revoked_at } => Some(revoked_at.clone()),
+                ak::KeyStatus::Revoked { revoked_at } => Some(*revoked_at),
                 _ => None,
             },
         })
@@ -233,7 +235,8 @@ fn rp_revocations(
         g::encode_rp_resolve_act_as_revocations_request(&lk::RpResolveActAsRevocationsRequest {
             subject_domain: domain.to_string(),
             grant_ids: vec![grant_id.to_string()],
-        }),
+        })
+        .map_err(Error::internal)?,
     )?;
     let resp = g::decode_get_act_as_grant_revocations_response(&raw).map_err(|e| {
         Error::new(
@@ -344,10 +347,8 @@ pub fn exchange(app: &App, ctx: &ReqCtx, req: ActAsExchangeRequest) -> Result<Sc
         }
         narrowed
     };
-    let grant_expires = liblinkkeys::timestamp::parse_rfc3339(&verified.expires_at)
-        .unwrap_or_else(|_| OffsetDateTime::now_utc());
     let expires_at = std::cmp::min(
-        grant_expires,
+        verified.expires_at,
         OffsetDateTime::now_utc() + Duration::seconds(MAX_BEARER_SECONDS),
     );
     let grantee_label = format!(
@@ -376,14 +377,14 @@ pub fn exchange(app: &App, ctx: &ReqCtx, req: ActAsExchangeRequest) -> Result<Sc
                 act_as_grants::identity_id.eq(identity.id),
                 act_as_grants::grantee.eq(&grantee_label),
                 act_as_grants::scopes.eq(approved.iter().cloned().map(Some).collect::<Vec<_>>()),
-                act_as_grants::expires_at.eq(grant_expires),
+                act_as_grants::expires_at.eq(verified.expires_at),
                 act_as_grants::last_presentation_nonce_at.eq(OffsetDateTime::now_utc()),
             ))
             .on_conflict(act_as_grants::grant_id)
             .do_update()
             .set((
                 act_as_grants::scopes.eq(approved.iter().cloned().map(Some).collect::<Vec<_>>()),
-                act_as_grants::expires_at.eq(grant_expires),
+                act_as_grants::expires_at.eq(verified.expires_at),
                 act_as_grants::last_presentation_nonce_at.eq(OffsetDateTime::now_utc()),
             ))
             .execute(conn)?;

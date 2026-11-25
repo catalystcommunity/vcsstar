@@ -79,7 +79,7 @@ pub fn emit(conn: &mut PgConnection, e: Emit<'_>) -> Result<i64, Error> {
         kind: e.kind,
         actor: e.actor_id,
         subject: e.subject.as_deref(),
-        payload_cbor: encode_event(&event),
+        payload_cbor: encode_event(&event).map_err(Error::internal)?,
         origin: origin.as_deref(),
     };
     diesel::insert_into(events::table)

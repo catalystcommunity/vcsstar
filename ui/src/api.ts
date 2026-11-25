@@ -3,7 +3,7 @@
 // check the server requires for cookie credentials. No JSON API exists.
 
 import { AsyncApiClient, type AsyncServiceTransport } from "./generated/client.async.gen.ts";
-import { resolveRpcReply, ServiceErrorRefusal } from "./generated/codec.gen.ts";
+import { ServiceErrorRefusal } from "./generated/codec.gen.ts";
 import type { Ctx, Identity } from "./generated/types.gen.ts";
 import { RpcRequest, RpcResponse } from "./csil/rpc.ts";
 
@@ -21,6 +21,10 @@ export const RPC_PATH = "/csil/v1/rpc";
 class FetchTransport implements AsyncServiceTransport {
   private nextId = 1;
   async call(service: string, op: string, req: Uint8Array): Promise<Uint8Array> {
+    return (await this.callReply(service, op, req)).payload;
+  }
+
+  async callReply(service: string, op: string, req: Uint8Array): Promise<RpcResponse> {
     const envelope = new RpcRequest(service, op, req).withId(this.nextId++).encode();
     const res = await fetch(RPC_PATH, {
       method: "POST",
@@ -34,14 +38,7 @@ class FetchTransport implements AsyncServiceTransport {
       const code = reply.status === 3 ? 10 : reply.status === 4 ? 11 : 0;
       throw new ApiError(code, reply.error ?? `transport status ${reply.status}`);
     }
-    try {
-      return resolveRpcReply(service, op, reply.variant, reply.payload);
-    } catch (error) {
-      if (error instanceof ServiceErrorRefusal) {
-        throw new ApiError(Number(error.value.code), error.value.message);
-      }
-      throw error;
-    }
+    return reply;
   }
 }
 
@@ -76,13 +73,20 @@ export function when(ms?: number | null): string {
   return d.toISOString().slice(0, 10);
 }
 
+function apiErrorDetails(e: unknown) {
+  if (e instanceof ServiceErrorRefusal) return e.value;
+  if (e instanceof ApiError) return e;
+}
+
 export function errorText(e: unknown): string {
-  if (e instanceof ApiError) return e.code ? `${e.message} (code ${e.code})` : e.message;
+  const details = apiErrorDetails(e);
+  if (details) return details.code ? `${details.message} (code ${details.code})` : details.message;
   return e instanceof Error ? e.message : String(e);
 }
 
 export function isUnauthenticated(e: unknown): boolean {
-  return e instanceof ApiError && (e.code === 10 || e.code === 12);
+  const code = apiErrorDetails(e)?.code;
+  return code === 10 || code === 12;
 }
 
 /** Decode a base64 blob payload to text, or null when not UTF-8. */

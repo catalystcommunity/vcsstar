@@ -356,8 +356,11 @@ pub trait Repos {
     ) -> Result<Commit, ServiceError>;
     #[allow(clippy::result_large_err)]
     /// set-grant (request/response).
-    fn set_grant(&self, ctx: &Self::Context, input: SetGrantRequest)
-        -> Result<Grant, ServiceError>;
+    fn set_grant(
+        &self,
+        ctx: &Self::Context,
+        input_value: SetGrantRequest,
+    ) -> Result<Grant, ServiceError>;
     #[allow(clippy::result_large_err)]
     /// remove-grant (request/response).
     fn remove_grant(

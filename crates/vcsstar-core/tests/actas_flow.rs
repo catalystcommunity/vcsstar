@@ -2,7 +2,6 @@
 //! domain key signs the grantee's attestations and the grant; the grantee
 //! presents a credential; the instance issues a scoped bearer once.
 
-use liblinkkeys::timestamp::Rfc3339 as _;
 use std::sync::Arc;
 
 use diesel::prelude::*;
@@ -45,10 +44,10 @@ fn domain_public(k: &Key) -> lk::DomainPublicKey {
         key_id: k.id.clone(),
         public_key: k.public.clone(),
         fingerprint: fingerprint(&k.public),
-        algorithm: "ed25519".into(),
-        key_usage: "sign".into(),
-        created_at: "2026-01-01T00:00:00Z".into(),
-        expires_at: "2030-01-01T00:00:00Z".into(),
+        algorithm: lk::KeyAlgorithm::Ed25519,
+        key_usage: lk::KeyUsage::Sign,
+        created_at: liblinkkeys::timestamp::parse_rfc3339("2026-01-01T00:00:00Z").unwrap(),
+        expires_at: liblinkkeys::timestamp::parse_rfc3339("2030-01-01T00:00:00Z").unwrap(),
         revoked_at: None,
         signed_by_key_id: None,
         key_signature: None,
@@ -58,12 +57,12 @@ fn domain_public(k: &Key) -> lk::DomainPublicKey {
 fn key_ref(k: &Key) -> ApplicationKeyRef {
     ApplicationKeyRef {
         key_id: k.id.clone(),
-        key_usage: "sign".into(),
-        algorithm: "ed25519".into(),
+        key_usage: lk::KeyUsage::Sign,
+        algorithm: lk::KeyAlgorithm::Ed25519,
         public_key: k.public.clone(),
         fingerprint: fingerprint(&k.public),
-        created_at: "2026-01-01T00:00:00Z".into(),
-        expires_at: "2030-01-01T00:00:00Z".into(),
+        created_at: liblinkkeys::timestamp::parse_rfc3339("2026-01-01T00:00:00Z").unwrap(),
+        expires_at: liblinkkeys::timestamp::parse_rfc3339("2030-01-01T00:00:00Z").unwrap(),
         revoked_at: None,
     }
 }
@@ -83,16 +82,17 @@ impl RpCaller for FakeRp {
             "resolve-domain-keys" => {
                 let req = g::decode_rp_resolve_domain_keys_request(&payload).unwrap();
                 assert_eq!(req.domain, DOMAIN);
-                Ok(g::encode_rp_resolve_domain_keys_response(
-                    &lk::RpResolveDomainKeysResponse {
+                Ok(
+                    g::encode_rp_resolve_domain_keys_response(&lk::RpResolveDomainKeysResponse {
                         domain: DOMAIN.into(),
                         keys: vec![domain_public(&self.domain)],
                         revocations: vec![],
-                        fetched_at: OffsetDateTime::now_utc().to_rfc3339(),
-                        revocations_checked_at: OffsetDateTime::now_utc().to_rfc3339(),
-                        cache_status: "fresh".into(),
-                    },
-                ))
+                        fetched_at: OffsetDateTime::now_utc(),
+                        revocations_checked_at: OffsetDateTime::now_utc(),
+                        cache_status: lk::RpCacheStatus::Fresh,
+                    })
+                    .unwrap(),
+                )
             }
             "resolve-application-keys" => {
                 let req = g::decode_rp_resolve_application_keys_request(&payload).unwrap();
@@ -133,17 +133,19 @@ impl RpCaller for FakeRp {
                         application_key_revocations: vec![],
                         home_domain_keys: vec![domain_public(&self.domain)],
                         home_domain_key_revocations: vec![],
-                        fetched_at: OffsetDateTime::now_utc().to_rfc3339(),
-                        revocations_checked_at: OffsetDateTime::now_utc().to_rfc3339(),
-                        cache_status: "fresh".into(),
+                        fetched_at: OffsetDateTime::now_utc(),
+                        revocations_checked_at: OffsetDateTime::now_utc(),
+                        cache_status: lk::RpCacheStatus::Fresh,
                     },
-                ))
+                )
+                .unwrap())
             }
             "resolve-act-as-revocations" => Ok(g::encode_get_act_as_grant_revocations_response(
                 &lk::GetActAsGrantRevocationsResponse {
                     revocations: vec![],
                 },
-            )),
+            )
+            .unwrap()),
             other => panic!("unexpected rp op {other}"),
         }
     }
@@ -255,7 +257,7 @@ fn act_as_credential_becomes_a_scoped_bearer_once() {
         &ctx,
         vcsstar_types::ScopeSetRequest {
             ctx: wire_ctx.clone(),
-            grantee_cbor: g::encode_grantee_ref(&grantee_ref),
+            grantee_cbor: g::encode_grantee_ref(&grantee_ref).unwrap(),
             scopes: vec!["repo:read".into(), "pr:write".into()],
         },
     )
@@ -315,15 +317,15 @@ fn act_as_credential_becomes_a_scoped_bearer_once() {
     };
     let gref = ApplicationKeyRef {
         key_id: gk_id.clone(),
-        key_usage: "sign".into(),
-        algorithm: "ed25519".into(),
+        key_usage: lk::KeyUsage::Sign,
+        algorithm: lk::KeyAlgorithm::Ed25519,
         public_key: ed25519_dalek::SigningKey::from_bytes(gk_priv.as_slice().try_into().unwrap())
             .verifying_key()
             .as_bytes()
             .to_vec(),
         fingerprint: String::new(),
-        created_at: "2026-01-01T00:00:00Z".into(),
-        expires_at: "2030-01-01T00:00:00Z".into(),
+        created_at: liblinkkeys::timestamp::parse_rfc3339("2026-01-01T00:00:00Z").unwrap(),
+        expires_at: liblinkkeys::timestamp::parse_rfc3339("2030-01-01T00:00:00Z").unwrap(),
         revoked_at: None,
     };
     let gref = ApplicationKeyRef {
@@ -389,7 +391,7 @@ fn act_as_credential_becomes_a_scoped_bearer_once() {
         &ctx,
         vcsstar_types::ActAsExchangeRequest {
             ctx: wire_ctx.clone(),
-            credential_cbor: g::encode_act_as_credential(&credential),
+            credential_cbor: g::encode_act_as_credential(&credential).unwrap(),
             requested_scopes: vec![],
         },
     )
@@ -419,7 +421,7 @@ fn act_as_credential_becomes_a_scoped_bearer_once() {
         &ctx,
         vcsstar_types::ActAsExchangeRequest {
             ctx: wire_ctx.clone(),
-            credential_cbor: g::encode_act_as_credential(&credential),
+            credential_cbor: g::encode_act_as_credential(&credential).unwrap(),
             requested_scopes: vec![],
         },
     );
@@ -440,7 +442,7 @@ fn act_as_credential_becomes_a_scoped_bearer_once() {
         &ctx,
         vcsstar_types::ActAsExchangeRequest {
             ctx: wire_ctx,
-            credential_cbor: g::encode_act_as_credential(&bad),
+            credential_cbor: g::encode_act_as_credential(&bad).unwrap(),
             requested_scopes: vec![],
         },
     )

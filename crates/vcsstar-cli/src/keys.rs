@@ -238,12 +238,9 @@ fn write_private(path: &Path, key: &ssh_key::PrivateKey) -> Result<()> {
     Ok(())
 }
 
-fn now_window() -> (String, String) {
-    let now = OffsetDateTime::now_utc();
-    (
-        (now - Duration::seconds(30)).to_rfc3339_secs_z(),
-        (now + Duration::seconds(120)).to_rfc3339_secs_z(),
-    )
+fn now_window() -> (OffsetDateTime, OffsetDateTime) {
+    let now = liblinkkeys::timestamp::now_whole_seconds();
+    (now - Duration::seconds(30), now + Duration::seconds(120))
 }
 
 fn decode_attestation(
@@ -276,7 +273,7 @@ pub fn enroll(opts: EnrollOptions<'_>) -> Result<Enrollment> {
     let me = g::decode_get_my_info_response(&h.call(
         "Account",
         "get-my-info",
-        g::encode_empty_request(&lk::EmptyRequest {}),
+        g::encode_empty_request(&lk::EmptyRequest {})?,
         Some(opts.api_key),
     )?)
     .map_err(|e| anyhow!("get-my-info: {e}"))?;
@@ -318,12 +315,12 @@ pub fn enroll(opts: EnrollOptions<'_>) -> Result<Enrollment> {
                     subject_user_id: user_id.to_string(),
                     application_id: APPLICATION_ID.into(),
                     instance_id: instance_id.clone(),
-                    purpose: ak::PURPOSE_ADD.into(),
-                    key_usage: ak::KEY_USAGE_SIGN.into(),
-                    algorithm: "ed25519".into(),
+                    purpose: ak::PURPOSE_ADD,
+                    key_usage: ak::KEY_USAGE_SIGN,
+                    algorithm: lk::KeyAlgorithm::Ed25519,
                     public_key: public.clone(),
                 },
-            ),
+            )?,
             None,
         )?)
         .map_err(|e| anyhow!("start-key-challenge: {e}"))?;
@@ -334,8 +331,8 @@ pub fn enroll(opts: EnrollOptions<'_>) -> Result<Enrollment> {
             application_id: APPLICATION_ID.into(),
             instance_id: instance_id.clone(),
             key_id: key_id.clone(),
-            key_usage: ak::KEY_USAGE_SIGN.into(),
-            algorithm: "ed25519".into(),
+            key_usage: ak::KEY_USAGE_SIGN,
+            algorithm: lk::KeyAlgorithm::Ed25519,
             public_key: public.clone(),
             fingerprint: liblinkkeys::crypto::fingerprint(&public),
             requested_key_lifetime_seconds: KEY_LIFETIME_SECONDS,
@@ -376,15 +373,15 @@ pub fn enroll(opts: EnrollOptions<'_>) -> Result<Enrollment> {
             application_id: APPLICATION_ID.into(),
             instance_id: instance_id.clone(),
             keys: signed,
-        }),
+        })?,
         Some(opts.api_key),
     )?)
     .map_err(|e| anyhow!("enroll-application-instance: {e}"))?;
     for att in &resp.attestations {
         let a = decode_attestation(att)?;
         if let Some(k) = keys.iter_mut().find(|k| k.key_id == a.key_id) {
-            k.attested_at = Some(a.attested_at.clone());
-            k.attestation_expires_at = Some(a.attestation_expires_at.clone());
+            k.attested_at = Some(a.attested_at.to_rfc3339());
+            k.attestation_expires_at = Some(a.attestation_expires_at.to_rfc3339());
         }
     }
     Ok(Enrollment {
@@ -410,8 +407,12 @@ pub fn renew(e: &mut Enrollment, force: bool) -> Result<Vec<String>> {
     let now = OffsetDateTime::now_utc();
     let mut changed = Vec::new();
     for k in e.keys.iter_mut() {
-        let due = match (&k.attested_at, &k.attestation_expires_at) {
-            (Some(a), Some(x)) => ak::needs_new_attestation(a, x, now).unwrap_or(true),
+        let parse_time = |s: &str| liblinkkeys::timestamp::parse_rfc3339(s).ok();
+        let due = match (
+            k.attested_at.as_deref().and_then(parse_time),
+            k.attestation_expires_at.as_deref().and_then(parse_time),
+        ) {
+            (Some(a), Some(x)) => ak::needs_new_attestation(&a, &x, now).unwrap_or(true),
             _ => true,
         };
         if !due && !force {
@@ -426,12 +427,12 @@ pub fn renew(e: &mut Enrollment, force: bool) -> Result<Vec<String>> {
                     subject_user_id: e.subject_user_id.clone(),
                     application_id: e.application_id.clone(),
                     instance_id: e.instance_id.clone(),
-                    purpose: ak::PURPOSE_RENEW.into(),
-                    key_usage: ak::KEY_USAGE_SIGN.into(),
-                    algorithm: "ed25519".into(),
+                    purpose: ak::PURPOSE_RENEW,
+                    key_usage: ak::KEY_USAGE_SIGN,
+                    algorithm: lk::KeyAlgorithm::Ed25519,
                     public_key: public.clone(),
                 },
-            ),
+            )?,
             None,
         )?)
         .map_err(|err| anyhow!("start-key-challenge: {err}"))?;
@@ -461,13 +462,13 @@ pub fn renew(e: &mut Enrollment, force: bool) -> Result<Vec<String>> {
             "renew-attestation",
             g::encode_renew_application_key_attestation_request(
                 &lk::RenewApplicationKeyAttestationRequest { request: signed },
-            ),
+            )?,
             None,
         )?)
         .map_err(|err| anyhow!("renew-attestation: {err}"))?;
         let a = decode_attestation(&resp.attestation)?;
-        k.attested_at = Some(a.attested_at);
-        k.attestation_expires_at = Some(a.attestation_expires_at);
+        k.attested_at = Some(a.attested_at.to_rfc3339());
+        k.attestation_expires_at = Some(a.attestation_expires_at.to_rfc3339());
         changed.push(k.key_id.clone());
     }
     Ok(changed)
@@ -501,7 +502,7 @@ pub fn revoke(e: &Enrollment, target: &LocalKey) -> Result<String> {
             private_key_bytes: p,
         })
         .collect();
-    let revoked_at = OffsetDateTime::now_utc().to_rfc3339_secs_z();
+    let revoked_at = liblinkkeys::timestamp::now_whole_seconds();
     let rev = ak::sign_revocation(
         &ak::InstanceRef {
             subject_user_id: &e.subject_user_id,
@@ -520,11 +521,11 @@ pub fn revoke(e: &Enrollment, target: &LocalKey) -> Result<String> {
         "revoke-key",
         g::encode_revoke_application_key_request(&lk::RevokeApplicationKeyRequest {
             revocation: rev,
-        }),
+        })?,
         None,
     )?)
     .map_err(|err| anyhow!("revoke-key: {err}"))?;
-    Ok(resp.revoked_at)
+    Ok(resp.revoked_at.to_rfc3339())
 }
 
 pub fn status_json(e: &Enrollment) -> Json {
