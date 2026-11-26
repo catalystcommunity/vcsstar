@@ -51,7 +51,7 @@ services:
       - queue:/data
 
   corndogs:
-    image: containers.catalystsquad.com/public/catalystcommunity/corndogs:0.8.0
+    image: containers.catalystsquad.com/public/catalystcommunity/corndogs:0.8.1
     platform: linux/amd64
     restart: unless-stopped
     depends_on:

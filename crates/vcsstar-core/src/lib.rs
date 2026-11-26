@@ -138,10 +138,15 @@ impl App {
             Ok(_) => Ok(()),
             // Code 4: the key was submitted before with a different payload.
             // The work is already captured; the connection is fine.
-            Err(queue::QueueError::Client(corndogs::ClientError::Service { code: 4, message })) => {
+            Err(queue::QueueError::Client(corndogs::ClientError::ApplicationServiceError(err)))
+                if err.code == 4 =>
+            {
                 Err(Error::new(
                     Code::AlreadyExists,
-                    format!("corndogs: a task with key {key} is already captured: {message}"),
+                    format!(
+                        "corndogs: a task with key {key} is already captured: {}",
+                        err.message
+                    ),
                 ))
             }
             Err(e) => {
