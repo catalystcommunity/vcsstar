@@ -172,5 +172,5 @@ impl Queue {
 /// Guard codes 5 (stale revision), 7 (terminal), 8 (replayed claim lost):
 /// the claim ended, which is not an outage.
 fn not_mine(e: &ClientError) -> bool {
-    matches!(e, ClientError::Service { code, .. } if matches!(code, 5 | 7 | 8))
+    matches!(e, ClientError::ApplicationServiceError(err) if matches!(err.code, 5 | 7 | 8))
 }

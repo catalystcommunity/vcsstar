@@ -19,7 +19,7 @@ services:
       retries: 30
 
   corndogs:
-    image: containers.catalystsquad.com/public/catalystcommunity/corndogs:0.8.0
+    image: containers.catalystsquad.com/public/catalystcommunity/corndogs:0.8.1
     environment:
       STORAGE_BACKEND: file
       CORNDOGS_FILESTORE_DIR: /data

@@ -146,13 +146,13 @@ fi
 
 # Dedicated corndogs (work capture) for this instance: file backend, required
 # resilience policies, pinned chart release.
-CORNDOGS_CHART_URL="https://github.com/catalystcommunity/corndogs/releases/download/helm_chart/v0.6.0/corndogs-0.6.0.tgz"
+CORNDOGS_CHART_URL="https://github.com/catalystcommunity/corndogs/releases/download/helm_chart/v0.6.1/corndogs-0.6.1.tgz"
 CORNDOGS_VALUES="$(mktemp)"
 cat > "${CORNDOGS_VALUES}" <<VALS
 fullnameOverride: corndogs
 image:
   repository: ${REGISTRY}/public/catalystcommunity/corndogs
-  tag: "0.8.0"
+  tag: "0.8.1"
 imagePullSecrets:
   - name: regcred
 podSecurityContext:

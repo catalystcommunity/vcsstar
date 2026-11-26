@@ -33,7 +33,7 @@ vcsstar-workers = { path = "crates/vcsstar-workers", version = "0.1.0" }
 csilgen-transport = { git = "https://github.com/catalystcommunity/csilgen", rev = "73ba5ac55f74608c73da6320693efc8e2b7239ca" }
 liblinkkeys = { git = "https://github.com/catalystcommunity/linkkeys", rev = "e7cfb3d61d89d324d60cc16f4ca82ba6d34be86e" }
 linkkeys-rpc-client = { git = "https://github.com/catalystcommunity/linkkeys", rev = "e7cfb3d61d89d324d60cc16f4ca82ba6d34be86e" }
-corndogs = { git = "https://github.com/catalystcommunity/corndogs", rev = "f1b6ec6086dd0341c09629791bfaa959397b3f9c", features = ["tls"] }
+corndogs = { git = "https://github.com/catalystcommunity/corndogs", rev = "5d2a74fa00e392a4813efef580779928edb29a1c", features = ["tls"] }
 
 # Server
 rocket = { version = "0.5", default-features = false }
