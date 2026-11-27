@@ -1,0 +1,88 @@
+/* vcsstar: a night-sky console. One dark blue canvas, hairline rules in a
+   lighter blue, and one gold accent that belongs to the star. Zest controls
+   read the --zest-* tokens, which map from this palette. */
+@layer page, zest;
+
+:root {
+  --navy-0: #0a1226;
+  --navy-1: #0f1a33;
+  --navy-2: #152341;
+  --navy-3: #1c2d52;
+  --navy-4: #253a66;
+  --line: #22335a;
+  --line-strong: #3b5287;
+  --text: #e7edf8;
+  --text-2: #a7b6d4;
+  --text-3: #7d8fb5;
+  --star: #f3c969;
+  --star-ink: #241a02;
+  --sky: #93baff;
+  --ok: #5fd4a0;
+  --warn: #ffb15c;
+  --bad: #ff8585;
+  --sans: "IBM Plex Sans Variable", "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", Menlo, monospace;
+  --radius: 10px;
+  --control-radius: 7px;
+  --content-width: 1180px;
+  color-scheme: dark;
+
+  --zest-color-window: var(--navy-0);
+  --zest-color-window-text: var(--text);
+  --zest-color-face: var(--navy-2);
+  --zest-color-face-text: var(--text);
+  --zest-color-field: #0a1324;
+  --zest-color-field-text: var(--text);
+  --zest-color-highlight: var(--star);
+  --zest-color-highlight-text: var(--star-ink);
+  --zest-color-border: var(--line-strong);
+  --zest-color-focus: var(--sky);
+  --zest-color-secondary-text: var(--text-2);
+  --zest-color-disabled-text: var(--text-3);
+  --zest-color-invalid: var(--bad);
+  --zest-control-radius: var(--control-radius);
+  --zest-control-height: 2.4em;
+  --zest-font-family: var(--sans);
+  --zest-font-size: 0.9375rem;
+}
+
+@layer page {
+  * { box-sizing: border-box; }
+  html { background: var(--navy-0); }
+  body {
+    margin: 0;
+    min-width: 320px;
+    color: var(--text);
+    font: 400 15px/1.5 var(--sans);
+    font-feature-settings: "tnum" 1;
+    background: radial-gradient(900px 480px at 85% -10%, #1a2c57 0%, transparent 60%), var(--navy-0);
+  }
+  a { color: var(--sky); text-decoration: none; }
+  a:hover { text-decoration: underline; text-underline-offset: 3px; }
+  a:focus-visible, button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+  [tabindex="-1"]:focus { outline: none; }
+  h1, h2, h3 { font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+  h1 { font-size: 1.6rem; line-height: 1.2; }
+  h2 { font-size: 1.15rem; }
+  h3 { font-size: 1rem; }
+  p { margin: 0; }
+  code, .mono { font-family: var(--mono); font-size: 0.88em; }
+  code { color: var(--sky); }
+  strong { font-weight: 600; }
+  ul.plain-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
+  [hidden] { display: none !important; }
+
+  /* Shell */
+  .skip-link { position: fixed; left: 12px; top: -60px; z-index: 100; padding: 10px 14px; background: var(--star); color: var(--star-ink); border-radius: var(--control-radius); }
+  .skip-link:focus { top: 12px; }
+  .site-header {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; align-items: center; gap: 1.75rem;
+    min-height: 60px; padding: 0 max(20px, calc((100vw - var(--content-width)) / 2));
+    background: rgb(10 18 38 / 86%); backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { display: inline-flex; align-items: center; gap: 0.6rem; color: var(--text); font-weight: 600; font-size: 1.05rem; }
+  .brand:hover { text-decoration: none; }
+  .brand-mark { width: 30px; height: 30px; display: block; }
+}

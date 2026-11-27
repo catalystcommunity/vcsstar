@@ -6,6 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends libpq-dev pkg-c
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates ./crates
 COPY migrations ./migrations
+COPY ui/src/shell.css ./ui/src/
+COPY ui/public/logo.svg ./ui/public/
 ARG VCSSTAR_VERSION
 RUN cargo build --release --locked --workspace \
     && strip target/release/vcsstard target/release/vcsstar

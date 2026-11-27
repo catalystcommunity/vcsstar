@@ -217,7 +217,7 @@ fn browser_login_round_trip() {
         vcsstar_types::BeginLoginRequest {
             ctx: wire_ctx(),
             identity_input: "alice@todandlorna.com".into(),
-            return_to: Some("/repos".into()),
+            return_to: Some("/team/repo?view=files&ref=main#readme".into()),
             device_user_code: None,
             link_local: None,
         },
@@ -233,6 +233,15 @@ fn browser_login_round_trip() {
         .contains("/auth/authorize?signed_request=signed%3A"));
     assert!(begun.redirect_url.ends_with("&username=alice"));
 
+    let retry = login::retry_context(&app, &begun.attempt_token)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        retry.return_to.as_deref(),
+        Some("/team/repo?view=files&ref=main#readme")
+    );
+    assert!(!retry.link_local);
+
     let session = login::complete(
         &app,
         &ctx(),
@@ -245,7 +254,10 @@ fn browser_login_round_trip() {
     .expect("complete");
     assert_eq!(session.identity.handle.as_deref(), Some("alice"));
     assert_eq!(session.identity.domain, "todandlorna.com");
-    assert_eq!(session.return_to.as_deref(), Some("/repos"));
+    assert_eq!(
+        session.return_to.as_deref(),
+        Some("/team/repo?view=files&ref=main#readme")
+    );
     assert!(session.session_token.starts_with("vss_"));
 
     // The attempt is single use.

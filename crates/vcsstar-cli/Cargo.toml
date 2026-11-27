@@ -12,6 +12,7 @@ path = "src/main.rs"
 vcsstar-types.workspace = true
 vcsstar-transport.workspace = true
 clap.workspace = true
+open = "5.4.5"
 ciborium.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -4,7 +4,7 @@
 import { loadPreferences } from "./prefs";
 import SimpleRouter from "@catalystcommunity/simple-router";
 import { api, ctx, isUnauthenticated, who } from "./api";
-import { fill, h, link } from "./dom";
+import { fill, h, link, signInUrl } from "./dom";
 import type { Page, PageContext } from "./page";
 import { createPage } from "./page";
 import type { WhoAmI } from "./generated/types.gen.ts";
@@ -104,7 +104,7 @@ export class VcsstarApp {
       ];
       fill(this.account, menu);
     } else {
-      fill(this.account, h("a", { class: "sign-in", href: `/auth/login?return_to=${encodeURIComponent(location.pathname)}`, rel: "external" }, "Sign in"));
+      fill(this.account, h("a", { class: "sign-in", href: signInUrl(), rel: "external" }, "Sign in"));
     }
   }
 

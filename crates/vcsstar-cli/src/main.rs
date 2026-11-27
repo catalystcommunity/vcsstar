@@ -205,6 +205,7 @@ fn build_command(schema: &Schema) -> Command {
                         .help("Read the bearer token from a file"),
                 )
                 .arg(Arg::new("device").long("device").action(ArgAction::SetTrue).help("Device flow: approve a short code in your browser (default when no token option is given)"))
+                .arg(Arg::new("no-browser").long("no-browser").action(ArgAction::SetTrue).help("Print the device login URL without opening a browser"))
                 .arg(Arg::new("scopes").long("scopes").default_value("repo:write,pr:write,pr:review,statuses:write,org:read,tokens:manage").help("Comma-separated scopes for the device-flow token"))
                 .arg(Arg::new("label").long("label").help("Client label for the device-flow token (default: vcsstar-cli@<hostname>)"))
                 .arg(
@@ -881,8 +882,14 @@ fn device_login(schema: &Schema, url: &str, lm: &ArgMatches) -> Result<String, C
         .unwrap_or(0);
     eprintln!("Open {verification_url}");
     eprintln!("and confirm the code {user_code}");
-    if !std::io::stdin().is_terminal() {
-        eprintln!("(stdin is not a terminal; waiting for approval without prompting)");
+    if std::io::stdin().is_terminal()
+        && !lm.get_flag("no-browser")
+        && verification_url == format!("{url}/auth/device?code={user_code}")
+        && user_code
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    {
+        let _ = open::that_detached(verification_url);
     }
     loop {
         std::thread::sleep(std::time::Duration::from_millis(interval));
