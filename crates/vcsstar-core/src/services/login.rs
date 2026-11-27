@@ -123,6 +123,26 @@ pub fn begin(app: &App, ctx: &ReqCtx, req: BeginLoginRequest) -> Result<BeginLog
     })
 }
 
+/// Recover the browser destination and account-link intent after a failed callback.
+#[derive(QueryableByName)]
+pub struct LoginRetry {
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+    pub return_to: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Bool)]
+    pub link_local: bool,
+}
+
+pub fn retry_context(app: &App, attempt_token: &str) -> Result<Option<LoginRetry>, Error> {
+    Ok(diesel::sql_query(
+        "SELECT p.return_to, EXISTS (SELECT 1 FROM local_link_attempts l
+         WHERE l.attempt_hash = p.attempt_hash) AS link_local
+         FROM pending_logins p WHERE p.attempt_hash = $1",
+    )
+    .bind::<diesel::sql_types::Binary, _>(tokens::hash(attempt_token))
+    .get_result(&mut app.conn()?)
+    .optional()?)
+}
+
 /// Step 2. The IDP redirected back with `encrypted_token`; the attempt token
 /// came back in the browser's cookie.
 pub fn complete(app: &App, ctx: &ReqCtx, req: CompleteLoginRequest) -> Result<Session, Error> {

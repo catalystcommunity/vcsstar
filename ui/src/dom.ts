@@ -64,6 +64,13 @@ export function link(href: string, ...children: Child[]): HTMLAnchorElement {
   return h("a", { href, "data-nav": true }, ...children);
 }
 
+/** Return to this document after a server-rendered sign-in. */
+export function signInUrl(linkLocal = false): string {
+  const params = new URLSearchParams({ return_to: location.pathname + location.search + location.hash });
+  if (linkLocal) params.set("link_local", "true");
+  return `/auth/login?${params}`;
+}
+
 /** A link to another site, in a new tab. */
 export function external(href: string, ...children: Child[]): HTMLAnchorElement {
   return h("a", { href, target: "_blank", rel: "external noreferrer" }, ...children);

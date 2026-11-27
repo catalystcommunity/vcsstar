@@ -36,7 +36,13 @@ Each destination keeps control of its own access rules.
 
 ## Install the CLI
 
-Open the [GitHub releases](https://github.com/catalystcommunity/vcsstar/releases).
+From this checkout, run `./tools.sh install-cli` to install the latest GitHub
+release. This command needs Bash, curl, jq, tar, and a SHA-256 tool.
+To build and install from source, run `./tools.sh build-install-cli`.
+Both commands install in `~/.local/bin`. Set `VCSSTAR_BIN_DIR` to use
+another directory on your `PATH`.
+
+For a manual installation, open the [GitHub releases](https://github.com/catalystcommunity/vcsstar/releases).
 Select a `vcsstar/vX.Y.Z` release. Download the archive for your system.
 Each archive has the name `vcsstar-X.Y.Z-<target>.tar.gz`.
 
@@ -48,8 +54,7 @@ Each archive has the name `vcsstar-X.Y.Z-<target>.tar.gz`.
 
 Extract the archive with `tar -xf <archive>`. Put the executable in a
 directory on your `PATH`. Its name is `vcsstar.exe` on Windows and
-`vcsstar` on Linux and macOS. To build from this checkout,
-run `cargo install --locked --path crates/vcsstar-cli`.
+`vcsstar` on Linux and macOS.
 
 ```sh
 vcsstar --version
@@ -57,8 +62,8 @@ vcsstar login https://vcsstar.catalystsquad.com
 vcsstar whoami
 ```
 
-For another instance, use its URL in the login command. Open the URL that
-the CLI prints and approve the code. The CLI saves the instance and token
+For another instance, use its URL in the login command. The CLI opens the approval page in your browser. Confirm the code shown
+in the terminal. Use `--no-browser` to open the printed URL yourself. The CLI saves the instance and token
 in a profile for subsequent commands.
 
 ## Run a server with Docker Compose

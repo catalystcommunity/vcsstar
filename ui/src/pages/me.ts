@@ -1,6 +1,6 @@
 // Account: who you are, the GitHub connection, SSH keys, and API tokens.
 import { api, ctx, when, who } from "../api";
-import { button, comboBox, fill, form, h, textButton, textField, clear } from "../dom";
+import { button, comboBox, fill, form, h, signInUrl, textButton, textField, clear } from "../dom";
 import { providerLinks } from "./sync";
 import { Page } from "../page";
 import { act, badge, confirmDanger, csv, empty, Feedback, isoDate, loading, meta, mono, pageHead, panel, section, showSecretOnce, sortKey, table, td, timeCell, tr } from "../ui";
@@ -19,7 +19,7 @@ export class MePage extends Page {
   protected build() {
     const me = this.context.session;
     if (!me) {
-      return [pageHead([], "Account"), empty("Sign in to manage your keys and tokens.", h("a", { class: "button-link", href: "/auth/login?return_to=/me", rel: "external" }, "Sign in"))];
+      return [pageHead([], "Account"), empty("Sign in to manage your keys and tokens.", h("a", { class: "button-link", href: signInUrl(), rel: "external" }, "Sign in"))];
     }
     const githubError = new URLSearchParams(location.search).get("github_error");
     if (githubError) this.feedback.error(`GitHub did not connect: ${githubError}`);
@@ -54,10 +54,10 @@ export class MePage extends Page {
         const next = textField("New password", { type: "password", autocomplete: "new-password", required: true, helper: "Use at least 15 characters." });
         content.push(panel(h("h3", null, `Local login: ${local.username}`), form({ class: "form-stack", onSubmit: () => void act(async () => {
           await api.auth.changeLocalPassword({ ctx: ctx(), currentPassword: current.value, newPassword: next.value });
-          location.assign("/auth/login");
+          location.assign(signInUrl());
         }, { feedback: this.feedback }) }, current, next, button("Change password and sign out", { type: "submit" })),
         h("p", null, "LinkKeys permanently disables password login for this account. Existing sessions, API tokens, and SSH keys are revoked when the link completes."),
-        h("a", { class: "button-link", href: "/auth/login?link_local=true&return_to=/me", rel: "external" }, "Connect LinkKeys")));
+        h("a", { class: "button-link", href: signInUrl(true), rel: "external" }, "Connect LinkKeys")));
       } else content.push(h("p", null, "Password login is unavailable for this account. A LinkKeys binding cannot be removed to enable passwords."));
       if (this.context.session?.instanceRole === "admin") {
         const username = textField("Username", { required: true, autocomplete: "off" });
